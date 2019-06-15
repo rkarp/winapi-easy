@@ -1,0 +1,10 @@
+[package]
+name = "winapi-easy"
+version = "0.1.0"
+edition = "2018"
+authors = ["Rolf Karp <rolf.karp@gmail.com>"]
+publish = false
+
+[dependencies]
+winapi = { version = "0.3.7", features = ["objbase", "processthreadsapi", "shellapi", "shobjidl_core", "winbase", "wincon", "winerror", "winuser"] }
+wio = "0.2.2"
