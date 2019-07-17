@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     io,
-    mem,
+    mem::MaybeUninit,
     ops::Add,
     ptr,
     sync::mpsc,
@@ -136,9 +136,10 @@ where
                     .zip(self.hotkey_defs.iter().map(|def| def.user_id))
                     .collect();
                 loop {
-                    let mut message: winuser::MSG = unsafe { mem::uninitialized() };
+                    let mut message: MaybeUninit<winuser::MSG> = MaybeUninit::uninit();
                     let getmsg_result =
-                        unsafe { GetMessageW(&mut message, ptr::null_mut(), WM_HOTKEY, WM_HOTKEY) };
+                        unsafe { GetMessageW(message.as_mut_ptr(), ptr::null_mut(), WM_HOTKEY, WM_HOTKEY) };
+                    let message = unsafe { message.assume_init() };
                     let to_send = match getmsg_result {
                         -1 => Some(Err(io::Error::last_os_error())),
                         0 => break, // WM_QUIT
