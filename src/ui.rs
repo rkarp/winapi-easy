@@ -5,8 +5,10 @@ use std::{
         self,
         NonNull
     },
+    sync::Mutex
 };
 
+use once_cell::sync::Lazy;
 use winapi::{
     Interface,
     shared::{
@@ -61,19 +63,21 @@ pub enum ProgressState {
 }
 
 fn initialize_com() -> io::Result<()> {
-    static mut COM_INITIALIZED: bool = false;
-    unsafe {
-        if !COM_INITIALIZED {
-            match CoInitializeEx(ptr::null_mut(), COINIT_MULTITHREADED) {
-                S_OK | S_FALSE => {
-                    COM_INITIALIZED = true;
-                    Ok(())
-                }
-                err_code => custom_hresult_err("Error initializing COM", err_code),
+    static COM_INITIALIZED: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+    let mut initialized = COM_INITIALIZED.lock().expect("Unexpected panic in previous mutex lock");
+    if !*initialized {
+        let init_result = unsafe {
+            CoInitializeEx(ptr::null_mut(), COINIT_MULTITHREADED)
+        };
+        match init_result {
+            S_OK | S_FALSE => {
+                *initialized = true;
+                Ok(())
             }
-        } else {
-            Ok(())
+            err_code => custom_hresult_err("Error initializing COM", err_code),
         }
+    } else {
+        Ok(())
     }
 }
 
