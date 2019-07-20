@@ -22,6 +22,7 @@ use winapi::{
 };
 
 pub mod clipboard;
+pub mod com;
 pub mod keyboard;
 pub mod process;
 pub mod ui;
