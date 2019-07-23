@@ -27,7 +27,7 @@ pub mod keyboard;
 pub mod process;
 pub mod ui;
 
-pub trait WinErrCheckable: Sized + Copy {
+pub(crate) trait WinErrCheckable: Sized + Copy {
     fn if_null_get_last_error(self) -> io::Result<Self> {
         if self.is_null() {
             Err(io::Error::last_os_error())
@@ -70,7 +70,7 @@ impl WinErrCheckable for i32 {
     }
 }
 
-fn custom_hresult_err<T>(err_text: &str, hresult: HRESULT) -> io::Result<T> {
+pub(crate) fn custom_hresult_err<T>(err_text: &str, hresult: HRESULT) -> io::Result<T> {
     Err(io::Error::new(
         ErrorKind::Other,
         format!("{}. Code: {}", err_text, hresult),
