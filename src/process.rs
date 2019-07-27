@@ -17,6 +17,7 @@ use winapi::{
 
 use crate::WinErrCheckable;
 
+/// A Windows process
 #[derive(Clone)]
 pub struct Process {
     handle: HANDLE,
@@ -35,12 +36,14 @@ impl Process {
     }
 }
 
+/// A thread inside a Windows process
 #[derive(Clone)]
 pub struct Thread {
     handle: HANDLE,
 }
 
 impl Thread {
+    /// Constructs a special handle that always points to the current thread.
     pub fn current() -> Self {
         Thread {
             handle: unsafe { GetCurrentThread() },

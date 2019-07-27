@@ -16,16 +16,18 @@ use winapi::{
         },
         winuser::{
             CF_HDROP,
-            GetClipboardData
+            GetClipboardData,
+            CloseClipboard,
+            OpenClipboard
         }
     }
 };
-use winapi::um::winuser::{CloseClipboard, OpenClipboard};
 
 use crate::{GlobalLockedData, WinErrCheckable};
 
 pub struct Clipboard(());
 
+/// An opened Windows clipboard. Will be closed again when dropped.
 impl Clipboard {
     pub fn new() -> io::Result<Clipboard> {
         unsafe {
@@ -35,6 +37,9 @@ impl Clipboard {
         }
     }
 
+    /// Returns a list of file paths that have been copied to the clipboard.
+    ///
+    /// Will return `Err` if the clipboard cannot be accessed or does not contain files.
     pub fn get_file_list(&self) -> io::Result<Vec<PathBuf>> {
         unsafe {
             let mut clipboard_data = {

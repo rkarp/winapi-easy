@@ -1,3 +1,5 @@
+#![cfg(windows)]
+
 use std::{
     io::{
         self,

@@ -80,6 +80,32 @@ struct HotkeyDef<ID> {
     key_combination: KeyCombination,
 }
 
+/// A group of global hotkeys that can be listened for.
+///
+/// # Examples
+///
+/// ```no_run
+/// use winapi_easy::keyboard::{HotkeyConfig, Modifier, Key};
+///
+/// #[derive(Copy, Clone)]
+/// enum MyAction {
+///     One,
+///     Two,
+/// }
+///
+/// let hotkeys = HotkeyConfig::new()
+///     .add_global_hotkey(MyAction::One, Modifier::Ctrl + Modifier::Alt + Key::A)
+///     .add_global_hotkey(MyAction::Two, Modifier::Shift + Modifier::Alt + Key::B);
+///
+/// for action in hotkeys.listen_for_hotkeys()? {
+///     match action? {
+///         MyAction::One => println!("One!"),
+///         MyAction::Two => println!("Two!"),
+///     }
+/// }
+///
+/// # std::result::Result::<(), std::io::Error>::Ok(())
+/// ```
 #[derive(Clone)]
 pub struct HotkeyConfig<ID> {
     hotkey_defs: Vec<HotkeyDef<ID>>,
