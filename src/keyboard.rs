@@ -120,7 +120,10 @@ where
             hotkey_defs: Vec::new(),
         }
     }
-    pub fn add_global_hotkey(mut self, id: ID, key_combination: impl Into<KeyCombination>) -> Self {
+    pub fn add_global_hotkey<KC>(mut self, id: ID, key_combination: KC) -> Self
+    where
+        KC: Into<KeyCombination>,
+    {
         let new_def = HotkeyDef {
             user_id: id,
             key_combination: key_combination.into(),
@@ -163,8 +166,9 @@ where
                     .collect();
                 loop {
                     let mut message: MaybeUninit<winuser::MSG> = MaybeUninit::uninit();
-                    let getmsg_result =
-                        unsafe { GetMessageW(message.as_mut_ptr(), ptr::null_mut(), WM_HOTKEY, WM_HOTKEY) };
+                    let getmsg_result = unsafe {
+                        GetMessageW(message.as_mut_ptr(), ptr::null_mut(), WM_HOTKEY, WM_HOTKEY)
+                    };
                     let message = unsafe { message.assume_init() };
                     let to_send = match getmsg_result {
                         -1 => Some(Err(io::Error::last_os_error())),

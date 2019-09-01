@@ -2,9 +2,7 @@ use std::{
     ffi::OsString,
     io,
     os::windows::ffi::OsStringExt,
-    path::{
-        PathBuf,
-    },
+    path::PathBuf,
     ptr,
 };
 
@@ -18,12 +16,15 @@ use winapi::{
             CF_HDROP,
             GetClipboardData,
             CloseClipboard,
-            OpenClipboard
-        }
-    }
+            OpenClipboard,
+        },
+    },
 };
 
-use crate::{GlobalLockedData, WinErrCheckable};
+use crate::{
+    GlobalLockedData,
+    WinErrCheckable,
+};
 
 pub struct Clipboard(());
 

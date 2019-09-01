@@ -1,9 +1,7 @@
 use std::io;
 
 use winapi::{
-    shared::{
-        ntdef::HANDLE
-    },
+    shared::ntdef::HANDLE,
     um::{
         processthreadsapi::{
             GetCurrentProcess,
@@ -11,8 +9,8 @@ use winapi::{
             SetPriorityClass,
             SetThreadPriority,
         },
-        winbase
-    }
+        winbase,
+    },
 };
 
 use crate::WinErrCheckable;

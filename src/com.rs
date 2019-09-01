@@ -5,10 +5,13 @@ use std::{
 };
 
 use winapi::{
-    shared::winerror::{S_FALSE, S_OK},
+    shared::winerror::{
+        S_FALSE,
+        S_OK,
+    },
     um::{
         combaseapi::CoInitializeEx,
-        objbase::COINIT_MULTITHREADED
+        objbase::COINIT_MULTITHREADED,
     },
 };
 
@@ -21,9 +24,7 @@ pub fn initialize_com() -> io::Result<()> {
     }
     COM_INITIALIZED.with(|initialized| {
         if !initialized.get() {
-            let init_result = unsafe {
-                CoInitializeEx(ptr::null_mut(), COINIT_MULTITHREADED)
-            };
+            let init_result = unsafe { CoInitializeEx(ptr::null_mut(), COINIT_MULTITHREADED) };
             match init_result {
                 S_OK | S_FALSE => {
                     initialized.set(true);

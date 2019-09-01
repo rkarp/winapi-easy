@@ -3,23 +3,21 @@
 use std::{
     io::{
         self,
-        ErrorKind
-    }
+        ErrorKind,
+    },
 };
 
 use winapi::{
     ctypes::c_void,
     shared::{
-        minwindef::{
-            HGLOBAL,
-        },
-        winerror::HRESULT
+        minwindef::HGLOBAL,
+        winerror::HRESULT,
     },
     um::{
         winbase::{
             GlobalUnlock,
-            GlobalLock
-        }
+            GlobalLock,
+        },
     },
 };
 

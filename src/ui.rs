@@ -3,7 +3,7 @@ use std::{
     ops::Deref,
     ptr::{
         self,
-        NonNull
+        NonNull,
     },
 };
 
@@ -12,7 +12,7 @@ use winapi::{
     shared::{
         windef::HWND__,
         winerror::S_OK,
-        wtypesbase::CLSCTX_INPROC_SERVER
+        wtypesbase::CLSCTX_INPROC_SERVER,
     },
     um::{
         combaseapi::CoCreateInstance,
@@ -26,14 +26,14 @@ use winapi::{
             TBPF_PAUSED,
             TBPFLAG,
         },
-        wincon::GetConsoleWindow
-    }
+        wincon::GetConsoleWindow,
+    },
 };
 use wio::com::ComPtr;
 
 use crate::{
+    com::initialize_com,
     custom_hresult_err,
-    com::initialize_com
 };
 
 #[derive(Copy, Clone)]
