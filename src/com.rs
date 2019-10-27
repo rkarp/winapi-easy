@@ -1,3 +1,7 @@
+/*!
+Component Object Model (COM) initialization.
+*/
+
 use std::{
     cell::Cell,
     io,
@@ -5,15 +9,28 @@ use std::{
 };
 
 use winapi::{
-    shared::winerror::{
-        S_FALSE,
-        S_OK,
+    Interface,
+    shared::{
+        guiddef::IID,
+        winerror::{
+            S_FALSE,
+            S_OK,
+        },
+        wtypesbase::CLSCTX_INPROC_SERVER,
     },
     um::{
-        combaseapi::CoInitializeEx,
+        combaseapi::{
+            CoCreateInstance,
+            CoInitializeEx,
+        },
         objbase::COINIT_MULTITHREADED,
+        shobjidl_core::{
+            CLSID_TaskbarList,
+            ITaskbarList3,
+        },
     },
 };
+use wio::com::ComPtr;
 
 use crate::custom_hresult_err;
 
@@ -36,4 +53,30 @@ pub fn initialize_com() -> io::Result<()> {
             Ok(())
         }
     })
+}
+
+pub(crate) trait ComInterface: Interface + Sized {
+    const CLSID: IID;
+
+    fn new_instance() -> io::Result<ComPtr<Self>> {
+        initialize_com()?;
+        unsafe {
+            let mut tb_ptr: *mut Self = ptr::null_mut();
+            let hresult = CoCreateInstance(
+                &Self::CLSID,
+                ptr::null_mut(),
+                CLSCTX_INPROC_SERVER,
+                &Self::uuidof(),
+                &mut tb_ptr as *mut _ as *mut _,
+            );
+            match hresult {
+                S_OK => Ok(ComPtr::from_raw(tb_ptr)),
+                err_code => custom_hresult_err("Error creating ComInterface instance", err_code),
+            }
+        }
+    }
+}
+
+impl ComInterface for ITaskbarList3 {
+    const CLSID: IID = CLSID_TaskbarList;
 }

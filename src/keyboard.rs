@@ -1,3 +1,10 @@
+/*!
+Keyboard and hotkeys.
+
+## Hotkeys
+* [GlobalHotkeySet](keyboard::GlobalHotkeySet): Define and listen to global hotkeys
+*/
+
 use std::{
     collections::HashMap,
     io,
@@ -85,7 +92,7 @@ struct HotkeyDef<ID> {
 /// # Examples
 ///
 /// ```no_run
-/// use winapi_easy::keyboard::{HotkeyConfig, Modifier, Key};
+/// use winapi_easy::keyboard::{GlobalHotkeySet, Modifier, Key};
 ///
 /// #[derive(Copy, Clone)]
 /// enum MyAction {
@@ -93,7 +100,7 @@ struct HotkeyDef<ID> {
 ///     Two,
 /// }
 ///
-/// let hotkeys = HotkeyConfig::new()
+/// let hotkeys = GlobalHotkeySet::new()
 ///     .add_global_hotkey(MyAction::One, Modifier::Ctrl + Modifier::Alt + Key::A)
 ///     .add_global_hotkey(MyAction::Two, Modifier::Shift + Modifier::Alt + Key::B);
 ///
@@ -107,11 +114,11 @@ struct HotkeyDef<ID> {
 /// # std::result::Result::<(), std::io::Error>::Ok(())
 /// ```
 #[derive(Clone)]
-pub struct HotkeyConfig<ID> {
+pub struct GlobalHotkeySet<ID> {
     hotkey_defs: Vec<HotkeyDef<ID>>,
 }
 
-impl<ID> HotkeyConfig<ID>
+impl<ID> GlobalHotkeySet<ID>
 where
     ID: 'static + Copy + Send + Sync,
 {
@@ -120,6 +127,7 @@ where
             hotkey_defs: Vec::new(),
         }
     }
+
     pub fn add_global_hotkey<KC>(mut self, id: ID, key_combination: KC) -> Self
     where
         KC: Into<KeyCombination>,
@@ -131,6 +139,7 @@ where
         self.hotkey_defs.push(new_def);
         self
     }
+
     pub fn listen_for_hotkeys(self) -> io::Result<impl IntoIterator<Item = io::Result<ID>>> {
         let (tx_hotkey, rx_hotkey) = mpsc::channel();
         thread::spawn(move || {
@@ -194,7 +203,8 @@ where
     }
 }
 
-#[derive(Copy, Clone)]
+/// Non-modifier key usable for hotkeys.
+#[derive(Copy, Clone, Eq, PartialEq)]
 #[repr(i32)]
 pub enum Key {
     Backspace = VK_BACK,
@@ -277,7 +287,8 @@ pub enum Key {
     F12 = VK_F12,
 }
 
-#[derive(Copy, Clone)]
+/// Modifier key than cannot be used by itself for hotkeys.
+#[derive(Copy, Clone, Eq, PartialEq)]
 #[repr(isize)]
 pub enum Modifier {
     Alt = MOD_ALT,
@@ -286,10 +297,12 @@ pub enum Modifier {
     Win = MOD_WIN,
 }
 
-#[derive(Copy, Clone)]
+/// A combination of modifier keys.
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct ModifierCombination(LPARAM);
 
-#[derive(Copy, Clone)]
+/// A combination of zero or more modifiers and exactly one normal key.
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct KeyCombination {
     modifiers: ModifierCombination,
     key: Key,

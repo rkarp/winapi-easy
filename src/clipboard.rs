@@ -1,3 +1,7 @@
+/*!
+Clipboard access.
+*/
+
 use std::{
     ffi::OsString,
     io,

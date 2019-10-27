@@ -1,3 +1,7 @@
+/*!
+A small collection of various abstractions over the Windows API.
+*/
+
 #![cfg(windows)]
 
 use std::{
