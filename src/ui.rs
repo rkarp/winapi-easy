@@ -36,12 +36,28 @@ use crate::{
     custom_hresult_err,
 };
 
-#[derive(Copy, Clone)]
+/// A (non-null) handle to a window
+///
+/// Implements neither `Copy` nor `Clone` to avoid concurrent mutable access to the same handle.
 pub struct Window(NonNull<HWND__>);
 
 impl Window {
+    /// Returns the console window associated with the current process, if there is one.
     pub fn get_console_window() -> Option<Self> {
-        unsafe { ptr::NonNull::new(GetConsoleWindow()).map(Self) }
+        let handle = unsafe { GetConsoleWindow() };
+        NonNull::new(handle).map(Into::into)
+    }
+}
+
+impl From<NonNull<HWND__>> for Window {
+    fn from(handle: NonNull<HWND__>) -> Self {
+        Self(handle)
+    }
+}
+
+impl From<Window> for NonNull<HWND__> {
+    fn from(window: Window) -> Self {
+        window.0
     }
 }
 
@@ -76,7 +92,7 @@ pub fn get_taskbar_list_3() -> io::Result<ComPtr<ITaskbarList3>> {
 }
 
 pub trait TaskbarFunctionality: Deref<Target = ITaskbarList3> + Sized + Copy {
-    fn set_progress_state(self, window: Window, state: ProgressState) -> io::Result<()> {
+    fn set_progress_state(self, window: &mut Window, state: ProgressState) -> io::Result<()> {
         unsafe {
             match self.SetProgressState(window.0.as_ptr(), state as TBPFLAG) {
                 S_OK => Ok(()),
@@ -84,7 +100,7 @@ pub trait TaskbarFunctionality: Deref<Target = ITaskbarList3> + Sized + Copy {
             }
         }
     }
-    fn set_progress_value(self, window: Window, completed: u64, total: u64) -> io::Result<()> {
+    fn set_progress_value(self, window: &mut Window, completed: u64, total: u64) -> io::Result<()> {
         unsafe {
             match self.SetProgressValue(window.0.as_ptr(), completed, total) {
                 S_OK => Ok(()),
