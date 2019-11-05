@@ -30,9 +30,11 @@ use crate::{
     WinErrCheckable,
 };
 
+/// An opened Windows clipboard.
+///
+/// Will be closed again when dropped.
 pub struct Clipboard(());
 
-/// An opened Windows clipboard. Will be closed again when dropped.
 impl Clipboard {
     pub fn new() -> io::Result<Clipboard> {
         unsafe {

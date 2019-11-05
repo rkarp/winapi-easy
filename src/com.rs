@@ -32,7 +32,7 @@ use winapi::{
 };
 use wio::com::ComPtr;
 
-use crate::custom_hresult_err;
+use crate::custom_err_with_code;
 
 /// Initializes the COM library for the current thread. Will do nothing on further calls from the same thread.
 pub fn initialize_com() -> io::Result<()> {
@@ -47,7 +47,7 @@ pub fn initialize_com() -> io::Result<()> {
                     initialized.set(true);
                     Ok(())
                 }
-                err_code => custom_hresult_err("Error initializing COM", err_code),
+                err_code => Err(custom_err_with_code("Error initializing COM", err_code)),
             }
         } else {
             Ok(())
@@ -71,7 +71,10 @@ pub(crate) trait ComInterface: Interface + Sized {
             );
             match hresult {
                 S_OK => Ok(ComPtr::from_raw(tb_ptr)),
-                err_code => custom_hresult_err("Error creating ComInterface instance", err_code),
+                err_code => Err(custom_err_with_code(
+                    "Error creating ComInterface instance",
+                    err_code,
+                )),
             }
         }
     }

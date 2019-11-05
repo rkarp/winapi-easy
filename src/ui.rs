@@ -9,6 +9,10 @@ use std::{
 
 use winapi::{
     shared::{
+        minwindef::{
+            LPARAM,
+            WPARAM,
+        },
         windef::HWND__,
         winerror::S_OK,
     },
@@ -23,13 +27,23 @@ use winapi::{
             TBPFLAG,
         },
         wincon::GetConsoleWindow,
+        winuser::{
+            SC_CLOSE,
+            SC_MAXIMIZE,
+            SC_MINIMIZE,
+            SC_MONITORPOWER,
+            SC_RESTORE,
+            SendMessageW,
+            WM_SYSCOMMAND,
+        },
     },
 };
 use wio::com::ComPtr;
 
 use crate::{
     com::ComInterface,
-    custom_hresult_err,
+    custom_err_with_code,
+    WinErrCheckable,
 };
 
 /// A (non-null) handle to a window.
@@ -42,6 +56,27 @@ impl Window {
     pub fn get_console_window() -> Option<Self> {
         let handle = unsafe { GetConsoleWindow() };
         NonNull::new(handle).map(Into::into)
+    }
+
+    pub fn action(&mut self, action: WindowAction) -> io::Result<()> {
+        let result = unsafe { SendMessageW(self.0.as_mut(), WM_SYSCOMMAND, action as WPARAM, 0) };
+        result.if_non_null_to_error(|| {
+            custom_err_with_code("Cannot set monitor power using window", result)
+        })
+    }
+
+    pub fn set_monitor_power(&mut self, level: MonitorPower) -> io::Result<()> {
+        let result = unsafe {
+            SendMessageW(
+                self.0.as_mut(),
+                WM_SYSCOMMAND,
+                SC_MONITORPOWER,
+                level as LPARAM,
+            )
+        };
+        result.if_non_null_to_error(|| {
+            custom_err_with_code("Cannot set monitor power using window", result)
+        })
     }
 }
 
@@ -57,8 +92,25 @@ impl From<Window> for NonNull<HWND__> {
     }
 }
 
+#[derive(Copy, Clone, Eq, PartialEq)]
+#[repr(usize)]
+pub enum WindowAction {
+    Close = SC_CLOSE,
+    Maximize = SC_MAXIMIZE,
+    Minimize = SC_MINIMIZE,
+    Restore = SC_RESTORE,
+}
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+#[repr(isize)]
+pub enum MonitorPower {
+    On = -1,
+    Low = 1,
+    Off = 2,
+}
+
 /// Taskbar progress state animation type.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 #[repr(u32)]
 pub enum ProgressState {
     /// Stops displaying progress and returns the button to its normal state.
@@ -137,7 +189,10 @@ impl Taskbar {
                 .SetProgressState(window.0.as_ptr(), state as TBPFLAG)
             {
                 S_OK => Ok(()),
-                err_code => custom_hresult_err("Error setting progress state", err_code),
+                err_code => Err(custom_err_with_code(
+                    "Error setting progress state",
+                    err_code,
+                )),
             }
         }
     }
@@ -155,7 +210,10 @@ impl Taskbar {
                 .SetProgressValue(window.0.as_ptr(), completed, total)
             {
                 S_OK => Ok(()),
-                err_code => custom_hresult_err("Error setting progress value", err_code),
+                err_code => Err(custom_err_with_code(
+                    "Error setting progress value",
+                    err_code,
+                )),
             }
         }
     }

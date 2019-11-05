@@ -9,14 +9,12 @@ use std::{
         self,
         ErrorKind,
     },
+    fmt::Display,
 };
 
 use winapi::{
     ctypes::c_void,
-    shared::{
-        minwindef::HGLOBAL,
-        winerror::HRESULT,
-    },
+    shared::minwindef::HGLOBAL,
     um::{
         winbase::{
             GlobalUnlock,
@@ -53,6 +51,13 @@ pub(crate) trait WinErrCheckable: Sized + Copy {
             self
         }
     }
+    fn if_non_null_to_error(self, error_gen: impl Fn() -> io::Error) -> io::Result<()> {
+        if !self.is_null() {
+            Err(error_gen())
+        } else {
+            Ok(())
+        }
+    }
     fn is_null(self) -> bool;
 }
 
@@ -74,11 +79,20 @@ impl WinErrCheckable for i32 {
     }
 }
 
-pub(crate) fn custom_hresult_err<T>(err_text: &str, hresult: HRESULT) -> io::Result<T> {
-    Err(io::Error::new(
+impl WinErrCheckable for isize {
+    fn is_null(self) -> bool {
+        self == 0
+    }
+}
+
+pub(crate) fn custom_err_with_code<C>(err_text: &str, result_code: C) -> io::Error
+where
+    C: Display,
+{
+    io::Error::new(
         ErrorKind::Other,
-        format!("{}. Code: {}", err_text, hresult),
-    ))
+        format!("{}. Code: {}", err_text, result_code),
+    )
 }
 
 pub(crate) struct GlobalLockedData<'ptr> {
