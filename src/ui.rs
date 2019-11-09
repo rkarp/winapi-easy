@@ -49,9 +49,9 @@ use crate::internal::{
 /// A (non-null) handle to a window.
 ///
 /// Implements neither `Copy` nor `Clone` to avoid concurrent mutable access to the same handle.
-pub struct Window<'a>(&'a mut HWND__);
+pub struct Window(&'static mut HWND__);
 
-impl<'a> Window<'a> {
+impl Window {
     /// Returns the console window associated with the current process, if there is one.
     pub fn get_console_window() -> Option<Self> {
         let handle = unsafe { GetConsoleWindow() };
@@ -79,7 +79,7 @@ impl<'a> Window<'a> {
         })
     }
 
-    fn from_non_null(handle: &'a mut HWND__) -> Self {
+    fn from_non_null(handle: &'static mut HWND__) -> Self {
         Self(handle)
     }
 }

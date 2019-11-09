@@ -162,25 +162,25 @@ impl CloseableHandle for c_void {
     }
 }
 
-pub(crate) struct AutoClose<'ptr, T: CloseableHandle> {
-    entity: &'ptr mut T,
+pub(crate) struct AutoClose<T: 'static + CloseableHandle> {
+    entity: &'static mut T,
 }
 
-impl<'ptr, T: CloseableHandle> From<&'ptr mut T> for AutoClose<'ptr, T> {
-    fn from(entity: &'ptr mut T) -> Self {
+impl<T: CloseableHandle> From<&'static mut T> for AutoClose<T> {
+    fn from(entity: &'static mut T) -> Self {
         AutoClose {
             entity,
         }
     }
 }
 
-impl<'ptr, T: CloseableHandle> Drop for AutoClose<'ptr, T> {
+impl<T: CloseableHandle> Drop for AutoClose<T> {
     fn drop(&mut self) {
         self.entity.close()
     }
 }
 
-impl<'ptr, T: CloseableHandle> Deref for AutoClose<'ptr, T> {
+impl<T: CloseableHandle> Deref for AutoClose<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -188,30 +188,30 @@ impl<'ptr, T: CloseableHandle> Deref for AutoClose<'ptr, T> {
     }
 }
 
-impl<'ptr, T: CloseableHandle> DerefMut for AutoClose<'ptr, T> {
+impl<T: CloseableHandle> DerefMut for AutoClose<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.entity
     }
 }
 
-impl<'ptr, T: CloseableHandle> AsRef<T> for AutoClose<'ptr, T> {
+impl<T: CloseableHandle> AsRef<T> for AutoClose<T> {
     fn as_ref(&self) -> &T {
         &self.entity
     }
 }
 
-impl<'ptr, T: CloseableHandle> AsMut<T> for AutoClose<'ptr, T> {
+impl<T: CloseableHandle> AsMut<T> for AutoClose<T> {
     fn as_mut(&mut self) -> &mut T {
         &mut self.entity
     }
 }
 
-pub(crate) struct GlobalLockedData<'ptr> {
+pub(crate) struct GlobalLockedData {
     handle: HGLOBAL,
-    ptr: &'ptr mut c_void,
+    ptr: &'static mut c_void,
 }
 
-impl GlobalLockedData<'_> {
+impl GlobalLockedData {
     pub(crate) fn lock(handle: *mut c_void) -> io::Result<Self> {
         unsafe {
             GlobalLock(handle)
@@ -228,7 +228,7 @@ impl GlobalLockedData<'_> {
     }
 }
 
-impl Drop for GlobalLockedData<'_> {
+impl Drop for GlobalLockedData {
     fn drop(&mut self) {
         unsafe {
             GlobalUnlock(self.handle);

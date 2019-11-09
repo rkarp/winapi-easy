@@ -26,11 +26,11 @@ use winapi::um::winnt::{PROCESS_ALL_ACCESS, THREAD_ALL_ACCESS};
 use crate::internal::{AutoClose, WinErrCheckable, WinErrCheckableHandle};
 
 /// A Windows process
-pub struct Process<'a> {
-    handle: AutoClose<'a, c_void>,
+pub struct Process {
+    handle: AutoClose<c_void>,
 }
 
-impl Process<'_> {
+impl Process {
     /// Constructs a special handle that always points to the current process.
     ///
     /// When transferred to a different process, it will point to that process when used from it.
@@ -110,8 +110,8 @@ impl Process<'_> {
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct ProcessId(DWORD);
 
-impl<'a, P> From<P> for ProcessId
-where P: BorrowMut<Process<'a>>
+impl<P> From<P> for ProcessId
+where P: BorrowMut<Process>
 {
     fn from(mut process: P) -> Self {
         ProcessId(process.borrow_mut().get_id())
@@ -119,11 +119,11 @@ where P: BorrowMut<Process<'a>>
 }
 
 /// A thread inside a Windows process
-pub struct Thread<'a> {
-    handle: AutoClose<'a, c_void>,
+pub struct Thread {
+    handle: AutoClose<c_void>,
 }
 
-impl Thread<'_> {
+impl Thread {
     /// Constructs a special handle that always points to the current thread.
     ///
     /// When transferred to a different thread, it will point to that thread when used from it.
@@ -202,8 +202,8 @@ impl Thread<'_> {
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct ThreadId(DWORD);
 
-impl<'a, T> From<T> for ThreadId
-    where T: BorrowMut<Thread<'a>>
+impl<T> From<T> for ThreadId
+    where T: BorrowMut<Thread>
 {
     fn from(mut thread: T) -> Self {
         ThreadId(thread.borrow_mut().get_id())
