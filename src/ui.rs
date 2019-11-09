@@ -4,7 +4,6 @@ UI components: Windows, taskbar.
 
 use std::{
     io,
-    ptr::NonNull,
 };
 
 use winapi::{
@@ -44,22 +43,23 @@ use crate::com::ComInterface;
 use crate::internal::{
     custom_err_with_code,
     WinErrCheckable,
+    WinErrCheckableHandle,
 };
 
 /// A (non-null) handle to a window.
 ///
 /// Implements neither `Copy` nor `Clone` to avoid concurrent mutable access to the same handle.
-pub struct Window(NonNull<HWND__>);
+pub struct Window<'a>(&'a mut HWND__);
 
-impl Window {
+impl<'a> Window<'a> {
     /// Returns the console window associated with the current process, if there is one.
     pub fn get_console_window() -> Option<Self> {
         let handle = unsafe { GetConsoleWindow() };
-        NonNull::new(handle).map(Into::into)
+        handle.to_non_null().map(Self::from_non_null)
     }
 
     pub fn action(&mut self, action: WindowAction) -> io::Result<()> {
-        let result = unsafe { SendMessageW(self.0.as_mut(), WM_SYSCOMMAND, action as WPARAM, 0) };
+        let result = unsafe { SendMessageW(self.0, WM_SYSCOMMAND, action as WPARAM, 0) };
         result.if_non_null_to_error(|| {
             custom_err_with_code("Cannot set monitor power using window", result)
         })
@@ -68,7 +68,7 @@ impl Window {
     pub fn set_monitor_power(&mut self, level: MonitorPower) -> io::Result<()> {
         let result = unsafe {
             SendMessageW(
-                self.0.as_mut(),
+                self.0,
                 WM_SYSCOMMAND,
                 SC_MONITORPOWER,
                 level as LPARAM,
@@ -78,17 +78,9 @@ impl Window {
             custom_err_with_code("Cannot set monitor power using window", result)
         })
     }
-}
 
-impl From<NonNull<HWND__>> for Window {
-    fn from(handle: NonNull<HWND__>) -> Self {
+    fn from_non_null(handle: &'a mut HWND__) -> Self {
         Self(handle)
-    }
-}
-
-impl From<Window> for NonNull<HWND__> {
-    fn from(window: Window) -> Self {
-        window.0
     }
 }
 
@@ -186,7 +178,7 @@ impl Taskbar {
         unsafe {
             match self
                 .taskbar_list_3
-                .SetProgressState(window.0.as_ptr(), state as TBPFLAG)
+                .SetProgressState(window.0, state as TBPFLAG)
             {
                 S_OK => Ok(()),
                 err_code => Err(custom_err_with_code(
@@ -207,7 +199,7 @@ impl Taskbar {
         unsafe {
             match self
                 .taskbar_list_3
-                .SetProgressValue(window.0.as_ptr(), completed, total)
+                .SetProgressValue(window.0, completed, total)
             {
                 S_OK => Ok(()),
                 err_code => Err(custom_err_with_code(

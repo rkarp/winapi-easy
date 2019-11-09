@@ -4,7 +4,7 @@ use std::{
         self,
         ErrorKind,
     },
-    ptr::NonNull,
+    ops::{Deref, DerefMut},
 };
 
 use winapi::{
@@ -17,7 +17,7 @@ use winapi::{
         },
     },
 };
-use winapi::_core::ops::{Deref, DerefMut};
+use winapi::shared::windef::HWND;
 use winapi::shared::ntdef::HANDLE;
 use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
 
@@ -63,39 +63,45 @@ pub(crate) trait WinErrCheckable: Sized + Copy {
 }
 
 impl WinErrCheckable for u32 {
+    #[inline]
     fn is_null(self) -> bool {
         self == 0
     }
 }
 
 impl WinErrCheckable for i32 {
+    #[inline]
     fn is_null(self) -> bool {
         self == 0
     }
 }
 
 impl WinErrCheckable for isize {
+    #[inline]
     fn is_null(self) -> bool {
         self == 0
     }
 }
 
 impl WinErrCheckable for HANDLE {
+    #[inline]
     fn is_null(self) -> bool {
         self.is_null()
     }
 }
 
-pub(crate) trait WinErrCheckableHandle: WinErrCheckable + PtrLike {
-    fn to_non_null(self) -> Option<NonNull<Self::Target>> {
+pub(crate) trait WinErrCheckableHandle: PtrLike {
+    fn to_non_null<'ptr>(self) -> Option<&'ptr mut Self::Target> {
         let ptr: *mut Self::Target = unsafe {
             // Safe only as long as `Self: PtrLike`
             *(&self as *const Self as *const *mut Self::Target)
         };
-        NonNull::new(ptr)
+        unsafe {
+            ptr.as_mut()
+        }
     }
 
-    fn to_non_null_else_error(self, error_gen: impl FnOnce() -> io::Error) -> io::Result<NonNull<Self::Target>> {
+    fn to_non_null_else_error<'ptr>(self, error_gen: impl FnOnce() -> io::Error) -> io::Result<&'ptr mut Self::Target> {
         match self.to_non_null() {
             Some(result) => Ok(result),
             None => Err(error_gen()),
@@ -103,7 +109,7 @@ pub(crate) trait WinErrCheckableHandle: WinErrCheckable + PtrLike {
     }
 
     #[inline]
-    fn to_non_null_else_get_last_error(self) -> io::Result<NonNull<Self::Target>> {
+    fn to_non_null_else_get_last_error<'ptr>(self) -> io::Result<&'ptr mut Self::Target> {
         self.to_non_null_else_error(|| io::Error::last_os_error())
     }
 
@@ -115,7 +121,10 @@ pub(crate) trait WinErrCheckableHandle: WinErrCheckable + PtrLike {
         }
     }
 
-    fn is_invalid(self) -> bool;
+    #[inline(always)]
+    fn is_invalid(self) -> bool {
+        false
+    }
 }
 
 impl WinErrCheckableHandle for HANDLE {
@@ -123,10 +132,13 @@ impl WinErrCheckableHandle for HANDLE {
     ///
     /// **Caution**: This is not correct for all APIs, for example GetCurrentProcess will also return
     /// `-1` as a special handle representing the current process.
+    #[inline]
     fn is_invalid(self) -> bool {
         self == INVALID_HANDLE_VALUE
     }
 }
+
+impl WinErrCheckableHandle for HWND {}
 
 pub(crate) fn custom_err_with_code<C>(err_text: &str, result_code: C) -> io::Error
     where
@@ -142,33 +154,33 @@ pub(crate) trait CloseableHandle {
     fn close(&mut self);
 }
 
-impl CloseableHandle for NonNull<c_void> {
+impl CloseableHandle for c_void {
     fn close(&mut self) {
         unsafe {
-            CloseHandle(self.as_mut());
+            CloseHandle(self);
         }
     }
 }
 
-pub(crate) struct AutoClose<T: CloseableHandle> {
-    entity: T,
+pub(crate) struct AutoClose<'ptr, T: CloseableHandle> {
+    entity: &'ptr mut T,
 }
 
-impl<T: CloseableHandle> From<T> for AutoClose<T> {
-    fn from(entity: T) -> Self {
+impl<'ptr, T: CloseableHandle> From<&'ptr mut T> for AutoClose<'ptr, T> {
+    fn from(entity: &'ptr mut T) -> Self {
         AutoClose {
             entity,
         }
     }
 }
 
-impl<T: CloseableHandle> Drop for AutoClose<T> {
+impl<'ptr, T: CloseableHandle> Drop for AutoClose<'ptr, T> {
     fn drop(&mut self) {
         self.entity.close()
     }
 }
 
-impl<T: CloseableHandle> Deref for AutoClose<T> {
+impl<'ptr, T: CloseableHandle> Deref for AutoClose<'ptr, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -176,8 +188,20 @@ impl<T: CloseableHandle> Deref for AutoClose<T> {
     }
 }
 
-impl<T: CloseableHandle> DerefMut for AutoClose<T> {
+impl<'ptr, T: CloseableHandle> DerefMut for AutoClose<'ptr, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.entity
+    }
+}
+
+impl<'ptr, T: CloseableHandle> AsRef<T> for AutoClose<'ptr, T> {
+    fn as_ref(&self) -> &T {
+        &self.entity
+    }
+}
+
+impl<'ptr, T: CloseableHandle> AsMut<T> for AutoClose<'ptr, T> {
+    fn as_mut(&mut self) -> &mut T {
         &mut self.entity
     }
 }

@@ -4,7 +4,6 @@ Processes, threads.
 
 use std::borrow::BorrowMut;
 use std::io;
-use std::ptr::NonNull;
 
 use winapi::{
     um::{
@@ -27,11 +26,11 @@ use winapi::um::winnt::{PROCESS_ALL_ACCESS, THREAD_ALL_ACCESS};
 use crate::internal::{AutoClose, WinErrCheckable, WinErrCheckableHandle};
 
 /// A Windows process
-pub struct Process {
-    raw_handle: NonNull<c_void>,
+pub struct Process<'a> {
+    raw_handle: &'a mut c_void,
 }
 
-impl Process {
+impl Process<'_> {
     /// Constructs a special handle that always points to the current process.
     ///
     /// When transferred to a different process, it will point to that process when used from it.
@@ -62,7 +61,7 @@ impl Process {
     pub fn begin_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetPriorityClass(
-                self.raw_handle.as_mut(),
+                self.raw_handle,
                 winbase::PROCESS_MODE_BACKGROUND_BEGIN,
             )
             .if_null_get_last_error()?
@@ -74,7 +73,7 @@ impl Process {
     pub fn end_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetPriorityClass(
-                self.raw_handle.as_mut(),
+                self.raw_handle,
                 winbase::PROCESS_MODE_BACKGROUND_END,
             )
             .if_null_get_last_error()?
@@ -86,19 +85,21 @@ impl Process {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```
     /// use winapi_easy::process::{Process, ProcessPriority};
     ///
-    /// Process::current().set_priority(ProcessPriority::Idle);
+    /// Process::current().set_priority(ProcessPriority::Normal);
+    ///
+    /// # std::result::Result::<(), std::io::Error>::Ok(())
     /// ```
     pub fn set_priority(&mut self, priority: ProcessPriority) -> io::Result<()> {
-        unsafe { SetPriorityClass(self.raw_handle.as_mut(), priority as u32).if_null_get_last_error()? };
+        unsafe { SetPriorityClass(self.raw_handle, priority as u32).if_null_get_last_error()? };
         Ok(())
     }
 
     fn get_id(&mut self) -> DWORD {
         unsafe {
-            GetProcessId(self.raw_handle.as_mut())
+            GetProcessId(self.raw_handle)
         }
     }
 }
@@ -106,8 +107,8 @@ impl Process {
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct ProcessId(DWORD);
 
-impl<P> From<P> for ProcessId
-where P: BorrowMut<Process>
+impl<'a, P> From<P> for ProcessId
+where P: BorrowMut<Process<'a>>
 {
     fn from(mut process: P) -> Self {
         ProcessId(process.borrow_mut().get_id())
@@ -115,11 +116,11 @@ where P: BorrowMut<Process>
 }
 
 /// A thread inside a Windows process
-pub struct Thread {
-    raw_handle: NonNull<c_void>,
+pub struct Thread<'a> {
+    raw_handle: &'a mut c_void,
 }
 
-impl Thread {
+impl Thread<'_> {
     /// Constructs a special handle that always points to the current thread.
     ///
     /// When transferred to a different thread, it will point to that thread when used from it.
@@ -148,7 +149,7 @@ impl Thread {
     pub fn begin_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetThreadPriority(
-                self.raw_handle.as_mut(),
+                self.raw_handle,
                 winbase::THREAD_MODE_BACKGROUND_BEGIN as i32,
             )
             .if_null_get_last_error()?
@@ -160,7 +161,7 @@ impl Thread {
     pub fn end_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetThreadPriority(
-                self.raw_handle.as_mut(),
+                self.raw_handle,
                 winbase::THREAD_MODE_BACKGROUND_END as i32,
             )
             .if_null_get_last_error()?
@@ -172,20 +173,22 @@ impl Thread {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```
     /// use winapi_easy::process::{Thread, ThreadPriority};
     ///
-    /// Thread::current().set_priority(ThreadPriority::Idle);
+    /// Thread::current().set_priority(ThreadPriority::Normal)?;
+    ///
+    /// # std::result::Result::<(), std::io::Error>::Ok(())
     /// ```
     pub fn set_priority(&mut self, priority: ThreadPriority) -> Result<(), io::Error> {
-        unsafe { SetThreadPriority(self.raw_handle.as_mut(), priority as i32).if_null_get_last_error()? };
+        unsafe { SetThreadPriority(self.raw_handle, priority as i32).if_null_get_last_error()? };
         Ok(())
     }
 
     #[allow(dead_code)]
     fn get_id(&mut self) -> DWORD {
         unsafe {
-            GetThreadId(self.raw_handle.as_mut())
+            GetThreadId(self.raw_handle)
         }
     }
 }
@@ -193,8 +196,8 @@ impl Thread {
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct ThreadId(DWORD);
 
-impl<T> From<T> for ThreadId
-    where T: BorrowMut<Thread>
+impl<'a, T> From<T> for ThreadId
+    where T: BorrowMut<Thread<'a>>
 {
     fn from(mut thread: T) -> Self {
         ThreadId(thread.borrow_mut().get_id())
