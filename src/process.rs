@@ -27,7 +27,7 @@ use crate::internal::{AutoClose, WinErrCheckable, WinErrCheckableHandle};
 
 /// A Windows process
 pub struct Process<'a> {
-    raw_handle: &'a mut c_void,
+    handle: AutoClose<'a, c_void>,
 }
 
 impl Process<'_> {
@@ -39,7 +39,10 @@ impl Process<'_> {
             GetCurrentProcess()
         };
         Self {
-            raw_handle: pseudo_handle.to_non_null().expect("Pseudo process handle should never be null"),
+            handle: pseudo_handle
+                .to_non_null()
+                .expect("Pseudo process handle should never be null")
+                .into(),
         }
     }
 
@@ -51,7 +54,7 @@ impl Process<'_> {
                 .to_non_null_else_get_last_error()?
         };
         Ok(Self {
-            raw_handle
+            handle: raw_handle.into()
         })
     }
 
@@ -61,7 +64,7 @@ impl Process<'_> {
     pub fn begin_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetPriorityClass(
-                self.raw_handle,
+                self.handle.as_mut(),
                 winbase::PROCESS_MODE_BACKGROUND_BEGIN,
             )
             .if_null_get_last_error()?
@@ -73,7 +76,7 @@ impl Process<'_> {
     pub fn end_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetPriorityClass(
-                self.raw_handle,
+                self.handle.as_mut(),
                 winbase::PROCESS_MODE_BACKGROUND_END,
             )
             .if_null_get_last_error()?
@@ -93,13 +96,13 @@ impl Process<'_> {
     /// # std::result::Result::<(), std::io::Error>::Ok(())
     /// ```
     pub fn set_priority(&mut self, priority: ProcessPriority) -> io::Result<()> {
-        unsafe { SetPriorityClass(self.raw_handle, priority as u32).if_null_get_last_error()? };
+        unsafe { SetPriorityClass(self.handle.as_mut(), priority as u32).if_null_get_last_error()? };
         Ok(())
     }
 
     fn get_id(&mut self) -> DWORD {
         unsafe {
-            GetProcessId(self.raw_handle)
+            GetProcessId(self.handle.as_mut())
         }
     }
 }
@@ -117,7 +120,7 @@ where P: BorrowMut<Process<'a>>
 
 /// A thread inside a Windows process
 pub struct Thread<'a> {
-    raw_handle: &'a mut c_void,
+    handle: AutoClose<'a, c_void>,
 }
 
 impl Thread<'_> {
@@ -127,7 +130,10 @@ impl Thread<'_> {
     pub fn current() -> Self {
         let pseudo_handle = unsafe { GetCurrentThread() };
         Thread {
-            raw_handle: pseudo_handle.to_non_null().expect("Pseudo thread handle should never be null"),
+            handle: pseudo_handle
+                .to_non_null()
+                .expect("Pseudo thread handle should never be null")
+                .into(),
         }
     }
 
@@ -139,7 +145,7 @@ impl Thread<'_> {
                 .to_non_null_else_get_last_error()?
         };
         Ok(Self {
-            raw_handle
+            handle: raw_handle.into()
         })
     }
 
@@ -149,7 +155,7 @@ impl Thread<'_> {
     pub fn begin_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetThreadPriority(
-                self.raw_handle,
+                self.handle.as_mut(),
                 winbase::THREAD_MODE_BACKGROUND_BEGIN as i32,
             )
             .if_null_get_last_error()?
@@ -161,7 +167,7 @@ impl Thread<'_> {
     pub fn end_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetThreadPriority(
-                self.raw_handle,
+                self.handle.as_mut(),
                 winbase::THREAD_MODE_BACKGROUND_END as i32,
             )
             .if_null_get_last_error()?
@@ -181,14 +187,14 @@ impl Thread<'_> {
     /// # std::result::Result::<(), std::io::Error>::Ok(())
     /// ```
     pub fn set_priority(&mut self, priority: ThreadPriority) -> Result<(), io::Error> {
-        unsafe { SetThreadPriority(self.raw_handle, priority as i32).if_null_get_last_error()? };
+        unsafe { SetThreadPriority(self.handle.as_mut(), priority as i32).if_null_get_last_error()? };
         Ok(())
     }
 
     #[allow(dead_code)]
     fn get_id(&mut self) -> DWORD {
         unsafe {
-            GetThreadId(self.raw_handle)
+            GetThreadId(self.handle.as_mut())
         }
     }
 }
