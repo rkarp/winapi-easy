@@ -25,7 +25,7 @@ use winapi::{
     },
 };
 
-use crate::{
+use crate::internal::{
     GlobalLockedData,
     WinErrCheckable,
 };

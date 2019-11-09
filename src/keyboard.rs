@@ -79,7 +79,7 @@ use winapi::{
     },
 };
 
-use crate::WinErrCheckable;
+use crate::internal::WinErrCheckable;
 
 #[derive(Copy, Clone)]
 struct HotkeyDef<ID> {
@@ -162,7 +162,7 @@ where
                             Ok(())
                         } else {
                             (curr_id..=MIN_ID).for_each(|id| unsafe {
-                                UnregisterHotKey(ptr::null_mut(), id).if_null_panic();
+                                UnregisterHotKey(ptr::null_mut(), id).if_null_panic("Cannot unregister hotkey");
                             });
                             result.map(|_| ())
                         }

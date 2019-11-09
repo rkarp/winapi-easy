@@ -40,8 +40,8 @@ use winapi::{
 };
 use wio::com::ComPtr;
 
-use crate::{
-    com::ComInterface,
+use crate::com::ComInterface;
+use crate::internal::{
     custom_err_with_code,
     WinErrCheckable,
 };

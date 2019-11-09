@@ -32,7 +32,7 @@ use winapi::{
 };
 use wio::com::ComPtr;
 
-use crate::custom_err_with_code;
+use crate::internal::custom_err_with_code;
 
 /// Initializes the COM library for the current thread. Will do nothing on further calls from the same thread.
 pub fn initialize_com() -> io::Result<()> {
