@@ -56,13 +56,13 @@ impl Process {
         })
     }
 
-    /// Sets the current process to background processing mode.
+    /// Sets the process to background processing mode.
     ///
     /// This will also lower the I/O priority of the process, which will lower the impact of heavy disk I/O on other processes.
-    pub fn begin_background_mode() -> io::Result<()> {
+    pub fn begin_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetPriorityClass(
-                Process::current().raw_handle.as_mut(),
+                self.raw_handle.as_mut(),
                 winbase::PROCESS_MODE_BACKGROUND_BEGIN,
             )
             .if_null_get_last_error()?
@@ -70,11 +70,11 @@ impl Process {
         Ok(())
     }
 
-    /// Ends background processing mode for the current process.
-    pub fn end_background_mode() -> io::Result<()> {
+    /// Ends background processing mode for the process.
+    pub fn end_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetPriorityClass(
-                Process::current().raw_handle.as_mut(),
+                self.raw_handle.as_mut(),
                 winbase::PROCESS_MODE_BACKGROUND_END,
             )
             .if_null_get_last_error()?
@@ -82,7 +82,7 @@ impl Process {
         Ok(())
     }
 
-    /// Sets the priority of the given process
+    /// Sets the priority of the process.
     ///
     /// # Examples
     ///
@@ -142,13 +142,13 @@ impl Thread {
         })
     }
 
-    /// Sets the current thread to background processing mode.
+    /// Sets the thread to background processing mode.
     ///
-    /// This will also lower the I/O priority of the threads, which will lower the impact of heavy disk I/O on other threads and processes.
-    pub fn begin_background_mode() -> io::Result<()> {
+    /// This will also lower the I/O priority of the thread, which will lower the impact of heavy disk I/O on other threads and processes.
+    pub fn begin_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetThreadPriority(
-                Thread::current().raw_handle.as_mut(),
+                self.raw_handle.as_mut(),
                 winbase::THREAD_MODE_BACKGROUND_BEGIN as i32,
             )
             .if_null_get_last_error()?
@@ -156,11 +156,11 @@ impl Thread {
         Ok(())
     }
 
-    /// Ends background processing mode for the current thread.
-    pub fn end_background_mode() -> io::Result<()> {
+    /// Ends background processing mode for the thread.
+    pub fn end_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetThreadPriority(
-                Thread::current().raw_handle.as_mut(),
+                self.raw_handle.as_mut(),
                 winbase::THREAD_MODE_BACKGROUND_END as i32,
             )
             .if_null_get_last_error()?
@@ -168,7 +168,7 @@ impl Thread {
         Ok(())
     }
 
-    /// Sets the priority of the given thread
+    /// Sets the priority of the thread.
     ///
     /// # Examples
     ///
