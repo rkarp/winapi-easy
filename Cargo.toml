@@ -16,5 +16,11 @@ categories = ["os::windows-apis", "api-bindings", "gui"]
 default-target = "x86_64-pc-windows-msvc"
 
 [dependencies]
-winapi = { version = "0.3.8", features = ["objbase", "processthreadsapi", "shellapi", "shobjidl_core", "winbase", "wincon", "winerror", "winuser"] }
 wio = "0.2.2"
+
+[dependencies.winapi]
+version = "0.3.8"
+features = ["handleapi", "impl-default", "objbase", "processthreadsapi", "shellapi", "shobjidl_core", "tlhelp32", "winbase", "wincon", "winerror", "winuser"]
+
+[dev-dependencies]
+more-asserts = "0.2.1"
