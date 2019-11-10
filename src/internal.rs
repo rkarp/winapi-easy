@@ -4,22 +4,27 @@ use std::{
         self,
         ErrorKind,
     },
-    ops::{Deref, DerefMut},
+    ptr::NonNull,
 };
 
 use winapi::{
     ctypes::c_void,
-    shared::minwindef::HGLOBAL,
+    shared::{
+        minwindef::HGLOBAL,
+        ntdef::HANDLE,
+        windef::HWND,
+    },
     um::{
+        handleapi::{
+            CloseHandle,
+            INVALID_HANDLE_VALUE,
+        },
         winbase::{
-            GlobalUnlock,
             GlobalLock,
+            GlobalUnlock,
         },
     },
 };
-use winapi::shared::windef::HWND;
-use winapi::shared::ntdef::HANDLE;
-use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
 
 pub(crate) trait PtrLike: Sized + Copy {
     type Target;
@@ -29,7 +34,7 @@ impl<T> PtrLike for *mut T {
     type Target = T;
 }
 
-pub(crate) trait WinErrCheckable: Sized + Copy {
+pub(crate) trait ReturnValue: Sized + Copy {
     fn if_null_to_error(self, error_gen: impl FnOnce() -> io::Error) -> io::Result<Self> {
         if self.is_null() {
             Err(error_gen())
@@ -62,46 +67,47 @@ pub(crate) trait WinErrCheckable: Sized + Copy {
     fn is_null(self) -> bool;
 }
 
-impl WinErrCheckable for u32 {
+impl ReturnValue for u32 {
     #[inline]
     fn is_null(self) -> bool {
         self == 0
     }
 }
 
-impl WinErrCheckable for i32 {
+impl ReturnValue for i32 {
     #[inline]
     fn is_null(self) -> bool {
         self == 0
     }
 }
 
-impl WinErrCheckable for isize {
+impl ReturnValue for isize {
     #[inline]
     fn is_null(self) -> bool {
         self == 0
     }
 }
 
-impl WinErrCheckable for HANDLE {
+impl ReturnValue for HANDLE {
     #[inline]
     fn is_null(self) -> bool {
         self.is_null()
     }
 }
 
-pub(crate) trait WinErrCheckableHandle: PtrLike {
-    fn to_non_null<'ptr>(self) -> Option<&'ptr mut Self::Target> {
+pub(crate) trait RawHandle: PtrLike {
+    fn to_non_null(self) -> Option<NonNull<Self::Target>> {
         let ptr: *mut Self::Target = unsafe {
             // Safe only as long as `Self: PtrLike`
             *(&self as *const Self as *const *mut Self::Target)
         };
-        unsafe {
-            ptr.as_mut()
-        }
+        NonNull::new(ptr)
     }
 
-    fn to_non_null_else_error<'ptr>(self, error_gen: impl FnOnce() -> io::Error) -> io::Result<&'ptr mut Self::Target> {
+    fn to_non_null_else_error(
+        self,
+        error_gen: impl FnOnce() -> io::Error,
+    ) -> io::Result<NonNull<Self::Target>> {
         match self.to_non_null() {
             Some(result) => Ok(result),
             None => Err(error_gen()),
@@ -109,7 +115,7 @@ pub(crate) trait WinErrCheckableHandle: PtrLike {
     }
 
     #[inline]
-    fn to_non_null_else_get_last_error<'ptr>(self) -> io::Result<&'ptr mut Self::Target> {
+    fn to_non_null_else_get_last_error(self) -> io::Result<NonNull<Self::Target>> {
         self.to_non_null_else_error(|| io::Error::last_os_error())
     }
 
@@ -127,7 +133,7 @@ pub(crate) trait WinErrCheckableHandle: PtrLike {
     }
 }
 
-impl WinErrCheckableHandle for HANDLE {
+impl RawHandle for HANDLE {
     /// Checks if the handle value is invalid.
     ///
     /// **Caution**: This is not correct for all APIs, for example GetCurrentProcess will also return
@@ -138,39 +144,54 @@ impl WinErrCheckableHandle for HANDLE {
     }
 }
 
-impl WinErrCheckableHandle for HWND {}
+impl RawHandle for HWND {}
 
-pub(crate) fn custom_err_with_code<C>(err_text: &str, result_code: C) -> io::Error
-    where
-        C: Display,
-{
-    io::Error::new(
-        ErrorKind::Other,
-        format!("{}. Code: {}", err_text, result_code),
-    )
+pub(crate) trait ManagedHandle {
+    type Target;
+    fn as_immutable_ptr(&self) -> *mut Self::Target;
+    #[inline(always)]
+    fn as_mutable_ptr(&mut self) -> *mut Self::Target {
+        self.as_immutable_ptr()
+    }
+}
+
+impl<T> ManagedHandle for NonNull<T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn as_immutable_ptr(&self) -> *mut Self::Target {
+        self.as_ptr()
+    }
+}
+
+impl<T: ManagedHandle + CloseableHandle> ManagedHandle for AutoClose<T> {
+    type Target = T::Target;
+
+    #[inline(always)]
+    fn as_immutable_ptr(&self) -> *mut Self::Target {
+        self.entity.as_immutable_ptr()
+    }
 }
 
 pub(crate) trait CloseableHandle {
     fn close(&mut self);
 }
 
-impl CloseableHandle for c_void {
+impl CloseableHandle for NonNull<c_void> {
     fn close(&mut self) {
         unsafe {
-            CloseHandle(self);
+            CloseHandle(self.as_ptr());
         }
     }
 }
 
-pub(crate) struct AutoClose<T: 'static + CloseableHandle> {
-    entity: &'static mut T,
+pub(crate) struct AutoClose<T: CloseableHandle> {
+    entity: T,
 }
 
-impl<T: CloseableHandle> From<&'static mut T> for AutoClose<T> {
-    fn from(entity: &'static mut T) -> Self {
-        AutoClose {
-            entity,
-        }
+impl<T: CloseableHandle> From<T> for AutoClose<T> {
+    fn from(entity: T) -> Self {
+        AutoClose { entity }
     }
 }
 
@@ -180,51 +201,22 @@ impl<T: CloseableHandle> Drop for AutoClose<T> {
     }
 }
 
-impl<T: CloseableHandle> Deref for AutoClose<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.entity
-    }
-}
-
-impl<T: CloseableHandle> DerefMut for AutoClose<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.entity
-    }
-}
-
-impl<T: CloseableHandle> AsRef<T> for AutoClose<T> {
-    fn as_ref(&self) -> &T {
-        &self.entity
-    }
-}
-
-impl<T: CloseableHandle> AsMut<T> for AutoClose<T> {
-    fn as_mut(&mut self) -> &mut T {
-        &mut self.entity
-    }
-}
-
 pub(crate) struct GlobalLockedData {
     handle: HGLOBAL,
-    ptr: &'static mut c_void,
+    ptr: NonNull<c_void>,
 }
 
 impl GlobalLockedData {
-    pub(crate) fn lock(handle: *mut c_void) -> io::Result<Self> {
+    pub(crate) fn lock(handle: HGLOBAL) -> io::Result<Self> {
         unsafe {
             GlobalLock(handle)
-                .if_null_get_last_error()
-                .map(|ptr| GlobalLockedData {
-                    handle,
-                    ptr: ptr.as_mut().expect("Unexpected null from GlobalLock"),
-                })
+                .to_non_null_else_get_last_error()
+                .map(|ptr| GlobalLockedData { handle, ptr })
         }
     }
     #[inline(always)]
     pub(crate) fn ptr(&mut self) -> *mut c_void {
-        self.ptr
+        self.ptr.as_ptr()
     }
 }
 
@@ -234,4 +226,14 @@ impl Drop for GlobalLockedData {
             GlobalUnlock(self.handle);
         }
     }
+}
+
+pub(crate) fn custom_err_with_code<C>(err_text: &str, result_code: C) -> io::Error
+where
+    C: Display,
+{
+    io::Error::new(
+        ErrorKind::Other,
+        format!("{}. Code: {}", err_text, result_code),
+    )
 }

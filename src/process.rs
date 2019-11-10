@@ -2,32 +2,55 @@
 Processes, threads.
 */
 
-use std::borrow::BorrowMut;
-use std::io;
+use std::{
+    borrow::BorrowMut,
+    io,
+    ptr::NonNull,
+};
 
 use winapi::{
+    ctypes::c_void,
+    shared::minwindef::{
+        DWORD,
+        FALSE,
+        TRUE,
+    },
     um::{
         processthreadsapi::{
             GetCurrentProcess,
             GetCurrentThread,
+            GetProcessId,
+            GetThreadId,
+            OpenProcess,
+            OpenThread,
             SetPriorityClass,
             SetThreadPriority,
         },
+        tlhelp32::{
+            CreateToolhelp32Snapshot,
+            TH32CS_SNAPTHREAD,
+            Thread32First,
+            Thread32Next,
+            THREADENTRY32,
+        },
         winbase,
+        winnt::{
+            PROCESS_ALL_ACCESS,
+            THREAD_ALL_ACCESS,
+        },
     },
 };
-use winapi::ctypes::c_void;
-use winapi::shared::minwindef::{DWORD, FALSE, TRUE};
-use winapi::um::processthreadsapi::{GetProcessId, GetThreadId, OpenProcess, OpenThread};
-use winapi::um::tlhelp32::{CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, Thread32First, Thread32Next};
-use winapi::um::tlhelp32::THREADENTRY32;
-use winapi::um::winnt::{PROCESS_ALL_ACCESS, THREAD_ALL_ACCESS};
 
-use crate::internal::{AutoClose, WinErrCheckable, WinErrCheckableHandle};
+use crate::internal::{
+    AutoClose,
+    ManagedHandle,
+    RawHandle,
+    ReturnValue,
+};
 
 /// A Windows process
 pub struct Process {
-    handle: AutoClose<c_void>,
+    handle: AutoClose<NonNull<c_void>>,
 }
 
 impl Process {
@@ -35,9 +58,7 @@ impl Process {
     ///
     /// When transferred to a different process, it will point to that process when used from it.
     pub fn current() -> Self {
-        let pseudo_handle = unsafe {
-            GetCurrentProcess()
-        };
+        let pseudo_handle = unsafe { GetCurrentProcess() };
         Self {
             handle: pseudo_handle
                 .to_non_null()
@@ -47,14 +68,14 @@ impl Process {
     }
 
     pub fn from_id<I>(id: I) -> io::Result<Self>
-        where I: Into<ProcessId>
+    where
+        I: Into<ProcessId>,
     {
         let raw_handle = unsafe {
-            OpenProcess(PROCESS_ALL_ACCESS, FALSE, id.into().0)
-                .to_non_null_else_get_last_error()?
+            OpenProcess(PROCESS_ALL_ACCESS, FALSE, id.into().0).to_non_null_else_get_last_error()?
         };
         Ok(Self {
-            handle: raw_handle.into()
+            handle: raw_handle.into(),
         })
     }
 
@@ -64,7 +85,7 @@ impl Process {
     pub fn begin_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetPriorityClass(
-                self.handle.as_mut(),
+                self.as_mutable_ptr(),
                 winbase::PROCESS_MODE_BACKGROUND_BEGIN,
             )
             .if_null_get_last_error()?
@@ -75,11 +96,8 @@ impl Process {
     /// Ends background processing mode for the process.
     pub fn end_background_mode(&mut self) -> io::Result<()> {
         unsafe {
-            SetPriorityClass(
-                self.handle.as_mut(),
-                winbase::PROCESS_MODE_BACKGROUND_END,
-            )
-            .if_null_get_last_error()?
+            SetPriorityClass(self.as_mutable_ptr(), winbase::PROCESS_MODE_BACKGROUND_END)
+                .if_null_get_last_error()?
         };
         Ok(())
     }
@@ -96,14 +114,22 @@ impl Process {
     /// # std::result::Result::<(), std::io::Error>::Ok(())
     /// ```
     pub fn set_priority(&mut self, priority: ProcessPriority) -> io::Result<()> {
-        unsafe { SetPriorityClass(self.handle.as_mut(), priority as u32).if_null_get_last_error()? };
+        unsafe {
+            SetPriorityClass(self.as_mutable_ptr(), priority as u32).if_null_get_last_error()?
+        };
         Ok(())
     }
 
-    fn get_id(&mut self) -> DWORD {
-        unsafe {
-            GetProcessId(self.handle.as_mut())
-        }
+    fn get_id(&self) -> DWORD {
+        unsafe { GetProcessId(self.as_immutable_ptr()) }
+    }
+}
+
+impl ManagedHandle for Process {
+    type Target = c_void;
+
+    fn as_immutable_ptr(&self) -> *mut Self::Target {
+        self.handle.as_immutable_ptr()
     }
 }
 
@@ -111,7 +137,8 @@ impl Process {
 pub struct ProcessId(DWORD);
 
 impl<P> From<P> for ProcessId
-where P: BorrowMut<Process>
+where
+    P: BorrowMut<Process>,
 {
     fn from(mut process: P) -> Self {
         ProcessId(process.borrow_mut().get_id())
@@ -120,7 +147,7 @@ where P: BorrowMut<Process>
 
 /// A thread inside a Windows process
 pub struct Thread {
-    handle: AutoClose<c_void>,
+    handle: AutoClose<NonNull<c_void>>,
 }
 
 impl Thread {
@@ -138,14 +165,14 @@ impl Thread {
     }
 
     pub fn from_id<I>(id: I) -> io::Result<Self>
-        where I: Into<ThreadId>
+    where
+        I: Into<ThreadId>,
     {
         let raw_handle = unsafe {
-            OpenThread(THREAD_ALL_ACCESS, FALSE, id.into().0)
-                .to_non_null_else_get_last_error()?
+            OpenThread(THREAD_ALL_ACCESS, FALSE, id.into().0).to_non_null_else_get_last_error()?
         };
         Ok(Self {
-            handle: raw_handle.into()
+            handle: raw_handle.into(),
         })
     }
 
@@ -155,7 +182,7 @@ impl Thread {
     pub fn begin_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetThreadPriority(
-                self.handle.as_mut(),
+                self.as_mutable_ptr(),
                 winbase::THREAD_MODE_BACKGROUND_BEGIN as i32,
             )
             .if_null_get_last_error()?
@@ -167,7 +194,7 @@ impl Thread {
     pub fn end_background_mode(&mut self) -> io::Result<()> {
         unsafe {
             SetThreadPriority(
-                self.handle.as_mut(),
+                self.as_mutable_ptr(),
                 winbase::THREAD_MODE_BACKGROUND_END as i32,
             )
             .if_null_get_last_error()?
@@ -187,15 +214,23 @@ impl Thread {
     /// # std::result::Result::<(), std::io::Error>::Ok(())
     /// ```
     pub fn set_priority(&mut self, priority: ThreadPriority) -> Result<(), io::Error> {
-        unsafe { SetThreadPriority(self.handle.as_mut(), priority as i32).if_null_get_last_error()? };
+        unsafe {
+            SetThreadPriority(self.as_mutable_ptr(), priority as i32).if_null_get_last_error()?
+        };
         Ok(())
     }
 
     #[allow(dead_code)]
-    fn get_id(&mut self) -> DWORD {
-        unsafe {
-            GetThreadId(self.handle.as_mut())
-        }
+    fn get_id(&self) -> DWORD {
+        unsafe { GetThreadId(self.as_immutable_ptr()) }
+    }
+}
+
+impl ManagedHandle for Thread {
+    type Target = c_void;
+
+    fn as_immutable_ptr(&self) -> *mut Self::Target {
+        self.handle.as_immutable_ptr()
     }
 }
 
@@ -203,7 +238,8 @@ impl Thread {
 pub struct ThreadId(DWORD);
 
 impl<T> From<T> for ThreadId
-    where T: BorrowMut<Thread>
+where
+    T: BorrowMut<Thread>,
 {
     fn from(mut thread: T) -> Self {
         ThreadId(thread.borrow_mut().get_id())
@@ -227,18 +263,18 @@ impl ThreadInfo {
         let mut result: Vec<Self> = Vec::new();
         let mut snapshot: AutoClose<_> = unsafe {
             CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0).to_non_null_else_get_last_error()?
-        }.into();
+        }
+        .into();
 
         let mut thread_entry = get_empty_thread_entry();
         unsafe {
-            Thread32First(snapshot.as_mut(), &mut thread_entry).if_null_get_last_error()?;
+            Thread32First(snapshot.as_mutable_ptr(), &mut thread_entry).if_null_get_last_error()?;
         }
         result.push(Self::from_raw(thread_entry));
         loop {
             let mut thread_entry = get_empty_thread_entry();
-            let next_ret_val = unsafe {
-                Thread32Next(snapshot.as_mut(), &mut thread_entry)
-            };
+            let next_ret_val =
+                unsafe { Thread32Next(snapshot.as_mutable_ptr(), &mut thread_entry) };
             if next_ret_val == TRUE {
                 result.push(Self::from_raw(thread_entry));
             } else {
@@ -249,7 +285,8 @@ impl ThreadInfo {
     }
 
     pub fn all_process_threads<P>(process_id: P) -> io::Result<Vec<Self>>
-    where P: Into<ProcessId>
+    where
+        P: Into<ProcessId>,
     {
         let pid: ProcessId = process_id.into();
         let result = Self::all_threads()?
@@ -261,7 +298,7 @@ impl ThreadInfo {
 
     fn from_raw(raw_info: THREADENTRY32) -> Self {
         ThreadInfo {
-            raw_entry: raw_info
+            raw_entry: raw_info,
         }
     }
 

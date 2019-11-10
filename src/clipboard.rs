@@ -27,7 +27,7 @@ use winapi::{
 
 use crate::internal::{
     GlobalLockedData,
-    WinErrCheckable,
+    ReturnValue,
 };
 
 /// An opened Windows clipboard.
