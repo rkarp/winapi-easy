@@ -1,34 +1,28 @@
-use std::{
-    cell::Cell,
-    fmt::Display,
-    io::{
-        self,
-        ErrorKind,
-    },
-    panic::{
-        AssertUnwindSafe,
-        catch_unwind,
-    },
-    ptr,
-    ptr::NonNull,
+use std::cell::Cell;
+use std::fmt::Display;
+use std::io;
+use std::io::ErrorKind;
+use std::panic::{
+    catch_unwind,
+    AssertUnwindSafe,
 };
+use std::ptr;
+use std::ptr::NonNull;
 
-use winapi::{
-    ctypes::c_void,
-    shared::{
-        minwindef::HGLOBAL,
-        ntdef::HANDLE,
-        windef::HWND,
+use winapi::ctypes::c_void;
+use winapi::shared::{
+    minwindef::HGLOBAL,
+    ntdef::HANDLE,
+    windef::HWND,
+};
+use winapi::um::{
+    handleapi::{
+        CloseHandle,
+        INVALID_HANDLE_VALUE,
     },
-    um::{
-        handleapi::{
-            CloseHandle,
-            INVALID_HANDLE_VALUE,
-        },
-        winbase::{
-            GlobalLock,
-            GlobalUnlock,
-        },
+    winbase::{
+        GlobalLock,
+        GlobalUnlock,
     },
 };
 

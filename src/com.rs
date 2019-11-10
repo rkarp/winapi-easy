@@ -2,34 +2,26 @@
 Component Object Model (COM) initialization.
 */
 
-use std::{
-    cell::Cell,
-    io,
-    ptr,
-};
+use std::cell::Cell;
+use std::io;
+use std::ptr;
 
-use winapi::{
-    Interface,
-    shared::{
-        guiddef::IID,
-        winerror::{
-            S_FALSE,
-            S_OK,
-        },
-        wtypesbase::CLSCTX_INPROC_SERVER,
-    },
-    um::{
-        combaseapi::{
-            CoCreateInstance,
-            CoInitializeEx,
-        },
-        objbase::COINIT_MULTITHREADED,
-        shobjidl_core::{
-            CLSID_TaskbarList,
-            ITaskbarList3,
-        },
-    },
+use winapi::shared::guiddef::IID;
+use winapi::shared::winerror::{
+    S_FALSE,
+    S_OK,
 };
+use winapi::shared::wtypesbase::CLSCTX_INPROC_SERVER;
+use winapi::um::combaseapi::{
+    CoCreateInstance,
+    CoInitializeEx,
+};
+use winapi::um::objbase::COINIT_MULTITHREADED;
+use winapi::um::shobjidl_core::{
+    CLSID_TaskbarList,
+    ITaskbarList3,
+};
+use winapi::Interface;
 use wio::com::ComPtr;
 
 use crate::internal::custom_err_with_code;

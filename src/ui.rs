@@ -2,54 +2,42 @@
 UI components: Windows, taskbar.
 */
 
-use std::{
-    io,
-    ptr::NonNull,
-};
+use std::io;
+use std::ptr::NonNull;
 
-use winapi::{
-    shared::{
-        minwindef::{
-            LPARAM,
-            WPARAM,
-        },
-        windef::{
-            HWND__,
-        },
-        winerror::S_OK,
-    },
-    um::{
-        shobjidl_core::{
-            ITaskbarList3,
-            TBPF_ERROR,
-            TBPF_INDETERMINATE,
-            TBPF_NOPROGRESS,
-            TBPF_NORMAL,
-            TBPF_PAUSED,
-            TBPFLAG,
-        },
-        wincon::GetConsoleWindow,
-        winuser::{
-            SC_CLOSE,
-            SC_MAXIMIZE,
-            SC_MINIMIZE,
-            SC_MONITORPOWER,
-            SC_RESTORE,
-            SendMessageW,
-            WM_SYSCOMMAND
-        }
-    }
+use winapi::shared::minwindef::{
+    LPARAM,
+    WPARAM,
+};
+use winapi::shared::windef::HWND__;
+use winapi::shared::winerror::S_OK;
+use winapi::um::shobjidl_core::{
+    ITaskbarList3,
+    TBPFLAG,
+    TBPF_ERROR,
+    TBPF_INDETERMINATE,
+    TBPF_NOPROGRESS,
+    TBPF_NORMAL,
+    TBPF_PAUSED,
+};
+use winapi::um::wincon::GetConsoleWindow;
+use winapi::um::winuser::{
+    SendMessageW,
+    SC_CLOSE,
+    SC_MAXIMIZE,
+    SC_MINIMIZE,
+    SC_MONITORPOWER,
+    SC_RESTORE,
+    WM_SYSCOMMAND,
 };
 use wio::com::ComPtr;
 
-use crate::{
-    com::ComInterface,
-    internal::{
-        custom_err_with_code,
-        ManagedHandle,
-        RawHandle,
-        ReturnValue,
-    },
+use crate::com::ComInterface;
+use crate::internal::{
+    custom_err_with_code,
+    ManagedHandle,
+    RawHandle,
+    ReturnValue,
 };
 
 /// A (non-null) handle to a window.

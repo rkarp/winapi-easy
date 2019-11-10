@@ -2,48 +2,51 @@
 Processes, threads.
 */
 
-use std::{
-    io,
-    ptr::NonNull,
-};
+use std::io;
+use std::ptr::NonNull;
 
-use winapi::{
-    ctypes::c_void,
-    shared::minwindef::{
-        DWORD,
-        FALSE,
-        TRUE,
-    },
-    um::{
-        processthreadsapi::{
-            GetCurrentProcess,
-            GetCurrentThread,
-            GetProcessId,
-            GetThreadId,
-            OpenProcess,
-            OpenThread,
-            SetPriorityClass,
-            SetThreadPriority,
-        },
-        tlhelp32::{
-            CreateToolhelp32Snapshot,
-            TH32CS_SNAPTHREAD,
-            Thread32First,
-            Thread32Next,
-            THREADENTRY32,
-        },
-        winbase,
-        winnt::{
-            PROCESS_ALL_ACCESS,
-            THREAD_ALL_ACCESS,
-        },
-    },
+use winapi::ctypes::c_void;
+use winapi::shared::minwindef::{
+    BOOL,
+    LPARAM,
 };
-use winapi::shared::minwindef::{BOOL, LPARAM};
+use winapi::shared::minwindef::{
+    DWORD,
+    FALSE,
+    TRUE,
+};
 use winapi::shared::windef::HWND;
+use winapi::um::processthreadsapi::{
+    GetCurrentProcess,
+    GetCurrentThread,
+    GetProcessId,
+    GetThreadId,
+    OpenProcess,
+    OpenThread,
+    SetPriorityClass,
+    SetThreadPriority,
+};
+use winapi::um::tlhelp32::{
+    CreateToolhelp32Snapshot,
+    Thread32First,
+    Thread32Next,
+    TH32CS_SNAPTHREAD,
+    THREADENTRY32,
+};
+use winapi::um::winbase;
+use winapi::um::winnt::{
+    PROCESS_ALL_ACCESS,
+    THREAD_ALL_ACCESS,
+};
 use winapi::um::winuser::EnumThreadWindows;
 
-use crate::internal::{AutoClose, ManagedHandle, RawHandle, ReturnValue, sync_closure_to_callback2};
+use crate::internal::{
+    sync_closure_to_callback2,
+    AutoClose,
+    ManagedHandle,
+    RawHandle,
+    ReturnValue,
+};
 use crate::ui::Window;
 
 /// A Windows process
@@ -210,7 +213,6 @@ impl Thread {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn get_id(&self) -> ThreadId {
         let id = unsafe { GetThreadId(self.as_immutable_ptr()) };
         ThreadId(id)
@@ -238,13 +240,8 @@ impl ThreadId {
             result.push(Window::from_non_null(window_handle));
             TRUE
         };
-        let _ = unsafe {
-            EnumThreadWindows(
-                self.0,
-                Some(sync_closure_to_callback2(&mut callback)),
-                0,
-            )
-        };
+        let _ =
+            unsafe { EnumThreadWindows(self.0, Some(sync_closure_to_callback2(&mut callback)), 0) };
         result
     }
 }

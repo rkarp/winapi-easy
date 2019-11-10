@@ -2,27 +2,21 @@
 Clipboard access.
 */
 
-use std::{
-    ffi::OsString,
-    io,
-    os::windows::ffi::OsStringExt,
-    path::PathBuf,
-    ptr,
-};
+use std::ffi::OsString;
+use std::io;
+use std::os::windows::ffi::OsStringExt;
+use std::path::PathBuf;
+use std::ptr;
 
-use winapi::{
-    um::{
-        shellapi::{
-            DragQueryFileW,
-            HDROP,
-        },
-        winuser::{
-            CF_HDROP,
-            GetClipboardData,
-            CloseClipboard,
-            OpenClipboard,
-        },
-    },
+use winapi::um::shellapi::{
+    DragQueryFileW,
+    HDROP,
+};
+use winapi::um::winuser::{
+    CloseClipboard,
+    GetClipboardData,
+    OpenClipboard,
+    CF_HDROP,
 };
 
 use crate::internal::{
