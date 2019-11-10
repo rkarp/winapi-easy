@@ -64,6 +64,19 @@ use winapi::um::winuser::{
     VK_NUMPAD7,
     VK_NUMPAD8,
     VK_NUMPAD9,
+    VK_OEM_1,
+    VK_OEM_102,
+    VK_OEM_2,
+    VK_OEM_3,
+    VK_OEM_4,
+    VK_OEM_5,
+    VK_OEM_6,
+    VK_OEM_7,
+    VK_OEM_8,
+    VK_OEM_COMMA,
+    VK_OEM_MINUS,
+    VK_OEM_PERIOD,
+    VK_OEM_PLUS,
     VK_PAUSE,
     VK_PRIOR,
     VK_RETURN,
@@ -282,6 +295,55 @@ pub enum Key {
     F10 = VK_F10,
     F11 = VK_F11,
     F12 = VK_F12,
+    /// Used for miscellaneous characters; it can vary by keyboard.
+    ///
+    /// * For the US standard keyboard, the ';:' key
+    /// * For the German keyboard, the 'ü' key
+    Oem1 = VK_OEM_1,
+    /// For any country/region, the '+' key
+    OemPlus = VK_OEM_PLUS,
+    /// For any country/region, the ',' key
+    OemComma = VK_OEM_COMMA,
+    /// For any country/region, the '-' key
+    OemMinus = VK_OEM_MINUS,
+    /// For any country/region, the '.' key
+    OemPeriod = VK_OEM_PERIOD,
+    /// Used for miscellaneous characters; it can vary by keyboard.
+    ///
+    /// * For the US standard keyboard, the '/?' key
+    /// * For the German keyboard, the '#'' key
+    Oem2 = VK_OEM_2,
+    /// Used for miscellaneous characters; it can vary by keyboard.
+    ///
+    /// * For the US standard keyboard, the '`~' key
+    /// * For the German keyboard, the 'ö' key
+    Oem3 = VK_OEM_3,
+    /// Used for miscellaneous characters; it can vary by keyboard.
+    ///
+    /// * For the US standard keyboard, the '[{' key
+    /// * For the German keyboard, the 'ß?' key
+    Oem4 = VK_OEM_4,
+    /// Used for miscellaneous characters; it can vary by keyboard.
+    ///
+    /// * For the US standard keyboard, the '\|' key besides 'Enter'
+    /// * For the German keyboard, the '^°' key
+    Oem5 = VK_OEM_5,
+    /// Used for miscellaneous characters; it can vary by keyboard.
+    ///
+    /// * For the US standard keyboard, the ']}' key
+    /// * For the German keyboard, the '´`' key
+    Oem6 = VK_OEM_6,
+    /// Used for miscellaneous characters; it can vary by keyboard.
+    ///
+    /// * For the US standard keyboard, the 'single-quote/double-quote' key
+    /// * For the German keyboard, the 'ä' key
+    Oem7 = VK_OEM_7,
+    Oem8 = VK_OEM_8,
+    /// Used for miscellaneous characters; it can vary by keyboard.
+    ///
+    /// * For the US standard keyboard, the '\|' key besides the 'z' key
+    /// * For the German keyboard, the '<>' key
+    Oem102 = VK_OEM_102,
 }
 
 /// Modifier key than cannot be used by itself for hotkeys.
