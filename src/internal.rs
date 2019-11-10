@@ -1,9 +1,15 @@
 use std::{
+    cell::Cell,
     fmt::Display,
     io::{
         self,
         ErrorKind,
     },
+    panic::{
+        AssertUnwindSafe,
+        catch_unwind,
+    },
+    ptr,
     ptr::NonNull,
 };
 
@@ -224,6 +230,63 @@ impl Drop for GlobalLockedData {
     fn drop(&mut self) {
         unsafe {
             GlobalUnlock(self.handle);
+        }
+    }
+}
+
+#[cfg(any())]
+#[allow(dead_code)]
+pub(crate) fn unpack_closure<F, IN, OUT>(
+    closure: &mut F,
+) -> (LPARAM, extern "system" fn(IN, LPARAM) -> OUT)
+where
+    F: FnMut(IN) -> OUT,
+{
+    extern "system" fn trampoline<F, IN, OUT>(input: IN, raw_closure: LPARAM) -> OUT
+    where
+        F: FnMut(IN) -> OUT,
+    {
+        let raw_closure = raw_closure as *mut F;
+        let closure: &mut F = unsafe { &mut *raw_closure };
+        let call = || closure(input);
+        catch_unwind_or_abort(call)
+    }
+
+    (closure as *mut F as LPARAM, trampoline::<F, IN, OUT>)
+}
+
+pub(crate) fn sync_closure_to_callback2<F, IN1, IN2, OUT>(
+    closure: &mut F,
+) -> extern "system" fn(IN1, IN2) -> OUT
+where
+    F: FnMut(IN1, IN2) -> OUT,
+{
+    thread_local! {
+        static RAW_CLOSURE: Cell<*mut c_void> = Cell::new(ptr::null_mut());
+    }
+
+    extern "system" fn trampoline<F, IN1, IN2, OUT>(input1: IN1, input2: IN2) -> OUT
+    where
+        F: FnMut(IN1, IN2) -> OUT,
+    {
+        let call = move || {
+            let unwrapped_closure: *mut c_void = RAW_CLOSURE.with(|raw_closure| raw_closure.get());
+            let closure: &mut F = unsafe { &mut *(unwrapped_closure as *mut F) };
+            closure(input1, input2)
+        };
+        catch_unwind_or_abort(call)
+    }
+    RAW_CLOSURE.with(|cell| cell.set(closure as *mut F as *mut c_void));
+    trampoline::<F, IN1, IN2, OUT>
+}
+
+fn catch_unwind_or_abort<F: FnOnce() -> R, R>(f: F) -> R {
+    match catch_unwind(AssertUnwindSafe(f)) {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("{:?}", e);
+            // Abort is safe because it doesn't unwind.
+            std::process::abort();
         }
     }
 }

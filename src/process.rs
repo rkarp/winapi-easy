@@ -3,7 +3,6 @@ Processes, threads.
 */
 
 use std::{
-    borrow::BorrowMut,
     io,
     ptr::NonNull,
 };
@@ -40,13 +39,12 @@ use winapi::{
         },
     },
 };
+use winapi::shared::minwindef::{BOOL, LPARAM};
+use winapi::shared::windef::HWND;
+use winapi::um::winuser::EnumThreadWindows;
 
-use crate::internal::{
-    AutoClose,
-    ManagedHandle,
-    RawHandle,
-    ReturnValue,
-};
+use crate::internal::{AutoClose, ManagedHandle, RawHandle, ReturnValue, sync_closure_to_callback2};
+use crate::ui::Window;
 
 /// A Windows process
 pub struct Process {
@@ -120,8 +118,9 @@ impl Process {
         Ok(())
     }
 
-    fn get_id(&self) -> DWORD {
-        unsafe { GetProcessId(self.as_immutable_ptr()) }
+    pub fn get_id(&self) -> ProcessId {
+        let id = unsafe { GetProcessId(self.as_immutable_ptr()) };
+        ProcessId(id)
     }
 }
 
@@ -134,16 +133,7 @@ impl ManagedHandle for Process {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
-pub struct ProcessId(DWORD);
-
-impl<P> From<P> for ProcessId
-where
-    P: BorrowMut<Process>,
-{
-    fn from(mut process: P) -> Self {
-        ProcessId(process.borrow_mut().get_id())
-    }
-}
+pub struct ProcessId(pub(crate) DWORD);
 
 /// A thread inside a Windows process
 pub struct Thread {
@@ -221,8 +211,9 @@ impl Thread {
     }
 
     #[allow(dead_code)]
-    fn get_id(&self) -> DWORD {
-        unsafe { GetThreadId(self.as_immutable_ptr()) }
+    pub fn get_id(&self) -> ThreadId {
+        let id = unsafe { GetThreadId(self.as_immutable_ptr()) };
+        ThreadId(id)
     }
 }
 
@@ -235,14 +226,26 @@ impl ManagedHandle for Thread {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq)]
-pub struct ThreadId(DWORD);
+pub struct ThreadId(pub(crate) DWORD);
 
-impl<T> From<T> for ThreadId
-where
-    T: BorrowMut<Thread>,
-{
-    fn from(mut thread: T) -> Self {
-        ThreadId(thread.borrow_mut().get_id())
+impl ThreadId {
+    pub fn get_nonchild_windows(self: ThreadId) -> Vec<Window> {
+        let mut result: Vec<Window> = Vec::new();
+        let mut callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
+            let window_handle = handle
+                .to_non_null()
+                .expect("Window handle should not be null");
+            result.push(Window::from_non_null(window_handle));
+            TRUE
+        };
+        let _ = unsafe {
+            EnumThreadWindows(
+                self.0,
+                Some(sync_closure_to_callback2(&mut callback)),
+                0,
+            )
+        };
+        result
     }
 }
 
@@ -291,7 +294,7 @@ impl ThreadInfo {
         let pid: ProcessId = process_id.into();
         let result = Self::all_threads()?
             .into_iter()
-            .filter(|thread_info| thread_info.get_owner_process_id() == pid.0)
+            .filter(|thread_info| thread_info.get_owner_process_id() == pid)
             .collect();
         Ok(result)
     }
@@ -302,13 +305,12 @@ impl ThreadInfo {
         }
     }
 
-    #[allow(dead_code)]
-    fn get_thread_id(&self) -> DWORD {
-        self.raw_entry.th32ThreadID
+    pub fn get_thread_id(&self) -> ThreadId {
+        ThreadId(self.raw_entry.th32ThreadID)
     }
 
-    fn get_owner_process_id(&self) -> DWORD {
-        self.raw_entry.th32OwnerProcessID
+    pub fn get_owner_process_id(&self) -> ProcessId {
+        ProcessId(self.raw_entry.th32OwnerProcessID)
     }
 }
 
@@ -350,8 +352,19 @@ mod tests {
 
     #[test]
     fn get_all_process_threads() -> io::Result<()> {
-        let all_threads = ThreadInfo::all_process_threads(Process::current())?;
+        let all_threads = ThreadInfo::all_process_threads(Process::current().get_id())?;
         assert_gt!(all_threads.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn get_all_threads_and_windows() -> io::Result<()> {
+        let all_threads = ThreadInfo::all_threads()?;
+        let all_windows: Vec<Window> = all_threads
+            .into_iter()
+            .flat_map(|thread_info| thread_info.get_thread_id().get_nonchild_windows())
+            .collect();
+        assert_ge!(all_windows.len(), 0);
         Ok(())
     }
 }

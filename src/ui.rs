@@ -13,7 +13,9 @@ use winapi::{
             LPARAM,
             WPARAM,
         },
-        windef::HWND__,
+        windef::{
+            HWND__,
+        },
         winerror::S_OK,
     },
     um::{
@@ -34,9 +36,9 @@ use winapi::{
             SC_MONITORPOWER,
             SC_RESTORE,
             SendMessageW,
-            WM_SYSCOMMAND,
-        },
-    },
+            WM_SYSCOMMAND
+        }
+    }
 };
 use wio::com::ComPtr;
 
@@ -84,7 +86,7 @@ impl Window {
         })
     }
 
-    fn from_non_null(handle: NonNull<HWND__>) -> Self {
+    pub(crate) fn from_non_null(handle: NonNull<HWND__>) -> Self {
         Self(handle)
     }
 }
