@@ -3,9 +3,11 @@ UI components: Windows, taskbar.
 */
 
 use std::io;
+use std::io::ErrorKind;
 use std::ptr::NonNull;
 
 use winapi::shared::minwindef::{
+    DWORD,
     LPARAM,
     WPARAM,
 };
@@ -22,6 +24,12 @@ use winapi::um::shobjidl_core::{
 };
 use winapi::um::wincon::GetConsoleWindow;
 use winapi::um::winuser::{
+    GetDesktopWindow,
+    GetForegroundWindow,
+    GetWindowThreadProcessId,
+    IsWindow,
+    IsWindowVisible,
+    LockWorkStation,
     SendMessageW,
     SC_CLOSE,
     SC_MAXIMIZE,
@@ -39,11 +47,21 @@ use crate::internal::{
     RawHandle,
     ReturnValue,
 };
+use crate::process::{
+    ProcessId,
+    ThreadId,
+};
 
 /// A (non-null) handle to a window.
 ///
+/// **Note**: If the window was not created by this thread, then it is not guaranteed that
+/// the handle continues pointing to the same window because the underlying handles
+/// can get invalid or even recycled.
+///
 /// Implements neither `Copy` nor `Clone` to avoid concurrent mutable access to the same handle.
-pub struct Window(NonNull<HWND__>);
+pub struct Window {
+    handle: NonNull<HWND__>,
+}
 
 impl Window {
     /// Returns the console window associated with the current process, if there is one.
@@ -52,12 +70,49 @@ impl Window {
         handle.to_non_null().map(Self::from_non_null)
     }
 
+    pub fn get_foreground_window() -> Option<Self> {
+        let handle = unsafe { GetForegroundWindow() };
+        handle.to_non_null().map(Self::from_non_null)
+    }
+
+    pub fn get_desktop_window() -> io::Result<Self> {
+        let handle = unsafe { GetDesktopWindow() };
+        let handle = handle.to_non_null_else_error(|| ErrorKind::Other.into())?;
+        Ok(Self::from_non_null(handle))
+    }
+
+    /// Checks if the handle points to an existing window.
+    pub fn is_window(&self) -> bool {
+        let result = unsafe { IsWindow(self.as_immutable_ptr()) };
+        !result.is_null()
+    }
+
+    pub fn is_window_visible(&self) -> bool {
+        let result = unsafe { IsWindowVisible(self.as_immutable_ptr()) };
+        !result.is_null()
+    }
+
     pub fn action(&mut self, action: WindowAction) -> io::Result<()> {
         let result =
             unsafe { SendMessageW(self.as_mutable_ptr(), WM_SYSCOMMAND, action as WPARAM, 0) };
-        result.if_non_null_to_error(|| {
-            custom_err_with_code("Cannot set monitor power using window", result)
-        })
+        result.if_non_null_to_error(|| custom_err_with_code("Cannot perform window action", result))
+    }
+
+    #[inline(always)]
+    pub fn get_creator_thread_id(&self) -> ThreadId {
+        self.get_creator_thread_process_ids().0
+    }
+
+    #[inline(always)]
+    pub fn get_creator_process_id(&self) -> ProcessId {
+        self.get_creator_thread_process_ids().1
+    }
+
+    fn get_creator_thread_process_ids(&self) -> (ThreadId, ProcessId) {
+        let mut process_id: DWORD = 0;
+        let thread_id =
+            unsafe { GetWindowThreadProcessId(self.as_immutable_ptr(), &mut process_id) };
+        (ThreadId(thread_id), ProcessId(process_id))
     }
 
     pub fn set_monitor_power(&mut self, level: MonitorPower) -> io::Result<()> {
@@ -75,7 +130,7 @@ impl Window {
     }
 
     pub(crate) fn from_non_null(handle: NonNull<HWND__>) -> Self {
-        Self(handle)
+        Self { handle }
     }
 }
 
@@ -84,7 +139,7 @@ impl ManagedHandle for Window {
 
     #[inline(always)]
     fn as_immutable_ptr(&self) -> *mut Self::Target {
-        self.0.as_immutable_ptr()
+        self.handle.as_immutable_ptr()
     }
 }
 
@@ -213,4 +268,11 @@ impl Taskbar {
             }
         }
     }
+}
+
+pub fn lock_workstation() -> io::Result<()> {
+    // Because the function executes asynchronously, a nonzero return value indicates that the operation has been initiated.
+    // It does not indicate whether the workstation has been successfully locked.
+    let _ = unsafe { LockWorkStation().if_null_get_last_error()? };
+    Ok(())
 }
