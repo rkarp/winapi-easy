@@ -2,15 +2,22 @@
 UI components: Windows, taskbar.
 */
 
+use std::convert::TryInto;
 use std::io;
 use std::io::ErrorKind;
+use std::mem;
 use std::ptr::NonNull;
 
+use num_enum::{
+    IntoPrimitive,
+    TryFromPrimitive,
+};
 use winapi::shared::minwindef::{
     BOOL,
     DWORD,
     LPARAM,
     TRUE,
+    UINT,
     WPARAM,
 };
 use winapi::shared::ntdef::WCHAR;
@@ -33,6 +40,7 @@ use winapi::um::winuser::{
     EnumWindows,
     GetDesktopWindow,
     GetForegroundWindow,
+    GetWindowPlacement,
     GetWindowTextLengthW,
     GetWindowTextW,
     GetWindowThreadProcessId,
@@ -40,11 +48,23 @@ use winapi::um::winuser::{
     IsWindowVisible,
     LockWorkStation,
     SendMessageW,
+    SetWindowPlacement,
     SC_CLOSE,
     SC_MAXIMIZE,
     SC_MINIMIZE,
     SC_MONITORPOWER,
     SC_RESTORE,
+    SW_HIDE,
+    SW_MAXIMIZE,
+    SW_MINIMIZE,
+    SW_RESTORE,
+    SW_SHOW,
+    SW_SHOWMINIMIZED,
+    SW_SHOWMINNOACTIVE,
+    SW_SHOWNA,
+    SW_SHOWNOACTIVATE,
+    SW_SHOWNORMAL,
+    WINDOWPLACEMENT,
     WM_SYSCOMMAND,
 };
 use wio::com::ComPtr;
@@ -140,7 +160,27 @@ impl Window {
         unsafe {
             buffer.set_len(copied_chars as usize);
         }
-        buffer.into_string_lossy()
+        buffer.to_string_lossy()
+    }
+
+    pub fn get_placement(&self) -> io::Result<WindowPlacement> {
+        let mut raw_placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
+            length: mem::size_of::<WINDOWPLACEMENT>() as UINT,
+            ..Default::default()
+        };
+        unsafe {
+            GetWindowPlacement(self.as_immutable_ptr(), &mut raw_placement)
+                .if_null_get_last_error()?
+        };
+        Ok(WindowPlacement { raw_placement })
+    }
+
+    pub fn set_placement(&mut self, placement: &WindowPlacement) -> io::Result<()> {
+        unsafe {
+            SetWindowPlacement(self.as_mutable_ptr(), &placement.raw_placement)
+                .if_null_get_last_error()?
+        };
+        Ok(())
     }
 
     pub fn action(&mut self, action: WindowAction) -> io::Result<()> {
@@ -191,6 +231,37 @@ impl ManagedHandle for Window {
     #[inline(always)]
     fn as_immutable_ptr(&self) -> *mut Self::Target {
         self.handle.as_immutable_ptr()
+    }
+}
+
+#[derive(IntoPrimitive, TryFromPrimitive, Copy, Clone, Eq, PartialEq)]
+#[repr(i32)]
+pub enum WindowShowState {
+    Hide = SW_HIDE,
+    Maximize = SW_MAXIMIZE,
+    Minimize = SW_MINIMIZE,
+    Restore = SW_RESTORE,
+    Show = SW_SHOW,
+    ShowMinimized = SW_SHOWMINIMIZED,
+    ShowMinNoActivate = SW_SHOWMINNOACTIVE,
+    ShowNoActivate = SW_SHOWNA,
+    ShowNormalNoActivate = SW_SHOWNOACTIVATE,
+    ShowNormal = SW_SHOWNORMAL,
+}
+
+#[derive(Copy, Clone)]
+pub struct WindowPlacement {
+    raw_placement: WINDOWPLACEMENT,
+}
+
+impl WindowPlacement {
+    pub fn get_show_state(&self) -> Option<WindowShowState> {
+        (self.raw_placement.showCmd as i32).try_into().ok()
+    }
+
+    pub fn set_show_state(&mut self, state: WindowShowState) {
+        let state_i32: i32 = state.into();
+        self.raw_placement.showCmd = state_i32 as u32;
     }
 }
 

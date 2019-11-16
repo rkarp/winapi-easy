@@ -2,6 +2,7 @@ use std::ffi::{
     OsStr,
     OsString,
 };
+use std::iter::once;
 use std::mem;
 use std::os::windows::ffi::{
     OsStrExt,
@@ -13,11 +14,15 @@ use winapi::shared::ntdef::{
     WCHAR,
 };
 
-pub(crate) trait ToWideString: AsRef<OsStr> + Sized {}
+pub(crate) trait ToWideString: AsRef<OsStr> + Sized {
+    fn to_wide_string(&self) -> Vec<WCHAR> {
+        self.as_ref().encode_wide().chain(once(0)).collect()
+    }
+}
 impl<T: AsRef<OsStr> + Sized> ToWideString for T {}
 
 pub(crate) trait FromWideString: AsRef<[WCHAR]> + Sized {
-    fn into_string_lossy(self) -> String {
+    fn to_string_lossy(&self) -> String {
         let os_string: OsString = OsString::from_wide(self.as_ref());
         os_string.to_string_lossy().into_owned()
     }
