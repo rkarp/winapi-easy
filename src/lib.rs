@@ -11,3 +11,4 @@ pub mod process;
 pub mod ui;
 
 mod internal;
+mod string;

@@ -7,11 +7,17 @@ use std::io::ErrorKind;
 use std::ptr::NonNull;
 
 use winapi::shared::minwindef::{
+    BOOL,
     DWORD,
     LPARAM,
+    TRUE,
     WPARAM,
 };
-use winapi::shared::windef::HWND__;
+use winapi::shared::ntdef::WCHAR;
+use winapi::shared::windef::{
+    HWND,
+    HWND__,
+};
 use winapi::shared::winerror::S_OK;
 use winapi::um::shobjidl_core::{
     ITaskbarList3,
@@ -24,8 +30,11 @@ use winapi::um::shobjidl_core::{
 };
 use winapi::um::wincon::GetConsoleWindow;
 use winapi::um::winuser::{
+    EnumWindows,
     GetDesktopWindow,
     GetForegroundWindow,
+    GetWindowTextLengthW,
+    GetWindowTextW,
     GetWindowThreadProcessId,
     IsWindow,
     IsWindowVisible,
@@ -43,6 +52,7 @@ use wio::com::ComPtr;
 use crate::com::ComInterface;
 use crate::internal::{
     custom_err_with_code,
+    sync_closure_to_callback2,
     ManagedHandle,
     RawHandle,
     ReturnValue,
@@ -51,6 +61,7 @@ use crate::process::{
     ProcessId,
     ThreadId,
 };
+use crate::string::FromWideString;
 
 /// A (non-null) handle to a window.
 ///
@@ -81,15 +92,55 @@ impl Window {
         Ok(Self::from_non_null(handle))
     }
 
+    /// Returns all top-level windows of desktop apps.
+    pub fn get_toplevel_windows() -> io::Result<Vec<Self>> {
+        let mut result: Vec<Window> = Vec::new();
+        let mut callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
+            let window_handle = handle
+                .to_non_null()
+                .expect("Window handle should not be null");
+            result.push(Window::from_non_null(window_handle));
+            TRUE
+        };
+        let ret_val = unsafe { EnumWindows(Some(sync_closure_to_callback2(&mut callback)), 0) };
+        ret_val.if_null_get_last_error()?;
+        Ok(result)
+    }
+
     /// Checks if the handle points to an existing window.
     pub fn is_window(&self) -> bool {
         let result = unsafe { IsWindow(self.as_immutable_ptr()) };
         !result.is_null()
     }
 
-    pub fn is_window_visible(&self) -> bool {
+    pub fn is_visible(&self) -> bool {
         let result = unsafe { IsWindowVisible(self.as_immutable_ptr()) };
         !result.is_null()
+    }
+
+    pub fn get_caption_text(&self) -> String {
+        let required_length = unsafe { GetWindowTextLengthW(self.as_immutable_ptr()) };
+        let required_length = if required_length <= 0 {
+            return String::new();
+        } else {
+            1 + required_length
+        };
+
+        let mut buffer: Vec<WCHAR> = Vec::with_capacity(required_length as usize);
+        let copied_chars = unsafe {
+            GetWindowTextW(
+                self.as_immutable_ptr(),
+                buffer.as_mut_ptr(),
+                required_length,
+            )
+        };
+        if copied_chars <= 0 {
+            return String::new();
+        }
+        unsafe {
+            buffer.set_len(copied_chars as usize);
+        }
+        buffer.into_string_lossy()
     }
 
     pub fn action(&mut self, action: WindowAction) -> io::Result<()> {
@@ -275,4 +326,18 @@ pub fn lock_workstation() -> io::Result<()> {
     // It does not indicate whether the workstation has been successfully locked.
     let _ = unsafe { LockWorkStation().if_null_get_last_error()? };
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use more_asserts::*;
+
+    use super::*;
+
+    #[test]
+    fn get_toplevel_windows() -> io::Result<()> {
+        let all_windows = Window::get_toplevel_windows()?;
+        assert_gt!(all_windows.len(), 0);
+        Ok(())
+    }
 }

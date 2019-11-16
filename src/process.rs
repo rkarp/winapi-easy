@@ -361,7 +361,7 @@ mod tests {
             .into_iter()
             .flat_map(|thread_info| thread_info.get_thread_id().get_nonchild_windows())
             .collect();
-        assert_ge!(all_windows.len(), 0);
+        assert_gt!(all_windows.len(), 0);
         Ok(())
     }
 }
