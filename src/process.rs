@@ -8,10 +8,14 @@ use std::mem;
 use std::ptr::NonNull;
 
 use ntapi::ntpsapi::{
+    NtQueryInformationProcess,
     NtSetInformationProcess,
     ProcessIoPriority,
 };
-use num_enum::IntoPrimitive;
+use num_enum::{
+    IntoPrimitive,
+    TryFromPrimitive,
+};
 use winapi::ctypes::{
     c_int,
     c_void,
@@ -20,6 +24,7 @@ use winapi::shared::minwindef::{
     BOOL,
     DWORD,
     FALSE,
+    INT,
     LPARAM,
     TRUE,
     UINT,
@@ -133,6 +138,23 @@ impl Process {
             SetPriorityClass(self.as_mutable_ptr(), priority.into()).if_null_get_last_error()?
         };
         Ok(())
+    }
+
+    pub fn get_io_priority(&self) -> io::Result<Option<IoPriority>> {
+        let mut raw_io_priority: INT = 0;
+        let mut return_length: ULONG = 0;
+        let ret_val = unsafe {
+            NtQueryInformationProcess(
+                self.as_immutable_ptr(),
+                ProcessInformationClass::ProcessIoPriority.into(),
+                &mut raw_io_priority as *mut INT as *mut c_void,
+                mem::size_of::<INT>() as ULONG,
+                &mut return_length,
+            )
+        };
+        ret_val
+            .if_non_null_to_error(|| custom_err_with_code("Getting IO priority failed", ret_val))?;
+        Ok(IoPriority::try_from(raw_io_priority as UINT).ok())
     }
 
     pub fn set_io_priority(&mut self, io_priority: IoPriority) -> io::Result<()> {
@@ -379,7 +401,7 @@ pub enum ThreadPriority {
     TimeCritical = winbase::THREAD_PRIORITY_TIME_CRITICAL,
 }
 
-#[derive(IntoPrimitive, Clone, Copy, Eq, PartialEq, Debug)]
+#[derive(IntoPrimitive, TryFromPrimitive, Clone, Copy, Eq, PartialEq, Debug)]
 #[repr(u32)]
 pub enum IoPriority {
     VeryLow = 0,
@@ -421,6 +443,16 @@ mod tests {
             .flat_map(|thread_info| thread_info.get_thread_id().get_nonchild_windows())
             .collect();
         assert_gt!(all_windows.len(), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn set_get_io_priority() -> io::Result<()> {
+        let mut curr_process = Process::current();
+        let target_priority = IoPriority::Low;
+        curr_process.set_io_priority(target_priority)?;
+        let priority = curr_process.get_io_priority()?.unwrap();
+        assert_eq!(priority, target_priority);
         Ok(())
     }
 }
