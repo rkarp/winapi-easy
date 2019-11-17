@@ -1,0 +1,43 @@
+use std::convert::TryInto;
+use std::io;
+
+use winapi_easy::keyboard::{
+    GlobalHotkeySet,
+    Key,
+    Modifier,
+};
+use winapi_easy::process::{
+    IoPriority,
+    Process,
+};
+use winapi_easy::ui::Window;
+
+fn main() -> io::Result<()> {
+    #[derive(Copy, Clone)]
+    enum Action {
+        VeryLowPrio,
+        NormalPrio,
+    }
+    let hotkey_events = GlobalHotkeySet::new()
+        .add_global_hotkey(
+            Action::VeryLowPrio,
+            Modifier::Ctrl + Modifier::Alt + Key::PgDown,
+        )
+        .add_global_hotkey(
+            Action::NormalPrio,
+            Modifier::Ctrl + Modifier::Alt + Key::PgUp,
+        )
+        .listen_for_hotkeys()?;
+    for event in hotkey_events {
+        let prio_target: IoPriority = match event? {
+            Action::VeryLowPrio => IoPriority::VeryLow,
+            Action::NormalPrio => IoPriority::Normal,
+        };
+        let mut foreground_process: Process = Window::get_foreground_window()
+            .unwrap()
+            .get_creator_process_id()
+            .try_into()?;
+        foreground_process.set_io_priority(prio_target)?;
+    }
+    Ok(())
+}

@@ -2,18 +2,25 @@
 Processes, threads.
 */
 
+use std::convert::TryFrom;
 use std::io;
+use std::mem;
 use std::ptr::NonNull;
 
+use ntapi::ntpsapi::{
+    NtSetInformationProcess,
+    ProcessIoPriority,
+};
+use num_enum::IntoPrimitive;
 use winapi::ctypes::c_void;
 use winapi::shared::minwindef::{
     BOOL,
-    LPARAM,
-};
-use winapi::shared::minwindef::{
     DWORD,
     FALSE,
+    LPARAM,
     TRUE,
+    UINT,
+    ULONG,
 };
 use winapi::shared::windef::HWND;
 use winapi::um::processthreadsapi::{
@@ -41,6 +48,7 @@ use winapi::um::winnt::{
 use winapi::um::winuser::EnumThreadWindows;
 
 use crate::internal::{
+    custom_err_with_code,
     sync_closure_to_callback2,
     AutoClose,
     ManagedHandle,
@@ -124,9 +132,31 @@ impl Process {
         Ok(())
     }
 
+    pub fn set_io_priority(&mut self, io_priority: IoPriority) -> io::Result<()> {
+        let ret_val = unsafe {
+            NtSetInformationProcess(
+                self.as_mutable_ptr(),
+                ProcessInformationClass::ProcessIoPriority.into(),
+                &mut UINT::from(io_priority) as *mut UINT as *mut c_void,
+                mem::size_of::<UINT>() as ULONG,
+            )
+        };
+        ret_val
+            .if_non_null_to_error(|| custom_err_with_code("Setting IO priority failed", ret_val))?;
+        Ok(())
+    }
+
     pub fn get_id(&self) -> ProcessId {
         let id = unsafe { GetProcessId(self.as_immutable_ptr()) };
         ProcessId(id)
+    }
+}
+
+impl TryFrom<ProcessId> for Process {
+    type Error = io::Error;
+
+    fn try_from(value: ProcessId) -> Result<Self, Self::Error> {
+        Process::from_id(value)
     }
 }
 
@@ -222,6 +252,14 @@ impl Thread {
     }
 }
 
+impl TryFrom<ThreadId> for Thread {
+    type Error = io::Error;
+
+    fn try_from(value: ThreadId) -> Result<Self, Self::Error> {
+        Thread::from_id(value)
+    }
+}
+
 impl ManagedHandle for Thread {
     type Target = c_void;
 
@@ -314,7 +352,7 @@ impl ThreadInfo {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 #[repr(u32)]
 pub enum ProcessPriority {
     Idle = winbase::IDLE_PRIORITY_CLASS,
@@ -325,7 +363,7 @@ pub enum ProcessPriority {
     Realtime = winbase::REALTIME_PRIORITY_CLASS,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 #[repr(u32)]
 pub enum ThreadPriority {
     Idle = winbase::THREAD_PRIORITY_IDLE,
@@ -335,6 +373,20 @@ pub enum ThreadPriority {
     AboveNormal = winbase::THREAD_PRIORITY_ABOVE_NORMAL,
     Highest = winbase::THREAD_PRIORITY_HIGHEST,
     TimeCritical = winbase::THREAD_PRIORITY_TIME_CRITICAL,
+}
+
+#[derive(IntoPrimitive, Clone, Copy, Eq, PartialEq, Debug)]
+#[repr(u32)]
+pub enum IoPriority {
+    VeryLow = 0,
+    Low = 1,
+    Normal = 2,
+}
+
+#[derive(IntoPrimitive, Clone, Copy, Debug)]
+#[repr(u32)]
+enum ProcessInformationClass {
+    ProcessIoPriority = ProcessIoPriority,
 }
 
 #[cfg(test)]

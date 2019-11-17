@@ -16,6 +16,7 @@ categories = ["os::windows-apis", "api-bindings", "gui"]
 default-target = "x86_64-pc-windows-msvc"
 
 [dependencies]
+ntapi = "0.3.3"
 num_enum = "0.4.2"
 wio = "0.2.2"
 
