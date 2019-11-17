@@ -18,7 +18,6 @@ use winapi::shared::minwindef::{
     LPARAM,
     TRUE,
     UINT,
-    WPARAM,
 };
 use winapi::shared::ntdef::WCHAR;
 use winapi::shared::windef::{
@@ -28,7 +27,6 @@ use winapi::shared::windef::{
 use winapi::shared::winerror::S_OK;
 use winapi::um::shobjidl_core::{
     ITaskbarList3,
-    TBPFLAG,
     TBPF_ERROR,
     TBPF_INDETERMINATE,
     TBPF_NOPROGRESS,
@@ -185,7 +183,7 @@ impl Window {
 
     pub fn action(&mut self, action: WindowAction) -> io::Result<()> {
         let result =
-            unsafe { SendMessageW(self.as_mutable_ptr(), WM_SYSCOMMAND, action as WPARAM, 0) };
+            unsafe { SendMessageW(self.as_mutable_ptr(), WM_SYSCOMMAND, action.into(), 0) };
         result.if_non_null_to_error(|| custom_err_with_code("Cannot perform window action", result))
     }
 
@@ -212,7 +210,7 @@ impl Window {
                 self.as_mutable_ptr(),
                 WM_SYSCOMMAND,
                 SC_MONITORPOWER,
-                level as LPARAM,
+                level.into(),
             )
         };
         result.if_non_null_to_error(|| {
@@ -260,12 +258,11 @@ impl WindowPlacement {
     }
 
     pub fn set_show_state(&mut self, state: WindowShowState) {
-        let state_i32: i32 = state.into();
-        self.raw_placement.showCmd = state_i32 as u32;
+        self.raw_placement.showCmd = i32::from(state) as u32;
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
 #[repr(usize)]
 pub enum WindowAction {
     Close = SC_CLOSE,
@@ -274,7 +271,7 @@ pub enum WindowAction {
     Restore = SC_RESTORE,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
 #[repr(isize)]
 pub enum MonitorPower {
     On = -1,
@@ -283,7 +280,7 @@ pub enum MonitorPower {
 }
 
 /// Taskbar progress state animation type.
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
 #[repr(u32)]
 pub enum ProgressState {
     /// Stops displaying progress and returns the button to its normal state.
@@ -359,7 +356,7 @@ impl Taskbar {
         unsafe {
             match self
                 .taskbar_list_3
-                .SetProgressState(window.as_mutable_ptr(), state as TBPFLAG)
+                .SetProgressState(window.as_mutable_ptr(), state.into())
             {
                 S_OK => Ok(()),
                 err_code => Err(custom_err_with_code(

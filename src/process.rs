@@ -12,7 +12,10 @@ use ntapi::ntpsapi::{
     ProcessIoPriority,
 };
 use num_enum::IntoPrimitive;
-use winapi::ctypes::c_void;
+use winapi::ctypes::{
+    c_int,
+    c_void,
+};
 use winapi::shared::minwindef::{
     BOOL,
     DWORD,
@@ -127,7 +130,7 @@ impl Process {
     /// ```
     pub fn set_priority(&mut self, priority: ProcessPriority) -> io::Result<()> {
         unsafe {
-            SetPriorityClass(self.as_mutable_ptr(), priority as u32).if_null_get_last_error()?
+            SetPriorityClass(self.as_mutable_ptr(), priority.into()).if_null_get_last_error()?
         };
         Ok(())
     }
@@ -241,7 +244,8 @@ impl Thread {
     /// ```
     pub fn set_priority(&mut self, priority: ThreadPriority) -> Result<(), io::Error> {
         unsafe {
-            SetThreadPriority(self.as_mutable_ptr(), priority as i32).if_null_get_last_error()?
+            SetThreadPriority(self.as_mutable_ptr(), u32::from(priority) as c_int)
+                .if_null_get_last_error()?
         };
         Ok(())
     }
@@ -352,7 +356,7 @@ impl ThreadInfo {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[derive(IntoPrimitive, Clone, Copy, Eq, PartialEq, Debug)]
 #[repr(u32)]
 pub enum ProcessPriority {
     Idle = winbase::IDLE_PRIORITY_CLASS,
@@ -363,7 +367,7 @@ pub enum ProcessPriority {
     Realtime = winbase::REALTIME_PRIORITY_CLASS,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[derive(IntoPrimitive, Clone, Copy, Eq, PartialEq, Debug)]
 #[repr(u32)]
 pub enum ThreadPriority {
     Idle = winbase::THREAD_PRIORITY_IDLE,

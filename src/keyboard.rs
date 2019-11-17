@@ -13,6 +13,7 @@ use std::ptr;
 use std::sync::mpsc;
 use std::thread;
 
+use num_enum::IntoPrimitive;
 use winapi::ctypes::c_int;
 use winapi::shared::minwindef::UINT;
 use winapi::shared::minwindef::{
@@ -163,7 +164,7 @@ where
                                 ptr::null_mut(),
                                 curr_id,
                                 hotkey_def.key_combination.modifiers.0 as UINT,
-                                hotkey_def.key_combination.key as UINT,
+                                c_int::from(hotkey_def.key_combination.key) as UINT,
                             )
                             .if_null_get_last_error()
                         };
@@ -214,7 +215,7 @@ where
 }
 
 /// Non-modifier key usable for hotkeys.
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
 #[repr(i32)]
 pub enum Key {
     Backspace = VK_BACK,
@@ -347,7 +348,7 @@ pub enum Key {
 }
 
 /// Modifier key than cannot be used by itself for hotkeys.
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
 #[repr(isize)]
 pub enum Modifier {
     Alt = MOD_ALT,
@@ -379,7 +380,7 @@ impl KeyCombination {
 
 impl From<Modifier> for ModifierCombination {
     fn from(modifier: Modifier) -> Self {
-        ModifierCombination(modifier as LPARAM)
+        ModifierCombination(modifier.into())
     }
 }
 
