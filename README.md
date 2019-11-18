@@ -7,10 +7,17 @@ An ergonomic and safe interface to some winapi functionality.
 
 ## Features
 
-* Add global hotkeys and wait for events
-* Set current process / thread priority
-* Set current process / thread to background processing mode to lower disk access contention
+* Add global hotkeys
+* List threads
+* Set CPU priority for any process / thread
+* Set IO priority for any process
+* Set current process / thread to background processing mode (sets very low IO priority, lowering disk access contention)
+* Get toplevel windows
+* Get windows associated with a thread
+* Window actions like minimize
 * Set taskbar progress animation for the console window
+* Turn monitor off
+* Lock workstation
 * COM initialization
 * Get a file list from the Windows clipboard
 
