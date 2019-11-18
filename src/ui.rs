@@ -19,12 +19,16 @@ use winapi::shared::minwindef::{
     TRUE,
     UINT,
 };
-use winapi::shared::ntdef::WCHAR;
+use winapi::shared::ntdef::{
+    HRESULT,
+    WCHAR,
+};
 use winapi::shared::windef::{
     HWND,
     HWND__,
 };
 use winapi::shared::winerror::S_OK;
+use winapi::um::consoleapi::AllocConsole;
 use winapi::um::shobjidl_core::{
     ITaskbarList3,
     TBPF_ERROR,
@@ -353,18 +357,13 @@ impl Taskbar {
         window: &mut Window,
         state: ProgressState,
     ) -> io::Result<()> {
-        unsafe {
-            match self
-                .taskbar_list_3
+        let ret_val: HRESULT = unsafe {
+            self.taskbar_list_3
                 .SetProgressState(window.as_mutable_ptr(), state.into())
-            {
-                S_OK => Ok(()),
-                err_code => Err(custom_err_with_code(
-                    "Error setting progress state",
-                    err_code,
-                )),
-            }
-        }
+        };
+        ret_val.if_not_eq_to_error(S_OK, || {
+            custom_err_with_code("Error setting progress state", ret_val)
+        })
     }
 
     /// Sets the completion amount of the taskbar progress state animation.
@@ -374,19 +373,21 @@ impl Taskbar {
         completed: u64,
         total: u64,
     ) -> io::Result<()> {
-        unsafe {
-            match self
-                .taskbar_list_3
+        let ret_val: HRESULT = unsafe {
+            self.taskbar_list_3
                 .SetProgressValue(window.as_mutable_ptr(), completed, total)
-            {
-                S_OK => Ok(()),
-                err_code => Err(custom_err_with_code(
-                    "Error setting progress value",
-                    err_code,
-                )),
-            }
-        }
+        };
+        ret_val.if_not_eq_to_error(S_OK, || {
+            custom_err_with_code("Error setting progress value", ret_val)
+        })
     }
+}
+
+pub fn allocate_console() -> io::Result<()> {
+    unsafe {
+        AllocConsole().if_null_get_last_error()?;
+    }
+    Ok(())
 }
 
 pub fn lock_workstation() -> io::Result<()> {

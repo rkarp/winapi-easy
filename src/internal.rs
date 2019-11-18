@@ -34,12 +34,14 @@ impl<T> PtrLike for *mut T {
     type Target = T;
 }
 
-pub(crate) trait ReturnValue: Sized + Copy {
+pub(crate) trait ReturnValue: PartialEq + Sized + Copy {
+    const NULL_VALUE: Self;
+
     fn if_null_to_error(self, error_gen: impl FnOnce() -> io::Error) -> io::Result<Self> {
-        if self.is_null() {
-            Err(error_gen())
-        } else {
+        if !self.is_null() {
             Ok(self)
+        } else {
+            Err(error_gen())
         }
     }
 
@@ -48,47 +50,60 @@ pub(crate) trait ReturnValue: Sized + Copy {
         self.if_null_to_error(|| io::Error::last_os_error())
     }
 
+    #[inline]
     fn if_null_panic(self, msg: &'static str) -> Self {
-        if self.is_null() {
-            panic!(msg)
-        } else {
-            self
-        }
-    }
-
-    fn if_non_null_to_error(self, error_gen: impl FnOnce() -> io::Error) -> io::Result<()> {
         if !self.is_null() {
-            Err(error_gen())
+            self
         } else {
-            Ok(())
+            panic!(msg)
         }
     }
 
-    fn is_null(self) -> bool;
+    #[inline]
+    fn if_non_null_to_error(self, error_gen: impl FnOnce() -> io::Error) -> io::Result<()> {
+        if self.is_null() {
+            Ok(())
+        } else {
+            Err(error_gen())
+        }
+    }
+
+    #[inline]
+    fn if_not_eq_to_error<T>(
+        self,
+        must_equal: T,
+        error_gen: impl FnOnce() -> io::Error,
+    ) -> io::Result<()>
+    where
+        T: PartialEq<Self>,
+    {
+        if must_equal == self {
+            Ok(())
+        } else {
+            Err(error_gen())
+        }
+    }
+
+    fn is_null(self) -> bool {
+        self == Self::NULL_VALUE
+    }
 }
 
 impl ReturnValue for u32 {
-    #[inline]
-    fn is_null(self) -> bool {
-        self == 0
-    }
+    const NULL_VALUE: Self = 0;
 }
 
 impl ReturnValue for i32 {
-    #[inline]
-    fn is_null(self) -> bool {
-        self == 0
-    }
+    const NULL_VALUE: Self = 0;
 }
 
 impl ReturnValue for isize {
-    #[inline]
-    fn is_null(self) -> bool {
-        self == 0
-    }
+    const NULL_VALUE: Self = 0;
 }
 
 impl ReturnValue for HANDLE {
+    const NULL_VALUE: Self = ptr::null_mut();
+
     #[inline]
     fn is_null(self) -> bool {
         self.is_null()
