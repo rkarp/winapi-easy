@@ -14,7 +14,7 @@ An ergonomic and safe interface to some winapi functionality.
 * Set current process / thread to background processing mode (sets very low IO priority, lowering disk access contention)
 * Get toplevel windows
 * Get windows associated with a thread
-* Window actions like minimize
+* Window actions like minimize, flash
 * Set taskbar progress animation for the console window
 * Turn monitor off
 * Lock workstation

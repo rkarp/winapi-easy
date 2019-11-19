@@ -40,6 +40,7 @@ use winapi::um::shobjidl_core::{
 use winapi::um::wincon::GetConsoleWindow;
 use winapi::um::winuser::{
     EnumWindows,
+    FlashWindowEx,
     GetDesktopWindow,
     GetForegroundWindow,
     GetWindowPlacement,
@@ -51,6 +52,13 @@ use winapi::um::winuser::{
     LockWorkStation,
     SendMessageW,
     SetWindowPlacement,
+    FLASHWINFO,
+    FLASHW_ALL,
+    FLASHW_CAPTION,
+    FLASHW_STOP,
+    FLASHW_TIMER,
+    FLASHW_TIMERNOFG,
+    FLASHW_TRAY,
     SC_CLOSE,
     SC_MAXIMIZE,
     SC_MINIMIZE,
@@ -185,10 +193,48 @@ impl Window {
         Ok(())
     }
 
-    pub fn action(&mut self, action: WindowAction) -> io::Result<()> {
+    pub fn perform_action(&mut self, action: WindowAction) -> io::Result<()> {
         let result =
             unsafe { SendMessageW(self.as_mutable_ptr(), WM_SYSCOMMAND, action.into(), 0) };
         result.if_non_null_to_error(|| custom_err_with_code("Cannot perform window action", result))
+    }
+
+    #[inline(always)]
+    pub fn flash(&mut self) {
+        self.flash_custom(Default::default(), Default::default(), Default::default())
+    }
+
+    pub fn flash_custom(
+        &mut self,
+        element: FlashElement,
+        duration: FlashDuration,
+        frequency: FlashFrequency,
+    ) {
+        let mut raw_config: FLASHWINFO = Default::default();
+        raw_config.cbSize = mem::size_of::<FLASHWINFO>() as UINT;
+        raw_config.hwnd = self.as_mutable_ptr();
+        let (count, mut flags) = match duration {
+            FlashDuration::Count(count) => (count, 0),
+            FlashDuration::CountUntilForeground(count) => (count, FLASHW_TIMERNOFG),
+            FlashDuration::ContinuousUntilForeground => (0, FLASHW_TIMERNOFG),
+            FlashDuration::Continuous => (0, FLASHW_TIMER),
+        };
+        flags |= DWORD::from(element);
+        raw_config.dwFlags = flags;
+        raw_config.uCount = count;
+        raw_config.dwTimeout = match frequency {
+            FlashFrequency::DefaultCursorBlinkRate => 0,
+            FlashFrequency::Milliseconds(ms) => ms,
+        };
+        unsafe { FlashWindowEx(&mut raw_config) };
+    }
+
+    pub fn flash_stop(&mut self) {
+        let mut raw_config: FLASHWINFO = Default::default();
+        raw_config.cbSize = mem::size_of::<FLASHWINFO>() as UINT;
+        raw_config.hwnd = self.as_mutable_ptr();
+        raw_config.dwFlags = FLASHW_STOP;
+        unsafe { FlashWindowEx(&mut raw_config) };
     }
 
     #[inline(always)]
@@ -273,6 +319,46 @@ pub enum WindowAction {
     Maximize = SC_MAXIMIZE,
     Minimize = SC_MINIMIZE,
     Restore = SC_RESTORE,
+}
+
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
+#[repr(u32)]
+pub enum FlashElement {
+    Caption = FLASHW_CAPTION,
+    Taskbar = FLASHW_TRAY,
+    CaptionPlusTaskbar = FLASHW_ALL,
+}
+
+impl Default for FlashElement {
+    fn default() -> Self {
+        FlashElement::CaptionPlusTaskbar
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum FlashDuration {
+    Count(u32),
+    CountUntilForeground(u32),
+    ContinuousUntilForeground,
+    Continuous,
+}
+
+impl Default for FlashDuration {
+    fn default() -> Self {
+        FlashDuration::CountUntilForeground(5)
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub enum FlashFrequency {
+    DefaultCursorBlinkRate,
+    Milliseconds(u32),
+}
+
+impl Default for FlashFrequency {
+    fn default() -> Self {
+        FlashFrequency::DefaultCursorBlinkRate
+    }
 }
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
