@@ -16,7 +16,7 @@ use winapi::um::combaseapi::{
     CoCreateInstance,
     CoInitializeEx,
 };
-use winapi::um::objbase::COINIT_MULTITHREADED;
+use winapi::um::objbase::COINIT_APARTMENTTHREADED;
 use winapi::um::shobjidl_core::{
     CLSID_TaskbarList,
     ITaskbarList3,
@@ -33,7 +33,7 @@ pub fn initialize_com() -> io::Result<()> {
     }
     COM_INITIALIZED.with(|initialized| {
         if !initialized.get() {
-            let init_result = unsafe { CoInitializeEx(ptr::null_mut(), COINIT_MULTITHREADED) };
+            let init_result = unsafe { CoInitializeEx(ptr::null_mut(), COINIT_APARTMENTTHREADED) };
             match init_result {
                 S_OK | S_FALSE => {
                     initialized.set(true);
