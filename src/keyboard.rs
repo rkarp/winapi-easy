@@ -126,6 +126,11 @@ struct HotkeyDef<ID> {
 #[derive(Clone)]
 pub struct GlobalHotkeySet<ID> {
     hotkey_defs: Vec<HotkeyDef<ID>>,
+    hotkeys_active: bool,
+}
+
+impl<ID> GlobalHotkeySet<ID> {
+    const MIN_ID: c_int = 1;
 }
 
 impl<ID> GlobalHotkeySet<ID>
@@ -135,6 +140,7 @@ where
     pub fn new() -> Self {
         Self {
             hotkey_defs: Vec::new(),
+            hotkeys_active: false,
         }
     }
 
@@ -150,11 +156,10 @@ where
         self
     }
 
-    pub fn listen_for_hotkeys(self) -> io::Result<impl IntoIterator<Item = io::Result<ID>>> {
+    pub fn listen_for_hotkeys(mut self) -> io::Result<impl IntoIterator<Item = io::Result<ID>>> {
         let (tx_hotkey, rx_hotkey) = mpsc::channel();
         thread::spawn(move || {
-            const MIN_ID: c_int = 1;
-            let ids = || MIN_ID..;
+            let ids = || Self::MIN_ID..;
             let register_result: io::Result<()> =
                 ids()
                     .zip(&self.hotkey_defs)
@@ -171,7 +176,7 @@ where
                         if result.is_ok() {
                             Ok(())
                         } else {
-                            (curr_id..=MIN_ID).for_each(|id| unsafe {
+                            (Self::MIN_ID..=curr_id - 1).rev().for_each(|id| unsafe {
                                 UnregisterHotKey(ptr::null_mut(), id)
                                     .if_null_panic("Cannot unregister hotkey");
                             });
@@ -181,6 +186,7 @@ where
             if let Err(err) = register_result {
                 tx_hotkey.send(Err(err)).unwrap_or(());
             } else {
+                self.hotkeys_active = true;
                 let id_assocs: HashMap<INT, ID> = ids()
                     .zip(self.hotkey_defs.iter().map(|def| def.user_id))
                     .collect();
@@ -211,6 +217,19 @@ where
             }
         });
         Ok(rx_hotkey)
+    }
+}
+
+impl<ID> Drop for GlobalHotkeySet<ID> {
+    fn drop(&mut self) {
+        if self.hotkeys_active {
+            for id in (Self::MIN_ID..).take(self.hotkey_defs.len()) {
+                unsafe {
+                    UnregisterHotKey(ptr::null_mut(), id)
+                        .if_null_panic("Cannot unregister hotkey");
+                }
+            }
+        }
     }
 }
 
