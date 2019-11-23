@@ -26,6 +26,8 @@ use winapi::shared::ntdef::{
 use winapi::shared::windef::{
     HWND,
     HWND__,
+    POINT,
+    RECT,
 };
 use winapi::shared::winerror::S_OK;
 use winapi::um::consoleapi::AllocConsole;
@@ -41,6 +43,7 @@ use winapi::um::wincon::GetConsoleWindow;
 use winapi::um::winuser::{
     EnumWindows,
     FlashWindowEx,
+    GetClassNameW,
     GetDesktopWindow,
     GetForegroundWindow,
     GetWindowPlacement,
@@ -76,6 +79,7 @@ use winapi::um::winuser::{
     SW_SHOWNORMAL,
     WINDOWPLACEMENT,
     WM_SYSCOMMAND,
+    WPF_SETMINPOSITION,
 };
 use wio::com::ComPtr;
 
@@ -92,6 +96,8 @@ use crate::process::{
     ThreadId,
 };
 use crate::string::FromWideString;
+
+const MAX_CLASS_NAME_CHARS: usize = 256;
 
 /// A (non-null) handle to a window.
 ///
@@ -193,6 +199,23 @@ impl Window {
         Ok(())
     }
 
+    pub fn get_class_name(&self) -> io::Result<String> {
+        const BUFFER_SIZE: usize = MAX_CLASS_NAME_CHARS + 1;
+        let mut buffer: Vec<WCHAR> = Vec::with_capacity(BUFFER_SIZE);
+        let chars_copied = unsafe {
+            GetClassNameW(
+                self.as_immutable_ptr(),
+                buffer.as_mut_ptr(),
+                BUFFER_SIZE as i32,
+            )
+        };
+        chars_copied.if_null_get_last_error()?;
+        unsafe {
+            buffer.set_len(chars_copied as usize);
+        }
+        Ok(buffer.to_string_lossy())
+    }
+
     pub fn perform_action(&mut self, action: WindowAction) -> io::Result<()> {
         let result =
             unsafe { SendMessageW(self.as_mutable_ptr(), WM_SYSCOMMAND, action.into(), 0) };
@@ -271,6 +294,10 @@ impl Window {
     pub(crate) fn from_non_null(handle: NonNull<HWND__>) -> Self {
         Self { handle }
     }
+
+    pub fn into_raw_handle(self) -> NonNull<HWND__> {
+        self.handle
+    }
 }
 
 impl ManagedHandle for Window {
@@ -282,7 +309,7 @@ impl ManagedHandle for Window {
     }
 }
 
-#[derive(IntoPrimitive, TryFromPrimitive, Copy, Clone, Eq, PartialEq)]
+#[derive(IntoPrimitive, TryFromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(i32)]
 pub enum WindowShowState {
     Hide = SW_HIDE,
@@ -297,6 +324,9 @@ pub enum WindowShowState {
     ShowNormal = SW_SHOWNORMAL,
 }
 
+pub type Point = POINT;
+pub type Rectangle = RECT;
+
 #[derive(Copy, Clone)]
 pub struct WindowPlacement {
     raw_placement: WINDOWPLACEMENT,
@@ -309,6 +339,31 @@ impl WindowPlacement {
 
     pub fn set_show_state(&mut self, state: WindowShowState) {
         self.raw_placement.showCmd = i32::from(state) as u32;
+    }
+
+    pub fn get_minimized_position(&self) -> Point {
+        self.raw_placement.ptMinPosition
+    }
+
+    pub fn set_minimized_position(&mut self, coords: Point) {
+        self.raw_placement.ptMinPosition = coords;
+        self.raw_placement.flags |= WPF_SETMINPOSITION;
+    }
+
+    pub fn get_maximized_position(&self) -> Point {
+        self.raw_placement.ptMaxPosition
+    }
+
+    pub fn set_maximized_position(&mut self, coords: Point) {
+        self.raw_placement.ptMaxPosition = coords;
+    }
+
+    pub fn get_restored_position(&self) -> Rectangle {
+        self.raw_placement.rcNormalPosition
+    }
+
+    pub fn set_restored_position(&mut self, rectangle: Rectangle) {
+        self.raw_placement.rcNormalPosition = rectangle;
     }
 }
 
@@ -370,7 +425,7 @@ pub enum MonitorPower {
 }
 
 /// Taskbar progress state animation type.
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u32)]
 pub enum ProgressState {
     /// Stops displaying progress and returns the button to its normal state.
