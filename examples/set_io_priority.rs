@@ -10,7 +10,7 @@ use winapi_easy::process::{
     IoPriority,
     Process,
 };
-use winapi_easy::ui::Window;
+use winapi_easy::ui::WindowHandle;
 
 fn main() -> io::Result<()> {
     #[derive(Copy, Clone)]
@@ -33,7 +33,7 @@ fn main() -> io::Result<()> {
             Action::VeryLowPrio => IoPriority::VeryLow,
             Action::NormalPrio => IoPriority::Normal,
         };
-        let mut foreground_process: Process = Window::get_foreground_window()
+        let mut foreground_process: Process = WindowHandle::get_foreground_window()
             .unwrap()
             .get_creator_process_id()
             .try_into()?;

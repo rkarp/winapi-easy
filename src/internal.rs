@@ -1,4 +1,5 @@
 use std::cell::Cell;
+use std::ffi;
 use std::fmt::Display;
 use std::io;
 use std::io::ErrorKind;
@@ -10,20 +11,19 @@ use std::ptr;
 use std::ptr::NonNull;
 
 use winapi::ctypes::c_void;
-use winapi::shared::{
-    minwindef::HGLOBAL,
-    ntdef::HANDLE,
-    windef::HWND,
+use winapi::shared::minwindef::{
+    HGLOBAL,
+    HMODULE,
 };
-use winapi::um::{
-    handleapi::{
-        CloseHandle,
-        INVALID_HANDLE_VALUE,
-    },
-    winbase::{
-        GlobalLock,
-        GlobalUnlock,
-    },
+use winapi::shared::ntdef::HANDLE;
+use winapi::shared::windef::HWND;
+use winapi::um::handleapi::{
+    CloseHandle,
+    INVALID_HANDLE_VALUE,
+};
+use winapi::um::winbase::{
+    GlobalLock,
+    GlobalUnlock,
 };
 
 pub(crate) trait PtrLike: Sized + Copy {
@@ -69,6 +69,22 @@ pub(crate) trait ReturnValue: PartialEq + Sized + Copy {
     }
 
     #[inline]
+    fn if_eq_to_error<T>(
+        self,
+        should_not_equal: T,
+        error_gen: impl FnOnce() -> io::Error,
+    ) -> io::Result<()>
+    where
+        T: PartialEq<Self>,
+    {
+        if should_not_equal != self {
+            Ok(())
+        } else {
+            Err(error_gen())
+        }
+    }
+
+    #[inline]
     fn if_not_eq_to_error<T>(
         self,
         must_equal: T,
@@ -87,6 +103,10 @@ pub(crate) trait ReturnValue: PartialEq + Sized + Copy {
     fn is_null(self) -> bool {
         self == Self::NULL_VALUE
     }
+}
+
+impl ReturnValue for u16 {
+    const NULL_VALUE: Self = 0;
 }
 
 impl ReturnValue for u32 {
@@ -160,6 +180,8 @@ impl RawHandle for HANDLE {
 }
 
 impl RawHandle for HWND {}
+
+impl RawHandle for HMODULE {}
 
 pub(crate) trait ManagedHandle {
     type Target;
@@ -279,17 +301,18 @@ where
         F: FnMut(IN1, IN2) -> OUT,
     {
         let call = move || {
-            let unwrapped_closure: *mut c_void = RAW_CLOSURE.with(|raw_closure| raw_closure.get());
+            let unwrapped_closure: *mut ffi::c_void =
+                RAW_CLOSURE.with(|raw_closure| raw_closure.get());
             let closure: &mut F = &mut *(unwrapped_closure as *mut F);
             closure(input1, input2)
         };
         catch_unwind_or_abort(call)
     }
-    RAW_CLOSURE.with(|cell| cell.set(closure as *mut F as *mut c_void));
+    RAW_CLOSURE.with(|cell| cell.set(closure as *mut F as *mut ffi::c_void));
     trampoline::<F, IN1, IN2, OUT>
 }
 
-fn catch_unwind_or_abort<F: FnOnce() -> R, R>(f: F) -> R {
+pub(crate) fn catch_unwind_or_abort<F: FnOnce() -> R, R>(f: F) -> R {
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(result) => result,
         Err(e) => {

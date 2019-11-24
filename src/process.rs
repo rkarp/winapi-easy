@@ -5,6 +5,7 @@ Processes, threads.
 use std::convert::TryFrom;
 use std::io;
 use std::mem;
+use std::ptr;
 use std::ptr::NonNull;
 
 use ntapi::ntpsapi::{
@@ -24,6 +25,8 @@ use winapi::shared::minwindef::{
     BOOL,
     DWORD,
     FALSE,
+    HINSTANCE__,
+    HMODULE,
     INT,
     LPARAM,
     TRUE,
@@ -31,6 +34,7 @@ use winapi::shared::minwindef::{
     ULONG,
 };
 use winapi::shared::windef::HWND;
+use winapi::um::libloaderapi::GetModuleHandleExW;
 use winapi::um::processthreadsapi::{
     GetCurrentProcess,
     GetCurrentThread,
@@ -63,7 +67,7 @@ use crate::internal::{
     RawHandle,
     ReturnValue,
 };
-use crate::ui::Window;
+use crate::ui::WindowHandle;
 
 /// A Windows process
 pub struct Process {
@@ -298,13 +302,13 @@ impl ManagedHandle for Thread {
 pub struct ThreadId(pub(crate) DWORD);
 
 impl ThreadId {
-    pub fn get_nonchild_windows(self: ThreadId) -> Vec<Window> {
-        let mut result: Vec<Window> = Vec::new();
+    pub fn get_nonchild_windows(self: ThreadId) -> Vec<WindowHandle> {
+        let mut result: Vec<WindowHandle> = Vec::new();
         let mut callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
             let window_handle = handle
                 .to_non_null()
                 .expect("Window handle should not be null");
-            result.push(Window::from_non_null(window_handle));
+            result.push(WindowHandle::from_non_null(window_handle));
             TRUE
         };
         let _ =
@@ -415,6 +419,29 @@ enum ProcessInformationClass {
     ProcessIoPriority = ProcessIoPriority,
 }
 
+pub struct ModuleHandle {
+    raw_handle: NonNull<HINSTANCE__>,
+}
+
+impl ModuleHandle {
+    pub fn get_current() -> io::Result<Self> {
+        let raw_handle = unsafe {
+            let mut h_module: HMODULE = ptr::null_mut();
+            GetModuleHandleExW(0, ptr::null_mut(), &mut h_module);
+            h_module.to_non_null_else_get_last_error()?
+        };
+        Ok(ModuleHandle { raw_handle })
+    }
+}
+
+impl ManagedHandle for ModuleHandle {
+    type Target = HINSTANCE__;
+
+    fn as_immutable_ptr(&self) -> *mut Self::Target {
+        self.raw_handle.as_immutable_ptr()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use more_asserts::*;
@@ -438,7 +465,7 @@ mod tests {
     #[test]
     fn get_all_threads_and_windows() -> io::Result<()> {
         let all_threads = ThreadInfo::all_threads()?;
-        let all_windows: Vec<Window> = all_threads
+        let all_windows: Vec<WindowHandle> = all_threads
             .into_iter()
             .flat_map(|thread_info| thread_info.get_thread_id().get_nonchild_windows())
             .collect();

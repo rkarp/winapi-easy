@@ -1,8 +1,8 @@
 use std::io;
-use winapi_easy::ui::Window;
+use winapi_easy::ui::WindowHandle;
 
 fn main() -> io::Result<()> {
-    let maybe_window = Window::get_console_window();
+    let maybe_window = WindowHandle::get_console_window();
     if let Some(mut window) = maybe_window {
         window.flash();
     } else {

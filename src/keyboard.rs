@@ -225,8 +225,7 @@ impl<ID> Drop for GlobalHotkeySet<ID> {
         if self.hotkeys_active {
             for id in (Self::MIN_ID..).take(self.hotkey_defs.len()) {
                 unsafe {
-                    UnregisterHotKey(ptr::null_mut(), id)
-                        .if_null_panic("Cannot unregister hotkey");
+                    UnregisterHotKey(ptr::null_mut(), id).if_null_panic("Cannot unregister hotkey");
                 }
             }
         }

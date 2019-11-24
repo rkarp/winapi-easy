@@ -1,7 +1,7 @@
 use std::io;
 use winapi_easy::ui::{
     Rectangle,
-    Window,
+    WindowHandle,
     WindowShowState,
 };
 
@@ -14,7 +14,7 @@ struct WindowInfo {
 }
 
 fn main() -> io::Result<()> {
-    Window::get_toplevel_windows()?
+    WindowHandle::get_toplevel_windows()?
         .into_iter()
         .filter(|window| window.is_visible())
         .map(|window| {

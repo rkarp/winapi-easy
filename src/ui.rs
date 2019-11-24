@@ -5,14 +5,19 @@ UI components: Windows, taskbar.
 use std::convert::TryInto;
 use std::io;
 use std::io::ErrorKind;
+use std::marker::PhantomData;
 use std::mem;
+use std::ptr;
 use std::ptr::NonNull;
 
 use num_enum::{
     IntoPrimitive,
     TryFromPrimitive,
 };
+use winapi::ctypes::c_void;
+use winapi::shared::basetsd::LONG_PTR;
 use winapi::shared::minwindef::{
+    ATOM,
     BOOL,
     DWORD,
     LPARAM,
@@ -24,6 +29,8 @@ use winapi::shared::ntdef::{
     WCHAR,
 };
 use winapi::shared::windef::{
+    HBRUSH,
+    HCURSOR,
     HWND,
     HWND__,
     POINT,
@@ -41,6 +48,8 @@ use winapi::um::shobjidl_core::{
 };
 use winapi::um::wincon::GetConsoleWindow;
 use winapi::um::winuser::{
+    CreateWindowExW,
+    DestroyWindow,
     EnumWindows,
     FlashWindowEx,
     GetClassNameW,
@@ -52,9 +61,14 @@ use winapi::um::winuser::{
     GetWindowThreadProcessId,
     IsWindow,
     IsWindowVisible,
+    LoadImageW,
     LockWorkStation,
+    RegisterClassExW,
     SendMessageW,
+    SetWindowLongPtrW,
     SetWindowPlacement,
+    COLOR_BACKGROUND,
+    CW_USEDEFAULT,
     FLASHWINFO,
     FLASHW_ALL,
     FLASHW_CAPTION,
@@ -62,6 +76,11 @@ use winapi::um::winuser::{
     FLASHW_TIMER,
     FLASHW_TIMERNOFG,
     FLASHW_TRAY,
+    GWLP_USERDATA,
+    IMAGE_CURSOR,
+    LR_DEFAULTSIZE,
+    LR_SHARED,
+    MAKEINTRESOURCEW,
     SC_CLOSE,
     SC_MAXIMIZE,
     SC_MINIMIZE,
@@ -79,7 +98,9 @@ use winapi::um::winuser::{
     SW_SHOWNORMAL,
     WINDOWPLACEMENT,
     WM_SYSCOMMAND,
+    WNDCLASSEXW,
     WPF_SETMINPOSITION,
+    WS_OVERLAPPEDWINDOW,
 };
 use wio::com::ComPtr;
 
@@ -95,9 +116,18 @@ use crate::process::{
     ProcessId,
     ThreadId,
 };
-use crate::string::FromWideString;
+use crate::string::{
+    FromWideString,
+    ToWideString,
+};
+use crate::ui::message::{
+    generic_window_proc,
+    WindowMessageListener,
+};
 
-const MAX_CLASS_NAME_CHARS: usize = 256;
+pub mod message;
+
+const MAX_WINDOW_CLASS_NAME_CHARS: usize = 256;
 
 /// A (non-null) handle to a window.
 ///
@@ -106,11 +136,11 @@ const MAX_CLASS_NAME_CHARS: usize = 256;
 /// can get invalid or even recycled.
 ///
 /// Implements neither `Copy` nor `Clone` to avoid concurrent mutable access to the same handle.
-pub struct Window {
+pub struct WindowHandle {
     handle: NonNull<HWND__>,
 }
 
-impl Window {
+impl WindowHandle {
     /// Returns the console window associated with the current process, if there is one.
     pub fn get_console_window() -> Option<Self> {
         let handle = unsafe { GetConsoleWindow() };
@@ -130,12 +160,12 @@ impl Window {
 
     /// Returns all top-level windows of desktop apps.
     pub fn get_toplevel_windows() -> io::Result<Vec<Self>> {
-        let mut result: Vec<Window> = Vec::new();
+        let mut result: Vec<WindowHandle> = Vec::new();
         let mut callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
             let window_handle = handle
                 .to_non_null()
                 .expect("Window handle should not be null");
-            result.push(Window::from_non_null(window_handle));
+            result.push(WindowHandle::from_non_null(window_handle));
             TRUE
         };
         let ret_val = unsafe { EnumWindows(Some(sync_closure_to_callback2(&mut callback)), 0) };
@@ -200,7 +230,7 @@ impl Window {
     }
 
     pub fn get_class_name(&self) -> io::Result<String> {
-        const BUFFER_SIZE: usize = MAX_CLASS_NAME_CHARS + 1;
+        const BUFFER_SIZE: usize = MAX_WINDOW_CLASS_NAME_CHARS + 1;
         let mut buffer: Vec<WCHAR> = Vec::with_capacity(BUFFER_SIZE);
         let chars_copied = unsafe {
             GetClassNameW(
@@ -300,12 +330,123 @@ impl Window {
     }
 }
 
-impl ManagedHandle for Window {
+impl ManagedHandle for WindowHandle {
     type Target = HWND__;
 
     #[inline(always)]
     fn as_immutable_ptr(&self) -> *mut Self::Target {
         self.handle.as_immutable_ptr()
+    }
+}
+
+pub struct WindowClass<WML> {
+    atom: ATOM,
+    _p: PhantomData<WML>,
+}
+
+impl<WML: WindowMessageListener> WindowClass<WML> {
+    pub fn register_new(class_name: &str) -> io::Result<Self> {
+        // https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setsystemcursor
+        const OCR_NORMAL: u16 = 32512;
+
+        let class_name_wide = class_name.to_wide_string();
+
+        let default_cursor: NonNull<c_void> = unsafe {
+            LoadImageW(
+                ptr::null_mut(),
+                MAKEINTRESOURCEW(OCR_NORMAL),
+                IMAGE_CURSOR,
+                0,
+                0,
+                LR_SHARED | LR_DEFAULTSIZE,
+            )
+            .to_non_null_else_get_last_error()?
+        };
+        // No need to reserve extra window memory if we only need a single pointer
+        let class_def: WNDCLASSEXW = WNDCLASSEXW {
+            cbSize: mem::size_of::<WNDCLASSEXW>() as UINT,
+            lpfnWndProc: Some(generic_window_proc::<WML>),
+            hCursor: default_cursor.as_ptr() as HCURSOR,
+            hbrBackground: COLOR_BACKGROUND as HBRUSH,
+            lpszClassName: class_name_wide.as_ptr(),
+            ..Default::default()
+        };
+        let atom = unsafe { RegisterClassExW(&class_def).if_null_get_last_error()? };
+        Ok(WindowClass {
+            atom,
+            _p: PhantomData,
+        })
+    }
+}
+
+pub struct Window<'class, 'listener, WML> {
+    #[allow(unused)]
+    class: &'class WindowClass<WML>,
+    handle: WindowHandle,
+    phantom: PhantomData<&'listener mut WML>,
+}
+
+impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WML> {
+    pub fn create_new(
+        class: &'class WindowClass<WML>,
+        listener: &'listener mut WML,
+        window_name: &str,
+    ) -> io::Result<Self> {
+        let h_wnd: NonNull<HWND__> = unsafe {
+            CreateWindowExW(
+                0,
+                class.atom as *const WCHAR,
+                window_name.to_wide_string().as_ptr(),
+                WS_OVERLAPPEDWINDOW,
+                CW_USEDEFAULT,
+                0,
+                CW_USEDEFAULT,
+                0,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+            )
+            .to_non_null_else_get_last_error()?
+        };
+        unsafe {
+            SetWindowLongPtrW(
+                h_wnd.as_ptr(),
+                GWLP_USERDATA,
+                listener as *const WML as LONG_PTR,
+            );
+            // TODO add error checking, distinguishing between old value 0 and an actual error (see MS docs)
+        }
+        let handle = WindowHandle::from_non_null(h_wnd);
+        Ok(Window {
+            class,
+            handle,
+            phantom: PhantomData,
+        })
+    }
+}
+
+impl<'a, 'b, WML> Drop for Window<'a, 'b, WML> {
+    fn drop(&mut self) {
+        unsafe {
+            if self.handle.is_window() {
+                DestroyWindow(self.handle.as_mutable_ptr())
+                    .if_null_get_last_error()
+                    .unwrap();
+            }
+        }
+    }
+}
+
+impl<'a, 'b, WML> AsRef<WindowHandle> for Window<'a, 'b, WML> {
+    fn as_ref(&self) -> &WindowHandle {
+        &self.handle
+    }
+}
+
+impl<'a, 'b, WML> AsMut<WindowHandle> for Window<'a, 'b, WML> {
+    fn as_mut(&mut self) -> &mut WindowHandle {
+        &mut self.handle
     }
 }
 
@@ -478,13 +619,13 @@ impl Taskbar {
     /// use winapi_easy::ui::{
     ///     ProgressState,
     ///     Taskbar,
-    ///     Window,
+    ///     WindowHandle,
     /// };
     ///
     /// use std::thread;
     /// use std::time::Duration;
     ///
-    /// let mut window = Window::get_console_window().expect("Cannot get console window");
+    /// let mut window = WindowHandle::get_console_window().expect("Cannot get console window");
     /// let mut taskbar = Taskbar::new()?;
     ///
     /// taskbar.set_progress_state(&mut window, ProgressState::Indeterminate)?;
@@ -495,7 +636,7 @@ impl Taskbar {
     /// ```
     pub fn set_progress_state(
         &mut self,
-        window: &mut Window,
+        window: &mut WindowHandle,
         state: ProgressState,
     ) -> io::Result<()> {
         let ret_val: HRESULT = unsafe {
@@ -510,7 +651,7 @@ impl Taskbar {
     /// Sets the completion amount of the taskbar progress state animation.
     pub fn set_progress_value(
         &mut self,
-        window: &mut Window,
+        window: &mut WindowHandle,
         completed: u64,
         total: u64,
     ) -> io::Result<()> {
@@ -546,7 +687,7 @@ mod tests {
 
     #[test]
     fn get_toplevel_windows() -> io::Result<()> {
-        let all_windows = Window::get_toplevel_windows()?;
+        let all_windows = WindowHandle::get_toplevel_windows()?;
         assert_gt!(all_windows.len(), 0);
         Ok(())
     }
