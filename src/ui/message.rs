@@ -9,10 +9,8 @@ use winapi::um::winuser::{
     DefWindowProcW,
     DispatchMessageW,
     GetMessageW,
-    GetWindowLongPtrW,
     PostQuitMessage,
     TranslateMessage,
-    GWLP_USERDATA,
     MSG,
     WM_APP,
     WM_DESTROY,
@@ -32,7 +30,6 @@ use std::convert::TryInto;
 
 use crate::internal::{
     catch_unwind_or_abort,
-    ManagedHandle,
     ReturnValue,
 };
 use crate::ui::WindowHandle;
@@ -174,17 +171,13 @@ where
             l_param,
         };
 
-        let listener_result = {
-            let maybe_listener_ptr = {
-                let ptr_value = GetWindowLongPtrW(window.as_immutable_ptr(), GWLP_USERDATA);
-                NonNull::new(ptr_value as *mut WML)
-            };
-            // When creating a window, the custom data for the loop is not set yet
-            // before the first call to this function
-            maybe_listener_ptr.and_then(|mut listener_ptr| {
+        // When creating a window, the custom data for the loop is not set yet
+        // before the first call to this function
+        let listener_result = window
+            .get_user_data_ptr::<WML>()
+            .and_then(|mut listener_ptr| {
                 raw_message.dispatch_to_message_listener(window, listener_ptr.as_mut())
-            })
-        };
+            });
 
         if let Some(l_result) = listener_result {
             l_result

@@ -55,6 +55,7 @@ use winapi::um::winuser::{
     GetClassNameW,
     GetDesktopWindow,
     GetForegroundWindow,
+    GetWindowLongPtrW,
     GetWindowPlacement,
     GetWindowTextLengthW,
     GetWindowTextW,
@@ -171,6 +172,10 @@ impl WindowHandle {
         let ret_val = unsafe { EnumWindows(Some(sync_closure_to_callback2(&mut callback)), 0) };
         ret_val.if_null_get_last_error()?;
         Ok(result)
+    }
+
+    pub(crate) fn from_non_null(handle: NonNull<HWND__>) -> Self {
+        Self { handle }
     }
 
     /// Checks if the handle points to an existing window.
@@ -321,8 +326,19 @@ impl WindowHandle {
         })
     }
 
-    pub(crate) fn from_non_null(handle: NonNull<HWND__>) -> Self {
-        Self { handle }
+    pub(crate) unsafe fn get_user_data_ptr<T>(&self) -> Option<NonNull<T>> {
+        let ptr_value = GetWindowLongPtrW(self.as_immutable_ptr(), GWLP_USERDATA);
+        NonNull::new(ptr_value as *mut T)
+    }
+
+    pub(crate) unsafe fn set_user_data_ptr<T>(&mut self, reference: &mut T) -> io::Result<()> {
+        SetWindowLongPtrW(
+            self.as_mutable_ptr(),
+            GWLP_USERDATA,
+            reference as *const T as LONG_PTR,
+        );
+        // TODO add error checking, distinguishing between old value 0 and an actual error (see MS docs)
+        Ok(())
     }
 
     pub fn into_raw_handle(self) -> NonNull<HWND__> {
@@ -409,15 +425,10 @@ impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WM
             )
             .to_non_null_else_get_last_error()?
         };
+        let mut handle = WindowHandle::from_non_null(h_wnd);
         unsafe {
-            SetWindowLongPtrW(
-                h_wnd.as_ptr(),
-                GWLP_USERDATA,
-                listener as *const WML as LONG_PTR,
-            );
-            // TODO add error checking, distinguishing between old value 0 and an actual error (see MS docs)
+            handle.set_user_data_ptr(listener)?;
         }
-        let handle = WindowHandle::from_non_null(h_wnd);
         Ok(Window {
             class,
             handle,
