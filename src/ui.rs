@@ -68,7 +68,37 @@ use winapi::um::winuser::{
     SendMessageW,
     SetWindowLongPtrW,
     SetWindowPlacement,
+    UnregisterClassW,
+    COLOR_3DDKSHADOW,
+    COLOR_3DLIGHT,
+    COLOR_ACTIVEBORDER,
+    COLOR_ACTIVECAPTION,
+    COLOR_APPWORKSPACE,
     COLOR_BACKGROUND,
+    COLOR_BTNFACE,
+    COLOR_BTNHIGHLIGHT,
+    COLOR_BTNSHADOW,
+    COLOR_BTNTEXT,
+    COLOR_CAPTIONTEXT,
+    COLOR_GRADIENTACTIVECAPTION,
+    COLOR_GRADIENTINACTIVECAPTION,
+    COLOR_GRAYTEXT,
+    COLOR_HIGHLIGHT,
+    COLOR_HIGHLIGHTTEXT,
+    COLOR_HOTLIGHT,
+    COLOR_INACTIVEBORDER,
+    COLOR_INACTIVECAPTION,
+    COLOR_INACTIVECAPTIONTEXT,
+    COLOR_INFOBK,
+    COLOR_INFOTEXT,
+    COLOR_MENU,
+    COLOR_MENUBAR,
+    COLOR_MENUHILIGHT,
+    COLOR_MENUTEXT,
+    COLOR_SCROLLBAR,
+    COLOR_WINDOW,
+    COLOR_WINDOWFRAME,
+    COLOR_WINDOWTEXT,
     CW_USEDEFAULT,
     FLASHWINFO,
     FLASHW_ALL,
@@ -357,41 +387,46 @@ impl ManagedHandle for WindowHandle {
 
 pub struct WindowClass<WML> {
     atom: ATOM,
-    _p: PhantomData<WML>,
+    // These potentially need to be dropped properly
+    _cursor: Cursor,
+    _brush: Brush,
+    phantom: PhantomData<WML>,
 }
 
 impl<WML: WindowMessageListener> WindowClass<WML> {
-    pub fn register_new(class_name: &str) -> io::Result<Self> {
-        // https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setsystemcursor
-        const OCR_NORMAL: u16 = 32512;
-
+    pub fn register_new(
+        class_name: &str,
+        background_brush: Brush,
+        cursor: Cursor,
+    ) -> io::Result<Self> {
         let class_name_wide = class_name.to_wide_string();
 
-        let default_cursor: NonNull<c_void> = unsafe {
-            LoadImageW(
-                ptr::null_mut(),
-                MAKEINTRESOURCEW(OCR_NORMAL),
-                IMAGE_CURSOR,
-                0,
-                0,
-                LR_SHARED | LR_DEFAULTSIZE,
-            )
-            .to_non_null_else_get_last_error()?
-        };
         // No need to reserve extra window memory if we only need a single pointer
         let class_def: WNDCLASSEXW = WNDCLASSEXW {
             cbSize: mem::size_of::<WNDCLASSEXW>() as UINT,
             lpfnWndProc: Some(generic_window_proc::<WML>),
-            hCursor: default_cursor.as_ptr() as HCURSOR,
-            hbrBackground: COLOR_BACKGROUND as HBRUSH,
+            hCursor: cursor.as_handle()?,
+            hbrBackground: background_brush.as_handle(),
             lpszClassName: class_name_wide.as_ptr(),
             ..Default::default()
         };
         let atom = unsafe { RegisterClassExW(&class_def).if_null_get_last_error()? };
         Ok(WindowClass {
             atom,
-            _p: PhantomData,
+            _cursor: cursor,
+            _brush: background_brush,
+            phantom: PhantomData,
         })
+    }
+}
+
+impl<WML> Drop for WindowClass<WML> {
+    fn drop(&mut self) {
+        unsafe {
+            UnregisterClassW(self.atom as *const WCHAR, ptr::null_mut())
+                .if_null_get_last_error()
+                .unwrap();
+        }
     }
 }
 
@@ -603,6 +638,153 @@ impl Default for ProgressState {
     fn default() -> Self {
         ProgressState::NoProgress
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct Cursor {
+    builtin_type: BuiltinCursor,
+}
+
+impl Cursor {
+    pub(crate) fn as_handle(&self) -> io::Result<HCURSOR> {
+        let default_cursor: NonNull<c_void> = unsafe {
+            LoadImageW(
+                ptr::null_mut(),
+                MAKEINTRESOURCEW(self.builtin_type.into()),
+                IMAGE_CURSOR,
+                0,
+                0,
+                LR_SHARED | LR_DEFAULTSIZE,
+            )
+            .to_non_null_else_get_last_error()?
+        };
+        Ok(default_cursor.as_ptr() as HCURSOR)
+    }
+}
+
+impl From<BuiltinCursor> for Cursor {
+    fn from(builtin_type: BuiltinCursor) -> Self {
+        Self { builtin_type }
+    }
+}
+
+impl Default for Cursor {
+    #[inline]
+    fn default() -> Self {
+        BuiltinCursor::default().into()
+    }
+}
+
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[repr(u16)]
+pub enum BuiltinCursor {
+    /// Standard arrow
+    Normal = Self::OCR_NORMAL,
+    /// Standard arrow and small hourglass
+    NormalPlusWaiting = Self::OCR_APPSTARTING,
+    /// Hourglass
+    Waiting = Self::OCR_WAIT,
+    /// Arrow and question mark
+    NormalPlusQuestionMark = Self::OCR_HELP,
+    /// Crosshair
+    Crosshair = Self::OCR_CROSS,
+    /// Hand
+    Hand = Self::OCR_HAND,
+    /// I-beam
+    IBeam = Self::OCR_IBEAM,
+    /// Slashed circle
+    SlashedCircle = Self::OCR_NO,
+    /// Four-pointed arrow pointing north, south, east, and west
+    ArrowAllDirections = Self::OCR_SIZEALL,
+    /// Double-pointed arrow pointing northeast and southwest
+    ArrowNESW = Self::OCR_SIZENESW,
+    /// Double-pointed arrow pointing north and south
+    ArrowNS = Self::OCR_SIZENS,
+    /// Double-pointed arrow pointing northwest and southeast
+    ArrowNWSE = Self::OCR_SIZENWSE,
+    /// Double-pointed arrow pointing west and east
+    ArrowWE = Self::OCR_SIZEWE,
+    /// Vertical arrow
+    Up = Self::OCR_UP,
+}
+
+impl BuiltinCursor {
+    // https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setsystemcursor
+    const OCR_APPSTARTING: u16 = 32650;
+    const OCR_NORMAL: u16 = 32512;
+    const OCR_CROSS: u16 = 32515;
+    const OCR_HAND: u16 = 32649;
+    const OCR_HELP: u16 = 32651;
+    const OCR_IBEAM: u16 = 32513;
+    const OCR_NO: u16 = 32648;
+    const OCR_SIZEALL: u16 = 32646;
+    const OCR_SIZENESW: u16 = 32643;
+    const OCR_SIZENS: u16 = 32645;
+    const OCR_SIZENWSE: u16 = 32642;
+    const OCR_SIZEWE: u16 = 32644;
+    const OCR_UP: u16 = 32516;
+    const OCR_WAIT: u16 = 32514;
+}
+
+impl Default for BuiltinCursor {
+    #[inline]
+    fn default() -> Self {
+        BuiltinCursor::Normal
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Brush {
+    standard_color_brush: BuiltinColor,
+}
+
+impl Brush {
+    pub(crate) fn as_handle(&self) -> HBRUSH {
+        i32::from(self.standard_color_brush) as HBRUSH
+    }
+}
+
+impl From<BuiltinColor> for Brush {
+    fn from(color: BuiltinColor) -> Self {
+        Brush {
+            standard_color_brush: color,
+        }
+    }
+}
+
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[repr(i32)]
+pub enum BuiltinColor {
+    Scrollbar = COLOR_SCROLLBAR,
+    Background = COLOR_BACKGROUND,
+    ActiveCaption = COLOR_ACTIVECAPTION,
+    InactiveCaption = COLOR_INACTIVECAPTION,
+    Menu = COLOR_MENU,
+    Window = COLOR_WINDOW,
+    WindowFrame = COLOR_WINDOWFRAME,
+    MenuText = COLOR_MENUTEXT,
+    WindowText = COLOR_WINDOWTEXT,
+    CaptionText = COLOR_CAPTIONTEXT,
+    ActiveBorder = COLOR_ACTIVEBORDER,
+    InactiveBorder = COLOR_INACTIVEBORDER,
+    AppWorkspace = COLOR_APPWORKSPACE,
+    Highlight = COLOR_HIGHLIGHT,
+    HighlightText = COLOR_HIGHLIGHTTEXT,
+    ButtonFace = COLOR_BTNFACE,
+    ButtonShadow = COLOR_BTNSHADOW,
+    GrayText = COLOR_GRAYTEXT,
+    ButtonText = COLOR_BTNTEXT,
+    InactiveCaptionText = COLOR_INACTIVECAPTIONTEXT,
+    ButtonHighlight = COLOR_BTNHIGHLIGHT,
+    Shadow3DDark = COLOR_3DDKSHADOW,
+    Light3D = COLOR_3DLIGHT,
+    InfoText = COLOR_INFOTEXT,
+    InfoBlack = COLOR_INFOBK,
+    HotLight = COLOR_HOTLIGHT,
+    GradientActiveCaption = COLOR_GRADIENTACTIVECAPTION,
+    GradientInactiveCaption = COLOR_GRADIENTINACTIVECAPTION,
+    MenuHighlight = COLOR_MENUHILIGHT,
+    MenuBar = COLOR_MENUBAR,
 }
 
 /// Taskbar functionality.

@@ -6,6 +6,7 @@ use winapi_easy::ui::message::{
     WindowMessageListener,
 };
 use winapi_easy::ui::{
+    BuiltinColor,
     Window,
     WindowAction,
     WindowClass,
@@ -22,7 +23,11 @@ impl WindowMessageListener for MyListener {
 
 fn main() -> io::Result<()> {
     let mut listener = MyListener {};
-    let class: WindowClass<MyListener> = WindowClass::register_new("myclass1")?;
+    let class: WindowClass<MyListener> = WindowClass::register_new(
+        "myclass1",
+        BuiltinColor::AppWorkspace.into(),
+        Default::default(),
+    )?;
     let mut window = Window::create_new(&class, &mut listener, "mywindow1")?;
     let handle = window.as_mut();
     handle.perform_action(WindowAction::Restore)?;
