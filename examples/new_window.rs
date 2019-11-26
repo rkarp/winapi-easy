@@ -27,6 +27,7 @@ fn main() -> io::Result<()> {
         "myclass1",
         BuiltinColor::AppWorkspace.into(),
         Default::default(),
+        Default::default(),
     )?;
     let mut window = Window::create_new(&class, &mut listener, "mywindow1")?;
     let handle = window.as_mut();

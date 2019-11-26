@@ -23,6 +23,7 @@ use winapi::shared::minwindef::{
     LPARAM,
     TRUE,
     UINT,
+    WORD,
 };
 use winapi::shared::ntdef::{
     HRESULT,
@@ -31,6 +32,7 @@ use winapi::shared::ntdef::{
 use winapi::shared::windef::{
     HBRUSH,
     HCURSOR,
+    HICON,
     HWND,
     HWND__,
     POINT,
@@ -109,6 +111,7 @@ use winapi::um::winuser::{
     FLASHW_TRAY,
     GWLP_USERDATA,
     IMAGE_CURSOR,
+    IMAGE_ICON,
     LR_DEFAULTSIZE,
     LR_SHARED,
     MAKEINTRESOURCEW,
@@ -397,6 +400,7 @@ impl<WML: WindowMessageListener> WindowClass<WML> {
     pub fn register_new(
         class_name: &str,
         background_brush: Brush,
+        icon: Icon,
         cursor: Cursor,
     ) -> io::Result<Self> {
         let class_name_wide = class_name.to_wide_string();
@@ -405,6 +409,7 @@ impl<WML: WindowMessageListener> WindowClass<WML> {
         let class_def: WNDCLASSEXW = WNDCLASSEXW {
             cbSize: mem::size_of::<WNDCLASSEXW>() as UINT,
             lpfnWndProc: Some(generic_window_proc::<WML>),
+            hIcon: icon.as_handle()?,
             hCursor: cursor.as_handle()?,
             hbrBackground: background_brush.as_handle(),
             lpszClassName: class_name_wide.as_ptr(),
@@ -641,24 +646,60 @@ impl Default for ProgressState {
 }
 
 #[derive(Clone, Debug)]
+pub struct Icon {
+    builtin_icon: BuiltinIcon,
+}
+
+impl Icon {
+    pub(crate) fn as_handle(&self) -> io::Result<HICON> {
+        let handle = get_shared_image_handle(self.builtin_icon.into(), IMAGE_ICON)?;
+        Ok(handle.as_ptr() as HICON)
+    }
+}
+
+impl From<BuiltinIcon> for Icon {
+    fn from(builtin_icon: BuiltinIcon) -> Self {
+        Self { builtin_icon }
+    }
+}
+
+impl Default for Icon {
+    fn default() -> Self {
+        Icon {
+            builtin_icon: BuiltinIcon::Application,
+        }
+    }
+}
+
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[repr(u16)]
+pub enum BuiltinIcon {
+    Application = Self::OIC_SAMPLE,
+    QuestionMark = Self::OIC_QUES,
+    Warning = Self::OIC_WARNING,
+    Error = Self::OIC_ERROR,
+    Information = Self::OIC_INFORMATION,
+    Shield = Self::OIC_SHIELD,
+}
+
+impl BuiltinIcon {
+    const OIC_SAMPLE: u16 = 32512;
+    const OIC_QUES: u16 = 32514;
+    const OIC_WARNING: u16 = 32515;
+    const OIC_ERROR: u16 = 32513;
+    const OIC_INFORMATION: u16 = 32516;
+    const OIC_SHIELD: u16 = 32518;
+}
+
+#[derive(Clone, Debug)]
 pub struct Cursor {
     builtin_type: BuiltinCursor,
 }
 
 impl Cursor {
     pub(crate) fn as_handle(&self) -> io::Result<HCURSOR> {
-        let default_cursor: NonNull<c_void> = unsafe {
-            LoadImageW(
-                ptr::null_mut(),
-                MAKEINTRESOURCEW(self.builtin_type.into()),
-                IMAGE_CURSOR,
-                0,
-                0,
-                LR_SHARED | LR_DEFAULTSIZE,
-            )
-            .to_non_null_else_get_last_error()?
-        };
-        Ok(default_cursor.as_ptr() as HCURSOR)
+        let handle = get_shared_image_handle(self.builtin_type.into(), IMAGE_CURSOR)?;
+        Ok(handle.as_ptr() as HCURSOR)
     }
 }
 
@@ -785,6 +826,21 @@ pub enum BuiltinColor {
     GradientInactiveCaption = COLOR_GRADIENTINACTIVECAPTION,
     MenuHighlight = COLOR_MENUHILIGHT,
     MenuBar = COLOR_MENUBAR,
+}
+
+fn get_shared_image_handle(resource_id: WORD, resource_type: UINT) -> io::Result<NonNull<c_void>> {
+    let handle: NonNull<c_void> = unsafe {
+        LoadImageW(
+            ptr::null_mut(),
+            MAKEINTRESOURCEW(resource_id),
+            resource_type,
+            0,
+            0,
+            LR_SHARED | LR_DEFAULTSIZE,
+        )
+        .to_non_null_else_get_last_error()?
+    };
+    Ok(handle)
 }
 
 /// Taskbar functionality.
