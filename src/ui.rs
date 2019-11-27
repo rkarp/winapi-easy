@@ -388,20 +388,17 @@ impl ManagedHandle for WindowHandle {
     }
 }
 
-pub struct WindowClass<WML> {
+pub struct WindowClass<'res, WML> {
     atom: ATOM,
-    // These potentially need to be dropped properly
-    _cursor: Cursor,
-    _brush: Brush,
-    phantom: PhantomData<WML>,
+    phantom: PhantomData<(WML, &'res ())>,
 }
 
-impl<WML: WindowMessageListener> WindowClass<WML> {
+impl<'res, WML: WindowMessageListener> WindowClass<'res, WML> {
     pub fn register_new(
         class_name: &str,
-        background_brush: Brush,
-        icon: Icon,
-        cursor: Cursor,
+        background_brush: &'res impl Brush,
+        icon: &'res impl Icon,
+        cursor: &'res impl Cursor,
     ) -> io::Result<Self> {
         let class_name_wide = class_name.to_wide_string();
 
@@ -411,21 +408,19 @@ impl<WML: WindowMessageListener> WindowClass<WML> {
             lpfnWndProc: Some(generic_window_proc::<WML>),
             hIcon: icon.as_handle()?,
             hCursor: cursor.as_handle()?,
-            hbrBackground: background_brush.as_handle(),
+            hbrBackground: background_brush.as_handle()?,
             lpszClassName: class_name_wide.as_ptr(),
             ..Default::default()
         };
         let atom = unsafe { RegisterClassExW(&class_def).if_null_get_last_error()? };
         Ok(WindowClass {
             atom,
-            _cursor: cursor,
-            _brush: background_brush,
             phantom: PhantomData,
         })
     }
 }
 
-impl<WML> Drop for WindowClass<WML> {
+impl<WML> Drop for WindowClass<'_, WML> {
     fn drop(&mut self) {
         unsafe {
             UnregisterClassW(self.atom as *const WCHAR, ptr::null_mut())
@@ -437,7 +432,7 @@ impl<WML> Drop for WindowClass<WML> {
 
 pub struct Window<'class, 'listener, WML> {
     #[allow(unused)]
-    class: &'class WindowClass<WML>,
+    class: &'class WindowClass<'class, WML>,
     handle: WindowHandle,
     phantom: PhantomData<&'listener mut WML>,
 }
@@ -645,30 +640,8 @@ impl Default for ProgressState {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Icon {
-    builtin_icon: BuiltinIcon,
-}
-
-impl Icon {
-    pub(crate) fn as_handle(&self) -> io::Result<HICON> {
-        let handle = get_shared_image_handle(self.builtin_icon.into(), IMAGE_ICON)?;
-        Ok(handle.as_ptr() as HICON)
-    }
-}
-
-impl From<BuiltinIcon> for Icon {
-    fn from(builtin_icon: BuiltinIcon) -> Self {
-        Self { builtin_icon }
-    }
-}
-
-impl Default for Icon {
-    fn default() -> Self {
-        Icon {
-            builtin_icon: BuiltinIcon::Application,
-        }
-    }
+pub trait Icon {
+    fn as_handle(&self) -> io::Result<HICON>;
 }
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
@@ -691,29 +664,21 @@ impl BuiltinIcon {
     const OIC_SHIELD: u16 = 32518;
 }
 
-#[derive(Clone, Debug)]
-pub struct Cursor {
-    builtin_type: BuiltinCursor,
-}
-
-impl Cursor {
-    pub(crate) fn as_handle(&self) -> io::Result<HCURSOR> {
-        let handle = get_shared_image_handle(self.builtin_type.into(), IMAGE_CURSOR)?;
-        Ok(handle.as_ptr() as HCURSOR)
+impl Icon for BuiltinIcon {
+    fn as_handle(&self) -> io::Result<HICON> {
+        let handle = get_shared_image_handle((*self).into(), IMAGE_ICON)?;
+        Ok(handle.as_ptr() as HICON)
     }
 }
 
-impl From<BuiltinCursor> for Cursor {
-    fn from(builtin_type: BuiltinCursor) -> Self {
-        Self { builtin_type }
-    }
-}
-
-impl Default for Cursor {
-    #[inline]
+impl Default for BuiltinIcon {
     fn default() -> Self {
-        BuiltinCursor::default().into()
+        BuiltinIcon::Application
     }
+}
+
+pub trait Cursor {
+    fn as_handle(&self) -> io::Result<HCURSOR>;
 }
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
@@ -767,6 +732,13 @@ impl BuiltinCursor {
     const OCR_WAIT: u16 = 32514;
 }
 
+impl Cursor for BuiltinCursor {
+    fn as_handle(&self) -> io::Result<HCURSOR> {
+        let handle = get_shared_image_handle((*self).into(), IMAGE_CURSOR)?;
+        Ok(handle.as_ptr() as HCURSOR)
+    }
+}
+
 impl Default for BuiltinCursor {
     #[inline]
     fn default() -> Self {
@@ -774,23 +746,8 @@ impl Default for BuiltinCursor {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Brush {
-    standard_color_brush: BuiltinColor,
-}
-
-impl Brush {
-    pub(crate) fn as_handle(&self) -> HBRUSH {
-        i32::from(self.standard_color_brush) as HBRUSH
-    }
-}
-
-impl From<BuiltinColor> for Brush {
-    fn from(color: BuiltinColor) -> Self {
-        Brush {
-            standard_color_brush: color,
-        }
-    }
+pub trait Brush {
+    fn as_handle(&self) -> io::Result<HBRUSH>;
 }
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
@@ -826,6 +783,12 @@ pub enum BuiltinColor {
     GradientInactiveCaption = COLOR_GRADIENTINACTIVECAPTION,
     MenuHighlight = COLOR_MENUHILIGHT,
     MenuBar = COLOR_MENUBAR,
+}
+
+impl Brush for BuiltinColor {
+    fn as_handle(&self) -> io::Result<HBRUSH> {
+        Ok(i32::from(*self) as HBRUSH)
+    }
 }
 
 fn get_shared_image_handle(resource_id: WORD, resource_type: UINT) -> io::Result<NonNull<c_void>> {
