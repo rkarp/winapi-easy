@@ -14,8 +14,8 @@ use num_enum::{
     IntoPrimitive,
     TryFromPrimitive,
 };
-use winapi::ctypes::c_void;
 use winapi::shared::basetsd::LONG_PTR;
+use winapi::shared::guiddef::GUID;
 use winapi::shared::minwindef::{
     ATOM,
     BOOL,
@@ -23,15 +23,12 @@ use winapi::shared::minwindef::{
     LPARAM,
     TRUE,
     UINT,
-    WORD,
 };
 use winapi::shared::ntdef::{
     HRESULT,
     WCHAR,
 };
 use winapi::shared::windef::{
-    HBRUSH,
-    HCURSOR,
     HICON,
     HWND,
     HWND__,
@@ -40,6 +37,26 @@ use winapi::shared::windef::{
 };
 use winapi::shared::winerror::S_OK;
 use winapi::um::consoleapi::AllocConsole;
+use winapi::um::shellapi::{
+    Shell_NotifyIconW,
+    NIF_GUID,
+    NIF_ICON,
+    NIF_INFO,
+    NIF_MESSAGE,
+    NIF_SHOWTIP,
+    NIF_STATE,
+    NIF_TIP,
+    NIIF_ERROR,
+    NIIF_INFO,
+    NIIF_NONE,
+    NIIF_WARNING,
+    NIM_ADD,
+    NIM_DELETE,
+    NIM_SETVERSION,
+    NIS_HIDDEN,
+    NOTIFYICONDATAW,
+    NOTIFYICON_VERSION_4,
+};
 use winapi::um::shobjidl_core::{
     ITaskbarList3,
     TBPF_ERROR,
@@ -64,43 +81,12 @@ use winapi::um::winuser::{
     GetWindowThreadProcessId,
     IsWindow,
     IsWindowVisible,
-    LoadImageW,
     LockWorkStation,
     RegisterClassExW,
     SendMessageW,
     SetWindowLongPtrW,
     SetWindowPlacement,
     UnregisterClassW,
-    COLOR_3DDKSHADOW,
-    COLOR_3DLIGHT,
-    COLOR_ACTIVEBORDER,
-    COLOR_ACTIVECAPTION,
-    COLOR_APPWORKSPACE,
-    COLOR_BACKGROUND,
-    COLOR_BTNFACE,
-    COLOR_BTNHIGHLIGHT,
-    COLOR_BTNSHADOW,
-    COLOR_BTNTEXT,
-    COLOR_CAPTIONTEXT,
-    COLOR_GRADIENTACTIVECAPTION,
-    COLOR_GRADIENTINACTIVECAPTION,
-    COLOR_GRAYTEXT,
-    COLOR_HIGHLIGHT,
-    COLOR_HIGHLIGHTTEXT,
-    COLOR_HOTLIGHT,
-    COLOR_INACTIVEBORDER,
-    COLOR_INACTIVECAPTION,
-    COLOR_INACTIVECAPTIONTEXT,
-    COLOR_INFOBK,
-    COLOR_INFOTEXT,
-    COLOR_MENU,
-    COLOR_MENUBAR,
-    COLOR_MENUHILIGHT,
-    COLOR_MENUTEXT,
-    COLOR_SCROLLBAR,
-    COLOR_WINDOW,
-    COLOR_WINDOWFRAME,
-    COLOR_WINDOWTEXT,
     CW_USEDEFAULT,
     FLASHWINFO,
     FLASHW_ALL,
@@ -110,11 +96,6 @@ use winapi::um::winuser::{
     FLASHW_TIMERNOFG,
     FLASHW_TRAY,
     GWLP_USERDATA,
-    IMAGE_CURSOR,
-    IMAGE_ICON,
-    LR_DEFAULTSIZE,
-    LR_SHARED,
-    MAKEINTRESOURCEW,
     SC_CLOSE,
     SC_MAXIMIZE,
     SC_MINIMIZE,
@@ -151,6 +132,7 @@ use crate::process::{
     ThreadId,
 };
 use crate::string::{
+    to_wide_chars_iter,
     FromWideString,
     ToWideString,
 };
@@ -158,8 +140,14 @@ use crate::ui::message::{
     generic_window_proc,
     WindowMessageListener,
 };
+use crate::ui::resource::{
+    Brush,
+    Cursor,
+    Icon,
+};
 
 pub mod message;
+pub mod resource;
 
 const MAX_WINDOW_CLASS_NAME_CHARS: usize = 256;
 
@@ -168,8 +156,6 @@ const MAX_WINDOW_CLASS_NAME_CHARS: usize = 256;
 /// **Note**: If the window was not created by this thread, then it is not guaranteed that
 /// the handle continues pointing to the same window because the underlying handles
 /// can get invalid or even recycled.
-///
-/// Implements neither `Copy` nor `Clone` to avoid concurrent mutable access to the same handle.
 pub struct WindowHandle {
     handle: NonNull<HWND__>,
 }
@@ -259,9 +245,9 @@ impl WindowHandle {
         Ok(WindowPlacement { raw_placement })
     }
 
-    pub fn set_placement(&mut self, placement: &WindowPlacement) -> io::Result<()> {
+    pub fn set_placement(&self, placement: &WindowPlacement) -> io::Result<()> {
         unsafe {
-            SetWindowPlacement(self.as_mutable_ptr(), &placement.raw_placement)
+            SetWindowPlacement(self.as_immutable_ptr(), &placement.raw_placement)
                 .if_null_get_last_error()?
         };
         Ok(())
@@ -284,9 +270,9 @@ impl WindowHandle {
         Ok(buffer.to_string_lossy())
     }
 
-    pub fn perform_action(&mut self, action: WindowAction) -> io::Result<()> {
+    pub fn perform_action(&self, action: WindowAction) -> io::Result<()> {
         let result =
-            unsafe { SendMessageW(self.as_mutable_ptr(), WM_SYSCOMMAND, action.into(), 0) };
+            unsafe { SendMessageW(self.as_immutable_ptr(), WM_SYSCOMMAND, action.into(), 0) };
         result.if_non_null_to_error(|| custom_err_with_code("Cannot perform window action", result))
     }
 
@@ -296,14 +282,14 @@ impl WindowHandle {
     }
 
     pub fn flash_custom(
-        &mut self,
+        &self,
         element: FlashElement,
         duration: FlashDuration,
         frequency: FlashFrequency,
     ) {
         let mut raw_config: FLASHWINFO = Default::default();
         raw_config.cbSize = mem::size_of::<FLASHWINFO>() as UINT;
-        raw_config.hwnd = self.as_mutable_ptr();
+        raw_config.hwnd = self.as_immutable_ptr();
         let (count, mut flags) = match duration {
             FlashDuration::Count(count) => (count, 0),
             FlashDuration::CountUntilForeground(count) => (count, FLASHW_TIMERNOFG),
@@ -320,10 +306,10 @@ impl WindowHandle {
         unsafe { FlashWindowEx(&mut raw_config) };
     }
 
-    pub fn flash_stop(&mut self) {
+    pub fn flash_stop(&self) {
         let mut raw_config: FLASHWINFO = Default::default();
         raw_config.cbSize = mem::size_of::<FLASHWINFO>() as UINT;
-        raw_config.hwnd = self.as_mutable_ptr();
+        raw_config.hwnd = self.as_immutable_ptr();
         raw_config.dwFlags = FLASHW_STOP;
         unsafe { FlashWindowEx(&mut raw_config) };
     }
@@ -345,10 +331,10 @@ impl WindowHandle {
         (ThreadId(thread_id), ProcessId(process_id))
     }
 
-    pub fn set_monitor_power(&mut self, level: MonitorPower) -> io::Result<()> {
+    pub fn set_monitor_power(&self, level: MonitorPower) -> io::Result<()> {
         let result = unsafe {
             SendMessageW(
-                self.as_mutable_ptr(),
+                self.as_immutable_ptr(),
                 WM_SYSCOMMAND,
                 SC_MONITORPOWER,
                 level.into(),
@@ -388,22 +374,23 @@ impl ManagedHandle for WindowHandle {
     }
 }
 
-pub struct WindowClass<'res, WML> {
+pub struct WindowClass<'res, WML, I> {
     atom: ATOM,
+    icon: &'res I,
     phantom: PhantomData<(WML, &'res ())>,
 }
 
-impl<'res, WML: WindowMessageListener> WindowClass<'res, WML> {
+impl<'res, WML: WindowMessageListener, I: Icon> WindowClass<'res, WML, I> {
     pub fn register_new(
         class_name: &str,
         background_brush: &'res impl Brush,
-        icon: &'res impl Icon,
+        icon: &'res I,
         cursor: &'res impl Cursor,
     ) -> io::Result<Self> {
         let class_name_wide = class_name.to_wide_string();
 
         // No need to reserve extra window memory if we only need a single pointer
-        let class_def: WNDCLASSEXW = WNDCLASSEXW {
+        let class_def = WNDCLASSEXW {
             cbSize: mem::size_of::<WNDCLASSEXW>() as UINT,
             lpfnWndProc: Some(generic_window_proc::<WML>),
             hIcon: icon.as_handle()?,
@@ -415,12 +402,13 @@ impl<'res, WML: WindowMessageListener> WindowClass<'res, WML> {
         let atom = unsafe { RegisterClassExW(&class_def).if_null_get_last_error()? };
         Ok(WindowClass {
             atom,
+            icon,
             phantom: PhantomData,
         })
     }
 }
 
-impl<WML> Drop for WindowClass<'_, WML> {
+impl<WML, I> Drop for WindowClass<'_, WML, I> {
     fn drop(&mut self) {
         unsafe {
             UnregisterClassW(self.atom as *const WCHAR, ptr::null_mut())
@@ -430,16 +418,15 @@ impl<WML> Drop for WindowClass<'_, WML> {
     }
 }
 
-pub struct Window<'class, 'listener, WML> {
-    #[allow(unused)]
-    class: &'class WindowClass<'class, WML>,
+pub struct Window<'class, 'listener, WML, I> {
+    class: &'class WindowClass<'class, WML, I>,
     handle: WindowHandle,
     phantom: PhantomData<&'listener mut WML>,
 }
 
-impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WML> {
+impl<'class, 'listener, WML: WindowMessageListener, I: Icon> Window<'class, 'listener, WML, I> {
     pub fn create_new(
-        class: &'class WindowClass<WML>,
+        class: &'class WindowClass<WML, I>,
         listener: &'listener mut WML,
         window_name: &str,
     ) -> io::Result<Self> {
@@ -470,9 +457,45 @@ impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WM
             phantom: PhantomData,
         })
     }
+
+    pub fn add_notification_icon<'a>(
+        &'a self,
+        icon_id: NotificationIconId,
+        icon: Option<&'a impl Icon>,
+        tooltip_text: Option<&str>,
+    ) -> io::Result<NotificationIcon<'a, WML, I>> {
+        // For GUID handling maybe look at generating it from the executable path:
+        // https://stackoverflow.com/questions/7432319/notifyicondata-guid-problem
+        let chosen_icon_handle = if let Some(icon) = icon {
+            icon.as_handle()?
+        } else {
+            self.class.icon.as_handle()?
+        };
+        let mut call_data = get_notification_call_data(
+            &self.handle,
+            icon_id,
+            true,
+            Some(chosen_icon_handle),
+            tooltip_text,
+            None,
+            None,
+        );
+        unsafe {
+            Shell_NotifyIconW(NIM_ADD, &mut call_data).if_null_to_error(|| {
+                io::Error::new(io::ErrorKind::Other, "Cannot add notification icon")
+            })?;
+            Shell_NotifyIconW(NIM_SETVERSION, &mut call_data).if_null_to_error(|| {
+                io::Error::new(io::ErrorKind::Other, "Cannot set notification version")
+            })?;
+        };
+        Ok(NotificationIcon {
+            id: icon_id,
+            window: self,
+        })
+    }
 }
 
-impl<'a, 'b, WML> Drop for Window<'a, 'b, WML> {
+impl<WML, I> Drop for Window<'_, '_, WML, I> {
     fn drop(&mut self) {
         unsafe {
             if self.handle.is_window() {
@@ -484,13 +507,13 @@ impl<'a, 'b, WML> Drop for Window<'a, 'b, WML> {
     }
 }
 
-impl<'a, 'b, WML> AsRef<WindowHandle> for Window<'a, 'b, WML> {
+impl<WML, I> AsRef<WindowHandle> for Window<'_, '_, WML, I> {
     fn as_ref(&self) -> &WindowHandle {
         &self.handle
     }
 }
 
-impl<'a, 'b, WML> AsMut<WindowHandle> for Window<'a, 'b, WML> {
+impl<WML, I> AsMut<WindowHandle> for Window<'_, '_, WML, I> {
     fn as_mut(&mut self) -> &mut WindowHandle {
         &mut self.handle
     }
@@ -611,6 +634,129 @@ pub enum MonitorPower {
     Off = 2,
 }
 
+pub struct NotificationIcon<'a, WML, I> {
+    id: NotificationIconId,
+    window: &'a Window<'a, 'a, WML, I>,
+}
+
+impl<WML, I> NotificationIcon<'_, WML, I> {}
+
+impl<WML, I> Drop for NotificationIcon<'_, WML, I> {
+    fn drop(&mut self) {
+        let mut call_data =
+            get_notification_call_data(&self.window.handle, self.id, false, None, None, None, None);
+        unsafe {
+            Shell_NotifyIconW(NIM_DELETE, &mut call_data)
+                .if_null_to_error(|| {
+                    io::Error::new(io::ErrorKind::Other, "Cannot remove notification icon")
+                })
+                .unwrap();
+        }
+    }
+}
+
+fn get_notification_call_data(
+    window_handle: &WindowHandle,
+    icon_id: NotificationIconId,
+    set_callback_message: bool,
+    maybe_icon: Option<HICON>,
+    maybe_tooltip_str: Option<&str>,
+    icon_hidden_state: Option<bool>,
+    maybe_balloon_text: Option<Option<BalloonNotification>>,
+) -> NOTIFYICONDATAW {
+    let mut icon_data = NOTIFYICONDATAW {
+        cbSize: mem::size_of::<NOTIFYICONDATAW>() as u32,
+        hWnd: window_handle.as_immutable_ptr(),
+        ..Default::default()
+    };
+    unsafe {
+        *icon_data.u.uVersion_mut() = NOTIFYICON_VERSION_4;
+    }
+    match icon_id {
+        NotificationIconId::GUID(id) => {
+            icon_data.guidItem = id;
+            icon_data.uFlags |= NIF_GUID;
+        }
+        NotificationIconId::Simple(simple_id) => icon_data.uID = simple_id as DWORD,
+    };
+    if set_callback_message {
+        icon_data.uCallbackMessage = message::RawMessage::ID_NOTIFICATION_ICON_MSG;
+        icon_data.uFlags |= NIF_MESSAGE;
+    }
+    if let Some(icon) = maybe_icon {
+        icon_data.hIcon = icon;
+        icon_data.uFlags |= NIF_ICON;
+    }
+    if let Some(tooltip_str) = maybe_tooltip_str {
+        let chars = to_wide_chars_iter(tooltip_str)
+            .take(icon_data.szTip.len() - 1)
+            .chain(std::iter::once(0))
+            .enumerate();
+        for (i, w_char) in chars {
+            icon_data.szTip[i] = w_char;
+        }
+        icon_data.uFlags |= NIF_TIP;
+        // Standard tooltip is normally suppressed on NOTIFYICON_VERSION_4
+        icon_data.uFlags |= NIF_SHOWTIP;
+    }
+    if let Some(hidden_state) = icon_hidden_state {
+        if hidden_state {
+            icon_data.dwState |= NIS_HIDDEN;
+            icon_data.dwStateMask |= NIS_HIDDEN;
+        }
+        icon_data.uFlags |= NIF_STATE;
+    }
+    if let Some(set_balloon_notification) = maybe_balloon_text {
+        if let Some(balloon) = set_balloon_notification {
+            let body_chars = to_wide_chars_iter(balloon.body)
+                .take(icon_data.szInfo.len() - 1)
+                .chain(std::iter::once(0))
+                .enumerate();
+            for (i, w_char) in body_chars {
+                icon_data.szInfo[i] = w_char;
+            }
+            let title_chars = to_wide_chars_iter(balloon.title)
+                .take(icon_data.szInfoTitle.len() - 1)
+                .chain(std::iter::once(0))
+                .enumerate();
+            for (i, w_char) in title_chars {
+                icon_data.szInfoTitle[i] = w_char;
+            }
+            icon_data.dwInfoFlags |= DWORD::from(balloon.icon);
+        }
+        icon_data.uFlags |= NIF_INFO;
+    }
+    icon_data
+}
+
+#[derive(Copy, Clone)]
+pub enum NotificationIconId {
+    Simple(u16),
+    GUID(GUID),
+}
+
+#[derive(Copy, Clone)]
+pub struct BalloonNotification<'a> {
+    title: &'a str,
+    body: &'a str,
+    icon: BalloonNotificationStandardIcon,
+}
+
+#[derive(IntoPrimitive, Copy, Clone)]
+#[repr(u32)]
+pub enum BalloonNotificationStandardIcon {
+    None = NIIF_NONE,
+    Info = NIIF_INFO,
+    Warning = NIIF_WARNING,
+    Error = NIIF_ERROR,
+}
+
+impl Default for BalloonNotificationStandardIcon {
+    fn default() -> Self {
+        BalloonNotificationStandardIcon::None
+    }
+}
+
 /// Taskbar progress state animation type.
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u32)]
@@ -638,172 +784,6 @@ impl Default for ProgressState {
     fn default() -> Self {
         ProgressState::NoProgress
     }
-}
-
-pub trait Icon {
-    fn as_handle(&self) -> io::Result<HICON>;
-}
-
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u16)]
-pub enum BuiltinIcon {
-    Application = Self::OIC_SAMPLE,
-    QuestionMark = Self::OIC_QUES,
-    Warning = Self::OIC_WARNING,
-    Error = Self::OIC_ERROR,
-    Information = Self::OIC_INFORMATION,
-    Shield = Self::OIC_SHIELD,
-}
-
-impl BuiltinIcon {
-    const OIC_SAMPLE: u16 = 32512;
-    const OIC_QUES: u16 = 32514;
-    const OIC_WARNING: u16 = 32515;
-    const OIC_ERROR: u16 = 32513;
-    const OIC_INFORMATION: u16 = 32516;
-    const OIC_SHIELD: u16 = 32518;
-}
-
-impl Icon for BuiltinIcon {
-    fn as_handle(&self) -> io::Result<HICON> {
-        let handle = get_shared_image_handle((*self).into(), IMAGE_ICON)?;
-        Ok(handle.as_ptr() as HICON)
-    }
-}
-
-impl Default for BuiltinIcon {
-    fn default() -> Self {
-        BuiltinIcon::Application
-    }
-}
-
-pub trait Cursor {
-    fn as_handle(&self) -> io::Result<HCURSOR>;
-}
-
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u16)]
-pub enum BuiltinCursor {
-    /// Standard arrow
-    Normal = Self::OCR_NORMAL,
-    /// Standard arrow and small hourglass
-    NormalPlusWaiting = Self::OCR_APPSTARTING,
-    /// Hourglass
-    Waiting = Self::OCR_WAIT,
-    /// Arrow and question mark
-    NormalPlusQuestionMark = Self::OCR_HELP,
-    /// Crosshair
-    Crosshair = Self::OCR_CROSS,
-    /// Hand
-    Hand = Self::OCR_HAND,
-    /// I-beam
-    IBeam = Self::OCR_IBEAM,
-    /// Slashed circle
-    SlashedCircle = Self::OCR_NO,
-    /// Four-pointed arrow pointing north, south, east, and west
-    ArrowAllDirections = Self::OCR_SIZEALL,
-    /// Double-pointed arrow pointing northeast and southwest
-    ArrowNESW = Self::OCR_SIZENESW,
-    /// Double-pointed arrow pointing north and south
-    ArrowNS = Self::OCR_SIZENS,
-    /// Double-pointed arrow pointing northwest and southeast
-    ArrowNWSE = Self::OCR_SIZENWSE,
-    /// Double-pointed arrow pointing west and east
-    ArrowWE = Self::OCR_SIZEWE,
-    /// Vertical arrow
-    Up = Self::OCR_UP,
-}
-
-impl BuiltinCursor {
-    // https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setsystemcursor
-    const OCR_APPSTARTING: u16 = 32650;
-    const OCR_NORMAL: u16 = 32512;
-    const OCR_CROSS: u16 = 32515;
-    const OCR_HAND: u16 = 32649;
-    const OCR_HELP: u16 = 32651;
-    const OCR_IBEAM: u16 = 32513;
-    const OCR_NO: u16 = 32648;
-    const OCR_SIZEALL: u16 = 32646;
-    const OCR_SIZENESW: u16 = 32643;
-    const OCR_SIZENS: u16 = 32645;
-    const OCR_SIZENWSE: u16 = 32642;
-    const OCR_SIZEWE: u16 = 32644;
-    const OCR_UP: u16 = 32516;
-    const OCR_WAIT: u16 = 32514;
-}
-
-impl Cursor for BuiltinCursor {
-    fn as_handle(&self) -> io::Result<HCURSOR> {
-        let handle = get_shared_image_handle((*self).into(), IMAGE_CURSOR)?;
-        Ok(handle.as_ptr() as HCURSOR)
-    }
-}
-
-impl Default for BuiltinCursor {
-    #[inline]
-    fn default() -> Self {
-        BuiltinCursor::Normal
-    }
-}
-
-pub trait Brush {
-    fn as_handle(&self) -> io::Result<HBRUSH>;
-}
-
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(i32)]
-pub enum BuiltinColor {
-    Scrollbar = COLOR_SCROLLBAR,
-    Background = COLOR_BACKGROUND,
-    ActiveCaption = COLOR_ACTIVECAPTION,
-    InactiveCaption = COLOR_INACTIVECAPTION,
-    Menu = COLOR_MENU,
-    Window = COLOR_WINDOW,
-    WindowFrame = COLOR_WINDOWFRAME,
-    MenuText = COLOR_MENUTEXT,
-    WindowText = COLOR_WINDOWTEXT,
-    CaptionText = COLOR_CAPTIONTEXT,
-    ActiveBorder = COLOR_ACTIVEBORDER,
-    InactiveBorder = COLOR_INACTIVEBORDER,
-    AppWorkspace = COLOR_APPWORKSPACE,
-    Highlight = COLOR_HIGHLIGHT,
-    HighlightText = COLOR_HIGHLIGHTTEXT,
-    ButtonFace = COLOR_BTNFACE,
-    ButtonShadow = COLOR_BTNSHADOW,
-    GrayText = COLOR_GRAYTEXT,
-    ButtonText = COLOR_BTNTEXT,
-    InactiveCaptionText = COLOR_INACTIVECAPTIONTEXT,
-    ButtonHighlight = COLOR_BTNHIGHLIGHT,
-    Shadow3DDark = COLOR_3DDKSHADOW,
-    Light3D = COLOR_3DLIGHT,
-    InfoText = COLOR_INFOTEXT,
-    InfoBlack = COLOR_INFOBK,
-    HotLight = COLOR_HOTLIGHT,
-    GradientActiveCaption = COLOR_GRADIENTACTIVECAPTION,
-    GradientInactiveCaption = COLOR_GRADIENTINACTIVECAPTION,
-    MenuHighlight = COLOR_MENUHILIGHT,
-    MenuBar = COLOR_MENUBAR,
-}
-
-impl Brush for BuiltinColor {
-    fn as_handle(&self) -> io::Result<HBRUSH> {
-        Ok(i32::from(*self) as HBRUSH)
-    }
-}
-
-fn get_shared_image_handle(resource_id: WORD, resource_type: UINT) -> io::Result<NonNull<c_void>> {
-    let handle: NonNull<c_void> = unsafe {
-        LoadImageW(
-            ptr::null_mut(),
-            MAKEINTRESOURCEW(resource_id),
-            resource_type,
-            0,
-            0,
-            LR_SHARED | LR_DEFAULTSIZE,
-        )
-        .to_non_null_else_get_last_error()?
-    };
-    Ok(handle)
 }
 
 /// Taskbar functionality.

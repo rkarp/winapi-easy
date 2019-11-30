@@ -16,10 +16,16 @@ use winapi::shared::ntdef::{
 
 pub(crate) trait ToWideString: AsRef<OsStr> + Sized {
     fn to_wide_string(&self) -> Vec<WCHAR> {
-        self.as_ref().encode_wide().chain(once(0)).collect()
+        to_wide_chars_iter(self).collect()
     }
 }
 impl<T: AsRef<OsStr> + Sized> ToWideString for T {}
+
+pub(crate) fn to_wide_chars_iter<'a>(
+    str: &'a (impl AsRef<OsStr> + ?Sized),
+) -> impl Iterator<Item = WCHAR> + 'a {
+    str.as_ref().encode_wide().chain(once(0))
+}
 
 pub(crate) trait FromWideString: AsRef<[WCHAR]> + Sized {
     fn to_string_lossy(&self) -> String {

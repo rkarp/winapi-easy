@@ -19,7 +19,7 @@ enum Action {
 }
 
 fn main() -> io::Result<()> {
-    if let Some(mut console_window) = WindowHandle::get_console_window() {
+    if let Some(console_window) = WindowHandle::get_console_window() {
         console_window.perform_action(WindowAction::Minimize)?;
     }
     let hotkey_def = GlobalHotkeySet::new()
@@ -36,7 +36,7 @@ fn main() -> io::Result<()> {
             Action::MonitorOffPlusLock => lock_workstation()?,
             Action::MonitorOff => (),
         }
-        let mut foreground_window = WindowHandle::get_foreground_window().unwrap();
+        let foreground_window = WindowHandle::get_foreground_window().unwrap();
         foreground_window.set_monitor_power(MonitorPower::Off)?;
     }
     Ok(())
