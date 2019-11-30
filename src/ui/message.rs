@@ -43,7 +43,7 @@ pub trait WindowMessageListener {
     #[allow(unused_variables)]
     #[inline(always)]
     fn handle_menu_command(
-        &mut self,
+        &self,
         window: &WindowHandle,
         selected_item_idx: WPARAM,
         menu_handle: LPARAM,
@@ -51,16 +51,16 @@ pub trait WindowMessageListener {
     }
     #[allow(unused_variables)]
     #[inline(always)]
-    fn handle_window_destroy(&mut self, window: &WindowHandle) {}
+    fn handle_window_destroy(&self, window: &WindowHandle) {}
     #[allow(unused_variables)]
     #[inline(always)]
-    fn handle_notification_icon_select(&mut self, icon_id: u16) {}
+    fn handle_notification_icon_select(&self, icon_id: u16) {}
     #[allow(unused_variables)]
     #[inline(always)]
-    fn handle_notification_icon_context_select(&mut self, icon_id: u16) {}
+    fn handle_notification_icon_context_select(&self, icon_id: u16) {}
     #[allow(unused_variables)]
     #[inline(always)]
-    fn handle_custom_user_message(&mut self, window: &WindowHandle, message_id: u8) {}
+    fn handle_custom_user_message(&self, window: &WindowHandle, message_id: u8) {}
 }
 
 #[derive(Copy, Clone)]
@@ -82,7 +82,7 @@ impl RawMessage {
     pub(crate) fn dispatch_to_message_listener<WML: WindowMessageListener>(
         self,
         window: WindowHandle,
-        listener: &mut WML,
+        listener: &WML,
     ) -> Option<LRESULT> {
         let RawMessage {
             message,
@@ -193,7 +193,7 @@ where
         let listener_result = window
             .get_user_data_ptr::<WML>()
             .and_then(|mut listener_ptr| {
-                raw_message.dispatch_to_message_listener(window, listener_ptr.as_mut())
+                raw_message.dispatch_to_message_listener(window, listener_ptr.as_ref())
             });
 
         if let Some(l_result) = listener_result {

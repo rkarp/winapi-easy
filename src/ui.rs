@@ -52,6 +52,7 @@ use winapi::um::shellapi::{
     NIIF_WARNING,
     NIM_ADD,
     NIM_DELETE,
+    NIM_MODIFY,
     NIM_SETVERSION,
     NIS_HIDDEN,
     NOTIFYICONDATAW,
@@ -350,11 +351,11 @@ impl WindowHandle {
         NonNull::new(ptr_value as *mut T)
     }
 
-    pub(crate) unsafe fn set_user_data_ptr<T>(&mut self, reference: &mut T) -> io::Result<()> {
+    pub(crate) unsafe fn set_user_data_ptr<T>(&mut self, ptr: *const T) -> io::Result<()> {
         SetWindowLongPtrW(
             self.as_mutable_ptr(),
             GWLP_USERDATA,
-            reference as *const T as LONG_PTR,
+            ptr as LONG_PTR,
         );
         // TODO add error checking, distinguishing between old value 0 and an actual error (see MS docs)
         Ok(())
@@ -427,7 +428,7 @@ pub struct Window<'class, 'listener, WML, I> {
 impl<'class, 'listener, WML: WindowMessageListener, I: Icon> Window<'class, 'listener, WML, I> {
     pub fn create_new(
         class: &'class WindowClass<WML, I>,
-        listener: &'listener mut WML,
+        listener: &'listener WML,
         window_name: &str,
     ) -> io::Result<Self> {
         let h_wnd: NonNull<HWND__> = unsafe {
@@ -639,7 +640,91 @@ pub struct NotificationIcon<'a, WML, I> {
     window: &'a Window<'a, 'a, WML, I>,
 }
 
-impl<WML, I> NotificationIcon<'_, WML, I> {}
+impl<'a, WML, I> NotificationIcon<'a, WML, I> {
+    pub fn set_icon(&mut self, icon: &'a impl Icon) -> io::Result<()> {
+        let mut call_data = get_notification_call_data(
+            &self.window.handle,
+            self.id,
+            false,
+            Some(icon.as_handle()?),
+            None,
+            None,
+            None,
+        );
+        unsafe {
+            Shell_NotifyIconW(NIM_MODIFY, &mut call_data).if_null_to_error(|| {
+                io::Error::new(io::ErrorKind::Other, "Cannot set notification icon")
+            })?;
+        };
+        Ok(())
+    }
+
+    pub fn set_icon_hidden_state(&mut self, hidden: bool) -> io::Result<()> {
+        let mut call_data = get_notification_call_data(
+            &self.window.handle,
+            self.id,
+            false,
+            None,
+            None,
+            Some(hidden),
+            None,
+        );
+        unsafe {
+            Shell_NotifyIconW(NIM_MODIFY, &mut call_data).if_null_to_error(|| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    "Cannot set notification icon hidden state",
+                )
+            })?;
+        };
+        Ok(())
+    }
+
+    pub fn set_tooltip_text(&mut self, text: &str) -> io::Result<()> {
+        let mut call_data = get_notification_call_data(
+            &self.window.handle,
+            self.id,
+            false,
+            None,
+            Some(text),
+            None,
+            None,
+        );
+        unsafe {
+            Shell_NotifyIconW(NIM_MODIFY, &mut call_data).if_null_to_error(|| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    "Cannot set notification icon tooltip text",
+                )
+            })?;
+        };
+        Ok(())
+    }
+
+    pub fn set_balloon_notification(
+        &mut self,
+        notification: Option<BalloonNotification>,
+    ) -> io::Result<()> {
+        let mut call_data = get_notification_call_data(
+            &self.window.handle,
+            self.id,
+            false,
+            None,
+            None,
+            None,
+            Some(notification),
+        );
+        unsafe {
+            Shell_NotifyIconW(NIM_MODIFY, &mut call_data).if_null_to_error(|| {
+                io::Error::new(
+                    io::ErrorKind::Other,
+                    "Cannot set notification icon balloon text",
+                )
+            })?;
+        };
+        Ok(())
+    }
+}
 
 impl<WML, I> Drop for NotificationIcon<'_, WML, I> {
     fn drop(&mut self) {
@@ -733,6 +818,12 @@ fn get_notification_call_data(
 pub enum NotificationIconId {
     Simple(u16),
     GUID(GUID),
+}
+
+impl Default for NotificationIconId {
+    fn default() -> Self {
+        NotificationIconId::Simple(0)
+    }
 }
 
 #[derive(Copy, Clone)]

@@ -2,9 +2,7 @@ use std::io;
 use std::ptr;
 use std::ptr::NonNull;
 
-use num_enum::{
-    IntoPrimitive,
-};
+use num_enum::IntoPrimitive;
 use winapi::ctypes::c_void;
 use winapi::shared::minwindef::{
     UINT,
@@ -54,9 +52,7 @@ use winapi::um::winuser::{
     MAKEINTRESOURCEW,
 };
 
-use crate::internal::{
-    RawHandle,
-};
+use crate::internal::RawHandle;
 
 pub trait Icon {
     fn as_handle(&self) -> io::Result<HICON>;
