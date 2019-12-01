@@ -23,6 +23,7 @@ use winapi::um::winuser::{
     DefWindowProcW,
     DispatchMessageW,
     GetMessageW,
+    PostMessageW,
     PostQuitMessage,
     TranslateMessage,
     MSG,
@@ -35,6 +36,7 @@ use winapi::um::winuser::{
 
 use crate::internal::{
     catch_unwind_or_abort,
+    ManagedHandle,
     ReturnValue,
 };
 use crate::ui::WindowHandle;
@@ -77,13 +79,17 @@ impl RawMessage {
     /// that won't conflict with messages from predefined Windows control classes.
     const STR_MSG_RANGE_START: u32 = 0xC000;
 
-    pub(crate) const ID_NOTIFICATION_ICON_MSG: u32 = Self::STR_MSG_RANGE_START - 1;
+    pub(crate) const ID_APP_WAKEUP_MSG: u32 = Self::STR_MSG_RANGE_START - 1;
+    pub(crate) const ID_NOTIFICATION_ICON_MSG: u32 = Self::STR_MSG_RANGE_START - 2;
 
     pub(crate) fn dispatch_to_message_listener<WML: WindowMessageListener>(
         self,
         window: WindowHandle,
         listener: &WML,
     ) -> Option<LRESULT> {
+        // Many messages won't go through the thread message loop, so we need to notify it.
+        // No chance of an infinite loop here since the window procedure won't be called for messages with no associated windows.
+        Self::post_loop_wakeup_message().unwrap();
         let RawMessage {
             message,
             w_param,
@@ -118,6 +124,31 @@ impl RawMessage {
             _ => None,
         }
     }
+
+    /// Posts a message to the thread message queue and returns immediately.
+    ///
+    /// If no window is given, the window procedure won't be called by `DispatchMessageW`.
+    fn post_message(&self, window: Option<&WindowHandle>) -> io::Result<()> {
+        unsafe {
+            PostMessageW(
+                window.map_or(ptr::null_mut(), |window| window.as_immutable_ptr()),
+                self.message,
+                self.w_param,
+                self.l_param,
+            )
+            .if_null_get_last_error()?;
+        }
+        Ok(())
+    }
+
+    fn post_loop_wakeup_message() -> io::Result<()> {
+        let wakeup_message = RawMessage {
+            message: Self::ID_APP_WAKEUP_MSG,
+            w_param: 0,
+            l_param: 0,
+        };
+        wakeup_message.post_message(None)
+    }
 }
 
 thread_local! {
@@ -127,7 +158,10 @@ thread_local! {
 pub enum ThreadMessageLoop {}
 
 impl ThreadMessageLoop {
-    pub fn run_thread_message_loop() -> io::Result<()> {
+    pub fn run_thread_message_loop<F>(mut loop_callback: F) -> io::Result<()>
+    where
+        F: FnMut() -> io::Result<()>,
+    {
         THREAD_LOOP_RUNNING.with(|running| {
             if running.get() {
                 panic!("Cannot run two thread message loops on the same thread");
@@ -148,6 +182,7 @@ impl ThreadMessageLoop {
                 TranslateMessage(&mut msg);
                 DispatchMessageW(&mut msg);
             }
+            loop_callback()?;
         }
         Ok(())
     }
@@ -190,11 +225,9 @@ where
 
         // When creating a window, the custom data for the loop is not set yet
         // before the first call to this function
-        let listener_result = window
-            .get_user_data_ptr::<WML>()
-            .and_then(|mut listener_ptr| {
-                raw_message.dispatch_to_message_listener(window, listener_ptr.as_ref())
-            });
+        let listener_result = window.get_user_data_ptr::<WML>().and_then(|listener_ptr| {
+            raw_message.dispatch_to_message_listener(window, listener_ptr.as_ref())
+        });
 
         if let Some(l_result) = listener_result {
             l_result

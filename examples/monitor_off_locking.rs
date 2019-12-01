@@ -8,8 +8,8 @@ use winapi_easy::keyboard::{
 use winapi_easy::ui::{
     lock_workstation,
     MonitorPower,
-    WindowAction,
     WindowHandle,
+    WindowShowState,
 };
 
 #[derive(Copy, Clone)]
@@ -20,7 +20,7 @@ enum Action {
 
 fn main() -> io::Result<()> {
     if let Some(console_window) = WindowHandle::get_console_window() {
-        console_window.perform_action(WindowAction::Minimize)?;
+        console_window.set_show_state(WindowShowState::Minimize)?;
     }
     let hotkey_def = GlobalHotkeySet::new()
         .add_global_hotkey(

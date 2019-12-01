@@ -121,7 +121,7 @@ impl ReturnValue for isize {
     const NULL_VALUE: Self = 0;
 }
 
-impl ReturnValue for HANDLE {
+impl<T> ReturnValue for *mut T {
     const NULL_VALUE: Self = ptr::null_mut();
 
     #[inline]

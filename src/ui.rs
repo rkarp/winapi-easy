@@ -85,8 +85,11 @@ use winapi::um::winuser::{
     LockWorkStation,
     RegisterClassExW,
     SendMessageW,
+    SetActiveWindow,
+    SetForegroundWindow,
     SetWindowLongPtrW,
     SetWindowPlacement,
+    ShowWindow,
     UnregisterClassW,
     CW_USEDEFAULT,
     FLASHWINFO,
@@ -234,6 +237,39 @@ impl WindowHandle {
         buffer.to_string_lossy()
     }
 
+    pub fn set_as_foreground(&self) -> io::Result<()> {
+        unsafe {
+            SetForegroundWindow(self.as_immutable_ptr()).if_null_to_error(|| {
+                io::Error::new(
+                    ErrorKind::PermissionDenied,
+                    "Cannot bring window to foreground",
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    pub fn set_as_active(&self) -> io::Result<()> {
+        unsafe {
+            SetActiveWindow(self.as_immutable_ptr()).if_null_get_last_error()?;
+        }
+        Ok(())
+    }
+
+    pub fn set_show_state(&self, state: WindowShowState) -> io::Result<()> {
+        if self.is_window() {
+            unsafe {
+                ShowWindow(self.as_immutable_ptr(), state.into());
+            }
+            Ok(())
+        } else {
+            Err(io::Error::new(
+                ErrorKind::NotFound,
+                "Cannot set show state because window does not exist",
+            ))
+        }
+    }
+
     pub fn get_placement(&self) -> io::Result<WindowPlacement> {
         let mut raw_placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
             length: mem::size_of::<WINDOWPLACEMENT>() as UINT,
@@ -271,7 +307,8 @@ impl WindowHandle {
         Ok(buffer.to_string_lossy())
     }
 
-    pub fn perform_action(&self, action: WindowAction) -> io::Result<()> {
+    #[allow(unused)]
+    pub(crate) fn perform_action(&self, action: WindowAction) -> io::Result<()> {
         let result =
             unsafe { SendMessageW(self.as_immutable_ptr(), WM_SYSCOMMAND, action.into(), 0) };
         result.if_non_null_to_error(|| custom_err_with_code("Cannot perform window action", result))
@@ -352,11 +389,7 @@ impl WindowHandle {
     }
 
     pub(crate) unsafe fn set_user_data_ptr<T>(&mut self, ptr: *const T) -> io::Result<()> {
-        SetWindowLongPtrW(
-            self.as_mutable_ptr(),
-            GWLP_USERDATA,
-            ptr as LONG_PTR,
-        );
+        SetWindowLongPtrW(self.as_mutable_ptr(), GWLP_USERDATA, ptr as LONG_PTR);
         // TODO add error checking, distinguishing between old value 0 and an actual error (see MS docs)
         Ok(())
     }
@@ -580,7 +613,8 @@ impl WindowPlacement {
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
 #[repr(usize)]
-pub enum WindowAction {
+#[allow(unused)]
+pub(crate) enum WindowAction {
     Close = SC_CLOSE,
     Maximize = SC_MAXIMIZE,
     Minimize = SC_MINIMIZE,
