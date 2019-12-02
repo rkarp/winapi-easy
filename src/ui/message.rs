@@ -31,7 +31,10 @@ use winapi::um::winuser::{
     WM_CONTEXTMENU,
     WM_DESTROY,
     WM_MENUCOMMAND,
+    WM_CLOSE,
+    WM_SIZE,
     WM_QUIT,
+    SIZE_MINIMIZED,
 };
 
 use crate::internal::{
@@ -40,6 +43,27 @@ use crate::internal::{
     ReturnValue,
 };
 use crate::ui::WindowHandle;
+
+#[derive(Copy, Clone)]
+pub enum Answer {
+    CallDefaultHandler,
+    Stop,
+}
+
+impl Answer {
+    fn to_raw_lresult(self) -> Option<LRESULT> {
+        match self {
+            Answer::CallDefaultHandler => { None },
+            Answer::Stop => { Some(0) },
+        }
+    }
+}
+
+impl Default for Answer {
+    fn default() -> Self {
+        Answer::CallDefaultHandler
+    }
+}
 
 pub trait WindowMessageListener {
     #[allow(unused_variables)]
@@ -51,6 +75,12 @@ pub trait WindowMessageListener {
         menu_handle: LPARAM,
     ) {
     }
+    #[allow(unused_variables)]
+    #[inline(always)]
+    fn handle_window_minimized(&self, window: &WindowHandle) {}
+    #[allow(unused_variables)]
+    #[inline(always)]
+    fn handle_window_close(&self, window: &WindowHandle) -> Answer { Default::default() }
     #[allow(unused_variables)]
     #[inline(always)]
     fn handle_window_destroy(&self, window: &WindowHandle) {}
@@ -116,6 +146,15 @@ impl RawMessage {
             WM_MENUCOMMAND => {
                 listener.handle_menu_command(&window, w_param, l_param);
                 None
+            }
+            WM_SIZE => {
+                if w_param == SIZE_MINIMIZED {
+                    listener.handle_window_minimized(&window);
+                }
+                None
+            }
+            WM_CLOSE => {
+                listener.handle_window_close(&window).to_raw_lresult()
             }
             WM_DESTROY => {
                 listener.handle_window_destroy(&window);

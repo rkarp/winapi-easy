@@ -160,6 +160,7 @@ const MAX_WINDOW_CLASS_NAME_CHARS: usize = 256;
 /// **Note**: If the window was not created by this thread, then it is not guaranteed that
 /// the handle continues pointing to the same window because the underlying handles
 /// can get invalid or even recycled.
+#[derive(Eq, PartialEq)]
 pub struct WindowHandle {
     handle: NonNull<HWND__>,
 }
