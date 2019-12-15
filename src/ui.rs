@@ -150,6 +150,7 @@ use crate::ui::resource::{
     Icon,
 };
 
+pub mod menu;
 pub mod message;
 pub mod resource;
 

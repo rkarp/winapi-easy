@@ -22,7 +22,7 @@ wio = "0.2.2"
 
 [dependencies.winapi]
 version = "0.3.8"
-features = ["basetsd", "handleapi", "impl-debug", "impl-default", "ntdef", "objbase", "processthreadsapi", "shellapi", "shobjidl_core", "tlhelp32", "winbase", "wincon", "winerror", "winuser"]
+features = ["basetsd", "handleapi", "impl-debug", "impl-default", "ntdef", "objbase", "processthreadsapi", "shellapi", "shobjidl_core", "tlhelp32", "winbase", "wincon", "windowsx", "winerror", "winuser"]
 
 [dev-dependencies]
 more-asserts = "0.2.1"

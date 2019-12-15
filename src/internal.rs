@@ -16,7 +16,10 @@ use winapi::shared::minwindef::{
     HMODULE,
 };
 use winapi::shared::ntdef::HANDLE;
-use winapi::shared::windef::HWND;
+use winapi::shared::windef::{
+    HMENU,
+    HWND,
+};
 use winapi::um::handleapi::{
     CloseHandle,
     INVALID_HANDLE_VALUE,
@@ -180,6 +183,8 @@ impl RawHandle for HANDLE {
 }
 
 impl RawHandle for HWND {}
+
+impl RawHandle for HMENU {}
 
 impl RawHandle for HMODULE {}
 

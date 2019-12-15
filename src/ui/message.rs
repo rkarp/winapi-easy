@@ -14,7 +14,14 @@ use winapi::shared::minwindef::{
     UINT,
     WPARAM,
 };
-use winapi::shared::windef::HWND;
+use winapi::shared::windef::{
+    HMENU,
+    HWND,
+};
+use winapi::shared::windowsx::{
+    GET_X_LPARAM,
+    GET_Y_LPARAM,
+};
 use winapi::um::shellapi::{
     NIN_KEYSELECT,
     NIN_SELECT,
@@ -27,14 +34,14 @@ use winapi::um::winuser::{
     PostQuitMessage,
     TranslateMessage,
     MSG,
+    SIZE_MINIMIZED,
     WM_APP,
+    WM_CLOSE,
     WM_CONTEXTMENU,
     WM_DESTROY,
     WM_MENUCOMMAND,
-    WM_CLOSE,
-    WM_SIZE,
     WM_QUIT,
-    SIZE_MINIMIZED,
+    WM_SIZE,
 };
 
 use crate::internal::{
@@ -42,7 +49,11 @@ use crate::internal::{
     ManagedHandle,
     ReturnValue,
 };
-use crate::ui::WindowHandle;
+use crate::ui::menu::MenuHandle;
+use crate::ui::{
+    Point,
+    WindowHandle,
+};
 
 #[derive(Copy, Clone)]
 pub enum Answer {
@@ -53,8 +64,8 @@ pub enum Answer {
 impl Answer {
     fn to_raw_lresult(self) -> Option<LRESULT> {
         match self {
-            Answer::CallDefaultHandler => { None },
-            Answer::Stop => { Some(0) },
+            Answer::CallDefaultHandler => None,
+            Answer::Stop => Some(0),
         }
     }
 }
@@ -68,28 +79,24 @@ impl Default for Answer {
 pub trait WindowMessageListener {
     #[allow(unused_variables)]
     #[inline(always)]
-    fn handle_menu_command(
-        &self,
-        window: &WindowHandle,
-        selected_item_idx: WPARAM,
-        menu_handle: LPARAM,
-    ) {
-    }
+    fn handle_menu_command(&self, window: &WindowHandle, selected_item_id: u32) {}
     #[allow(unused_variables)]
     #[inline(always)]
     fn handle_window_minimized(&self, window: &WindowHandle) {}
     #[allow(unused_variables)]
     #[inline(always)]
-    fn handle_window_close(&self, window: &WindowHandle) -> Answer { Default::default() }
+    fn handle_window_close(&self, window: &WindowHandle) -> Answer {
+        Default::default()
+    }
     #[allow(unused_variables)]
     #[inline(always)]
     fn handle_window_destroy(&self, window: &WindowHandle) {}
     #[allow(unused_variables)]
     #[inline(always)]
-    fn handle_notification_icon_select(&self, icon_id: u16) {}
+    fn handle_notification_icon_select(&self, icon_id: u16, xy_coords: Point) {}
     #[allow(unused_variables)]
     #[inline(always)]
-    fn handle_notification_icon_context_select(&self, icon_id: u16) {}
+    fn handle_notification_icon_context_select(&self, icon_id: u16, xy_coords: Point) {}
     #[allow(unused_variables)]
     #[inline(always)]
     fn handle_custom_user_message(&self, window: &WindowHandle, message_id: u8) {}
@@ -134,17 +141,27 @@ impl RawMessage {
             Self::ID_NOTIFICATION_ICON_MSG => {
                 let icon_id = HIWORD(l_param as u32);
                 let event_code = LOWORD(l_param as u32) as u32;
+                let xy_coords = get_param_xy_coords(w_param);
                 match event_code {
                     // NIN_SELECT only happens with left clicks. Space will produce 1x NIN_KEYSELECT, Enter 2x NIN_KEYSELECT.
-                    NIN_SELECT | NIN_KEYSELECT => listener.handle_notification_icon_select(icon_id),
+                    NIN_SELECT | NIN_KEYSELECT => {
+                        listener.handle_notification_icon_select(icon_id, xy_coords)
+                    }
                     // Works both with mouse right click and the context menu key.
-                    WM_CONTEXTMENU => listener.handle_notification_icon_context_select(icon_id),
+                    WM_CONTEXTMENU => {
+                        listener.handle_notification_icon_context_select(icon_id, xy_coords)
+                    }
                     _ => (),
                 }
                 None
             }
             WM_MENUCOMMAND => {
-                listener.handle_menu_command(&window, w_param, l_param);
+                let menu_handle =
+                    MenuHandle::from_non_null(NonNull::new(l_param as HMENU).unwrap());
+                let item_id = menu_handle
+                    .get_item_id(w_param.try_into().unwrap())
+                    .unwrap();
+                listener.handle_menu_command(&window, item_id);
                 None
             }
             WM_SIZE => {
@@ -153,9 +170,7 @@ impl RawMessage {
                 }
                 None
             }
-            WM_CLOSE => {
-                listener.handle_window_close(&window).to_raw_lresult()
-            }
+            WM_CLOSE => listener.handle_window_close(&window).to_raw_lresult(),
             WM_DESTROY => {
                 listener.handle_window_destroy(&window);
                 None
@@ -275,4 +290,11 @@ where
         }
     };
     catch_unwind_or_abort(call)
+}
+
+fn get_param_xy_coords(param: WPARAM) -> Point {
+    Point {
+        x: GET_X_LPARAM(param as isize),
+        y: GET_Y_LPARAM(param as isize),
+    }
 }

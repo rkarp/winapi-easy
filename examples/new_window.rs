@@ -1,6 +1,10 @@
 use std::io;
 
 use std::cell::Cell;
+use winapi_easy::ui::menu::{
+    PopupMenu,
+    SubMenuItem,
+};
 use winapi_easy::ui::message::{
     ThreadMessageLoop,
     WindowMessageListener,
@@ -11,6 +15,7 @@ use winapi_easy::ui::resource::{
     BuiltinIcon,
 };
 use winapi_easy::ui::{
+    Point,
     Window,
     WindowClass,
     WindowHandle,
@@ -19,8 +24,14 @@ use winapi_easy::ui::{
 
 #[derive(Copy, Clone)]
 enum MyMessage {
-    IconLeftClicked,
-    IconRightClicked,
+    IconLeftClicked(Point),
+    IconRightClicked(Point),
+    MenuItem(u32),
+}
+
+impl MyMessage {
+    const HIDE_WINDOW: u32 = 1;
+    const SHOW_WINDOW: u32 = 2;
 }
 
 struct MyListener {
@@ -28,16 +39,29 @@ struct MyListener {
 }
 
 impl WindowMessageListener for MyListener {
+    fn handle_menu_command(&self, _window: &WindowHandle, selected_item_id: u32) {
+        self.message
+            .replace(Some(MyMessage::MenuItem(selected_item_id)));
+    }
+
     fn handle_window_destroy(&self, _: &WindowHandle) {
         ThreadMessageLoop::post_quit_message();
     }
-    fn handle_notification_icon_select(&self, icon_id: u16) {
-        println!("Selected notification icon id: {}", icon_id);
-        self.message.replace(Some(MyMessage::IconLeftClicked));
+    fn handle_notification_icon_select(&self, icon_id: u16, xy_coords: Point) {
+        println!(
+            "Selected notification icon id: {}, coords: ({}, {})",
+            icon_id, xy_coords.x, xy_coords.y
+        );
+        self.message
+            .replace(Some(MyMessage::IconLeftClicked(xy_coords)));
     }
-    fn handle_notification_icon_context_select(&self, icon_id: u16) {
-        println!("Context-selected notification icon id: {}", icon_id);
-        self.message.replace(Some(MyMessage::IconRightClicked));
+    fn handle_notification_icon_context_select(&self, icon_id: u16, xy_coords: Point) {
+        println!(
+            "Context-selected notification icon id: {}, coords: ({}, {})",
+            icon_id, xy_coords.x, xy_coords.y
+        );
+        self.message
+            .replace(Some(MyMessage::IconRightClicked(xy_coords)));
     }
 }
 
@@ -53,18 +77,38 @@ fn main() -> io::Result<()> {
     let window = Window::create_new(&class, &listener, "mywindow1")?;
     let _notification_icon =
         window.add_notification_icon(Default::default(), Some(&icon), Some("A tooltip!"));
-    let handle = window.as_ref();
-    handle.set_show_state(WindowShowState::Show)?;
+    let window_handle = window.as_ref();
+    window_handle.set_show_state(WindowShowState::Show)?;
+    let popup = PopupMenu::new()?;
+    popup.insert_menu_item(
+        SubMenuItem::Text("Show window"),
+        MyMessage::SHOW_WINDOW,
+        None,
+    )?;
+    popup.insert_menu_item(
+        SubMenuItem::Text("Hide window"),
+        MyMessage::HIDE_WINDOW,
+        None,
+    )?;
     let loop_callback = || {
         if let Some(message) = listener.message.take() {
             let window_handle = window.as_ref();
             match message {
-                MyMessage::IconLeftClicked => {
+                MyMessage::IconLeftClicked(_coords) => {
+                    window_handle.set_show_state(WindowShowState::ShowNormal)?;
+                    window_handle.set_as_foreground()?;
+                }
+                MyMessage::IconRightClicked(coords) => {
+                    window_handle.set_as_foreground()?;
+                    popup.show_popup_menu(window_handle, coords)?;
+                }
+                MyMessage::MenuItem(MyMessage::SHOW_WINDOW) => {
                     window_handle.set_show_state(WindowShowState::Show)?;
                 }
-                MyMessage::IconRightClicked => {
+                MyMessage::MenuItem(MyMessage::HIDE_WINDOW) => {
                     window_handle.set_show_state(WindowShowState::Hide)?;
                 }
+                MyMessage::MenuItem(_) => panic!(),
             }
         }
         Ok(())
