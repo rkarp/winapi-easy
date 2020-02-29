@@ -90,6 +90,7 @@ use winapi::um::winuser::{
 };
 
 use crate::internal::ReturnValue;
+use winapi::_core::time::Duration;
 
 #[derive(Copy, Clone)]
 struct HotkeyDef<ID> {
@@ -156,7 +157,11 @@ where
         self
     }
 
-    pub fn listen_for_hotkeys(mut self) -> io::Result<impl IntoIterator<Item = io::Result<ID>>> {
+    pub fn listen_for_hotkeys(self) -> io::Result<impl IntoIterator<Item = io::Result<ID>>> {
+        self.listen_for_hotkeys_with_sleeptime(None)
+    }
+
+    pub fn listen_for_hotkeys_with_sleeptime(mut self, sleep_time: Option<Duration>) -> io::Result<impl IntoIterator<Item = io::Result<ID>>> {
         let (tx_hotkey, rx_hotkey) = mpsc::channel();
         thread::spawn(move || {
             let ids = || Self::MIN_ID..;
@@ -191,6 +196,9 @@ where
                     .zip(self.hotkey_defs.iter().map(|def| def.user_id))
                     .collect();
                 loop {
+                    if let Some(sleep) = sleep_time {
+                        std::thread::sleep(sleep);
+                    };
                     let mut message: MaybeUninit<winuser::MSG> = MaybeUninit::uninit();
                     let getmsg_result = unsafe {
                         GetMessageW(message.as_mut_ptr(), ptr::null_mut(), WM_HOTKEY, WM_HOTKEY)
