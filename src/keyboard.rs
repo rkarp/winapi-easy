@@ -233,7 +233,7 @@ impl<ID> Drop for GlobalHotkeySet<ID> {
 }
 
 /// Non-modifier key usable for hotkeys.
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug)]
 #[repr(i32)]
 pub enum Key {
     Backspace = VK_BACK,
