@@ -570,7 +570,9 @@ pub enum WindowShowState {
     ShowNormal = SW_SHOWNORMAL,
 }
 
+/// DPI-scaled virtual coordinates.
 pub type Point = POINT;
+/// DPI-scaled virtual coordinates of a rectangle.
 pub type Rectangle = RECT;
 
 #[derive(Copy, Clone)]

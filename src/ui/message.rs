@@ -7,6 +7,7 @@ use std::{
 };
 
 use winapi::shared::minwindef::{
+    DWORD,
     HIWORD,
     LOWORD,
     LPARAM,
@@ -29,6 +30,7 @@ use winapi::um::shellapi::{
 use winapi::um::winuser::{
     DefWindowProcW,
     DispatchMessageW,
+    GetMessagePos,
     GetMessageW,
     PostMessageW,
     PostQuitMessage,
@@ -141,7 +143,15 @@ impl RawMessage {
             Self::ID_NOTIFICATION_ICON_MSG => {
                 let icon_id = HIWORD(l_param as u32);
                 let event_code = LOWORD(l_param as u32) as u32;
-                let xy_coords = get_param_xy_coords(w_param);
+                let xy_coords = {
+                    // `w_param` does contain the coordinates of the click event, but they are not adjusted for DPI scaling, so we can't use them.
+                    // Instead we have to call `GetMessagePos`, which will however return mouse coordinates even if the keyboard was used.
+                    // An alternative would be to use `NOTIFYICON_VERSION_4`, but that would not allow exposing an API for rich pop-up UIs
+                    // when the user hovers over the tray icon since the necessary notifications would not be sent.
+                    // See also: https://stackoverflow.com/a/41649787
+                    let raw_position = unsafe { GetMessagePos() };
+                    get_param_xy_coords(raw_position)
+                };
                 match event_code {
                     // NIN_SELECT only happens with left clicks. Space will produce 1x NIN_KEYSELECT, Enter 2x NIN_KEYSELECT.
                     NIN_SELECT | NIN_KEYSELECT => {
@@ -292,9 +302,10 @@ where
     catch_unwind_or_abort(call)
 }
 
-fn get_param_xy_coords(param: WPARAM) -> Point {
+fn get_param_xy_coords(param: DWORD) -> Point {
+    let param = param.try_into().unwrap();
     Point {
-        x: GET_X_LPARAM(param as isize),
-        y: GET_Y_LPARAM(param as isize),
+        x: GET_X_LPARAM(param),
+        y: GET_Y_LPARAM(param),
     }
 }
