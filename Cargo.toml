@@ -13,7 +13,7 @@ keywords = ["windows", "hotkey", "process", "taskbar"]
 categories = ["os::windows-apis", "api-bindings", "gui"]
 
 [package.metadata.docs.rs]
-default-target = "x86_64-pc-windows-msvc"
+targets = ["x86_64-pc-windows-msvc"]
 
 [dependencies]
 ntapi = "0.3.3"
@@ -22,7 +22,23 @@ wio = "0.2.2"
 
 [dependencies.winapi]
 version = "0.3.8"
-features = ["basetsd", "handleapi", "impl-debug", "impl-default", "ntdef", "objbase", "processthreadsapi", "shellapi", "shobjidl_core", "tlhelp32", "winbase", "wincon", "windowsx", "winerror", "winuser"]
+features = [
+    "basetsd",
+    "handleapi",
+    "impl-debug",
+    "impl-default",
+    "ntdef",
+    "objbase",
+    "processthreadsapi",
+    "shellapi",
+    "shobjidl_core",
+    "tlhelp32",
+    "winbase",
+    "wincon",
+    "windowsx",
+    "winerror",
+    "winuser",
+]
 
 [dev-dependencies]
 more-asserts = "0.2.1"
