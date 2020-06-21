@@ -47,7 +47,7 @@ use winapi::um::winuser::{
 };
 
 use crate::internal::{
-    catch_unwind_or_abort,
+    catch_unwind_and_abort,
     ManagedHandle,
     ReturnValue,
 };
@@ -299,7 +299,7 @@ where
             DefWindowProcW(h_wnd, message, w_param, l_param)
         }
     };
-    catch_unwind_or_abort(call)
+    catch_unwind_and_abort(call)
 }
 
 fn get_param_xy_coords(param: DWORD) -> Point {

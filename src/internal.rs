@@ -285,7 +285,7 @@ where
         let raw_closure = raw_closure as *mut F;
         let closure: &mut F = unsafe { &mut *raw_closure };
         let call = || closure(input);
-        catch_unwind_or_abort(call)
+        catch_unwind_and_abort(call)
     }
 
     (closure as *mut F as LPARAM, trampoline::<F, IN, OUT>)
@@ -311,17 +311,16 @@ where
             let closure: &mut F = &mut *(unwrapped_closure as *mut F);
             closure(input1, input2)
         };
-        catch_unwind_or_abort(call)
+        catch_unwind_and_abort(call)
     }
     RAW_CLOSURE.with(|cell| cell.set(closure as *mut F as *mut ffi::c_void));
     trampoline::<F, IN1, IN2, OUT>
 }
 
-pub(crate) fn catch_unwind_or_abort<F: FnOnce() -> R, R>(f: F) -> R {
+pub(crate) fn catch_unwind_and_abort<F: FnOnce() -> R, R>(f: F) -> R {
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(result) => result,
-        Err(e) => {
-            eprintln!("{:?}", e);
+        Err(_) => {
             // Abort is safe because it doesn't unwind.
             std::process::abort();
         }
