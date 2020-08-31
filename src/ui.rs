@@ -893,9 +893,6 @@ pub enum ProgressState {
     /// Stops displaying progress and returns the button to its normal state.
     NoProgress = TBPF_NOPROGRESS,
     /// Shows a "working" animation without indicating a completion percentage.
-    ///
-    /// Needs animations on the taskbar to be enabled in the OS config,
-    /// otherwise it will not show anything to the user.
     Indeterminate = TBPF_INDETERMINATE,
     /// Shows a progress indicator displaying the amount of work being completed.
     Normal = TBPF_NORMAL,
@@ -933,8 +930,6 @@ impl Taskbar {
     /// See also: [Microsoft docs](https://docs.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-itaskbarlist3-setprogressstate)
     ///
     /// # Examples
-    /// **Warning:** On Windows 7 (and possibly newer versions as well), when changing the progress state too quickly,
-    /// the change may be ignored. As a workaround, you can sleep for a short time:
     ///
     /// ```no_run
     /// use winapi_easy::ui::{
@@ -950,7 +945,7 @@ impl Taskbar {
     /// let mut taskbar = Taskbar::new()?;
     ///
     /// taskbar.set_progress_state(&mut window, ProgressState::Indeterminate)?;
-    /// thread::sleep(Duration::from_millis(20));
+    /// thread::sleep(Duration::from_millis(3000));
     /// taskbar.set_progress_state(&mut window, ProgressState::NoProgress)?;
     ///
     /// # std::result::Result::<(), std::io::Error>::Ok(())

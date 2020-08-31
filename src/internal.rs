@@ -58,7 +58,7 @@ pub(crate) trait ReturnValue: PartialEq + Sized + Copy {
         if !self.is_null() {
             self
         } else {
-            panic!(msg)
+            panic!("{}", msg)
         }
     }
 
