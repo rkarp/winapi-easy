@@ -135,7 +135,7 @@ impl RawMessage {
             l_param,
         } = self;
         match message {
-            value if value >= WM_APP && value <= WM_APP + (u8::max_value() as u32) => {
+            value if value >= WM_APP && value <= WM_APP + (u8::MAX as u32) => {
                 listener
                     .handle_custom_user_message(&window, (message - WM_APP).try_into().unwrap());
                 None

@@ -50,7 +50,7 @@ impl Clipboard {
 
             let num_files = DragQueryFileW(
                 clipboard_data.ptr() as HDROP,
-                std::u32::MAX,
+                u32::MAX,
                 ptr::null_mut(),
                 0,
             );

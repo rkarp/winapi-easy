@@ -309,8 +309,7 @@ impl WindowHandle {
         Ok(buffer.to_string_lossy())
     }
 
-    #[allow(unused)]
-    pub(crate) fn perform_action(&self, action: WindowAction) -> io::Result<()> {
+    pub fn send_command(&self, action: WindowCommand) -> io::Result<()> {
         let result =
             unsafe { SendMessageW(self.as_immutable_ptr(), WM_SYSCOMMAND, action.into(), 0) };
         result.if_non_null_to_error(|| custom_err_with_code("Cannot perform window action", result))
@@ -616,9 +615,9 @@ impl WindowPlacement {
 }
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
+#[non_exhaustive]
 #[repr(usize)]
-#[allow(unused)]
-pub(crate) enum WindowAction {
+pub enum WindowCommand {
     Close = SC_CLOSE,
     Maximize = SC_MAXIMIZE,
     Minimize = SC_MINIMIZE,
@@ -1002,9 +1001,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn get_toplevel_windows() -> io::Result<()> {
+    fn check_toplevel_windows() -> io::Result<()> {
         let all_windows = WindowHandle::get_toplevel_windows()?;
         assert_gt!(all_windows.len(), 0);
+        for window in all_windows {
+            assert!(window.is_window());
+        }
         Ok(())
     }
 }
