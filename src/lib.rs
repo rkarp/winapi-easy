@@ -8,6 +8,7 @@ pub mod clipboard;
 pub mod com;
 pub mod keyboard;
 pub mod process;
+pub mod shell;
 pub mod ui;
 
 mod internal;

@@ -20,6 +20,7 @@ An ergonomic and safe interface to some winapi functionality.
 * Lock workstation
 * COM initialization
 * Get a file list from the Windows clipboard
+* Refresh icon cache
 
 ## License
 
