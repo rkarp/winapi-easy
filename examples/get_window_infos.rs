@@ -6,6 +6,7 @@ use winapi_easy::ui::{
 };
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct WindowInfo {
     caption: String,
     class_name: String,
