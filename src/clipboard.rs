@@ -48,12 +48,8 @@ impl Clipboard {
                 GlobalLockedData::lock(clipboard_data)?
             };
 
-            let num_files = DragQueryFileW(
-                clipboard_data.ptr() as HDROP,
-                u32::MAX,
-                ptr::null_mut(),
-                0,
-            );
+            let num_files =
+                DragQueryFileW(clipboard_data.ptr() as HDROP, u32::MAX, ptr::null_mut(), 0);
             let file_names: io::Result<Vec<PathBuf>> = (0..num_files)
                 .into_iter()
                 .map(|file_index| {
