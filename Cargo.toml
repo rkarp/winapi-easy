@@ -16,18 +16,21 @@ categories = ["os::windows-apis", "api-bindings", "gui"]
 targets = ["x86_64-pc-windows-msvc"]
 
 [dependencies]
-ntapi = "0.3.3"
-num_enum = "0.4.2"
+ntapi = "0.3.6"
+num_enum = "0.5.5"
 wio = "0.2.2"
 
 [dependencies.windows]
-version = "0.26.0"
+version = "0.34.0"
 features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_WindowsProgramming",
     "Win32_UI_Shell",
 ]
 
 [dependencies.winapi]
-version = "0.3.8"
+version = "0.3.9"
 features = [
     "basetsd",
     "handleapi",

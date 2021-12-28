@@ -899,7 +899,7 @@ pub enum ProgressState {
     /// If the progress indicator is in the indeterminate state, it switches to a red determinate display
     /// of a generic percentage not indicative of actual progress.
     Error = TBPF_ERROR,
-    /// The progress indicator turns yellow to show that progress is currently stopped. his is a determinate state.
+    /// The progress indicator turns yellow to show that progress is currently stopped. This is a determinate state.
     /// If the progress indicator is in the indeterminate state, it switches to a yellow determinate display
     /// of a generic percentage not indicative of actual progress.
     Paused = TBPF_PAUSED,

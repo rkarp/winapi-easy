@@ -6,6 +6,7 @@ A small collection of various abstractions over the Windows API.
 
 pub mod clipboard;
 pub mod com;
+pub mod fs;
 pub mod keyboard;
 pub mod process;
 pub mod shell;
