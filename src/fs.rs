@@ -1,9 +1,5 @@
+use std::io;
 use std::path::Path;
-use std::{
-    io,
-    ptr,
-};
-
 use windows::Win32::Storage::FileSystem::{
     CopyFileExW,
     MoveFileExW,
@@ -16,6 +12,7 @@ use windows::Win32::System::WindowsProgramming::{
 };
 
 use crate::internal::ReturnValue;
+use crate::string::ZeroTerminatedWideString;
 
 pub trait PathExt: AsRef<Path> {
     /// Copies a file.
@@ -24,13 +21,15 @@ pub trait PathExt: AsRef<Path> {
     /// - Will block until the operation is complete
     /// - Will fail if the target path already exists
     fn copy_file_to<Q: AsRef<Path>>(&self, new_path: Q) -> io::Result<()> {
+        let source = ZeroTerminatedWideString::from_os_str(self.as_ref().as_os_str());
+        let target = ZeroTerminatedWideString::from_os_str(new_path.as_ref().as_os_str());
         unsafe {
             CopyFileExW(
-                self.as_ref().as_os_str(),
-                new_path.as_ref().as_os_str(),
+                source.as_raw_pcwstr(),
+                target.as_raw_pcwstr(),
                 None,
-                ptr::null(),
-                ptr::null_mut(),
+                None,
+                None,
                 COPY_FILE_COPY_SYMLINK | COPY_FILE_FAIL_IF_EXISTS,
             )
             .0
@@ -46,10 +45,12 @@ pub trait PathExt: AsRef<Path> {
     /// - Will block until the operation is complete
     /// - Will fail if the target path already exists
     fn move_to<Q: AsRef<Path>>(&self, new_path: Q) -> io::Result<()> {
+        let source = ZeroTerminatedWideString::from_os_str(self.as_ref().as_os_str());
+        let target = ZeroTerminatedWideString::from_os_str(new_path.as_ref().as_os_str());
         unsafe {
             MoveFileExW(
-                self.as_ref().as_os_str(),
-                new_path.as_ref().as_os_str(),
+                source.as_raw_pcwstr(),
+                target.as_raw_pcwstr(),
                 MOVEFILE_COPY_ALLOWED | MOVEFILE_WRITE_THROUGH,
             )
             .0

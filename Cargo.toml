@@ -16,12 +16,12 @@ categories = ["os::windows-apis", "api-bindings", "gui"]
 targets = ["x86_64-pc-windows-msvc"]
 
 [dependencies]
-ntapi = "0.3.6"
+ntapi = "0.4.0"
 num_enum = "0.5.5"
 wio = "0.2.2"
 
 [dependencies.windows]
-version = "0.34.0"
+version = "0.43.0"
 features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
@@ -50,4 +50,4 @@ features = [
 ]
 
 [dev-dependencies]
-more-asserts = "0.2.1"
+more-asserts = "0.3.1"

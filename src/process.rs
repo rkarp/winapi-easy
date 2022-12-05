@@ -133,7 +133,7 @@ impl Process {
     /// ```
     /// use winapi_easy::process::{Process, ProcessPriority};
     ///
-    /// Process::current().set_priority(ProcessPriority::Normal);
+    /// Process::current().set_priority(ProcessPriority::Normal)?;
     ///
     /// # std::result::Result::<(), std::io::Error>::Ok(())
     /// ```

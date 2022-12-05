@@ -13,6 +13,7 @@ use winapi::shared::ntdef::{
     UNICODE_STRING,
     WCHAR,
 };
+use windows::core::PCWSTR;
 
 pub(crate) trait ToWideString: AsRef<OsStr> + Sized {
     fn to_wide_string(&self) -> Vec<WCHAR> {
@@ -34,6 +35,18 @@ pub(crate) trait FromWideString: AsRef<[WCHAR]> + Sized {
     }
 }
 impl<T: AsRef<[WCHAR]> + Sized> FromWideString for T {}
+
+pub(crate) struct ZeroTerminatedWideString(Vec<WCHAR>);
+
+impl ZeroTerminatedWideString {
+    pub(crate) fn from_os_str<T: AsRef<OsStr> + Sized>(input: T) -> Self {
+        Self(input.to_wide_string())
+    }
+
+    pub(crate) fn as_raw_pcwstr(&self) -> PCWSTR {
+        PCWSTR::from_raw(self.0.as_ptr())
+    }
+}
 
 pub(crate) struct WinUnicodeString {
     win_unicode_string: UNICODE_STRING,
