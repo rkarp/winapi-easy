@@ -25,11 +25,11 @@ fn main() -> io::Result<()> {
     let hotkey_def = GlobalHotkeySet::new()
         .add_global_hotkey(
             Action::MonitorOff,
-            Modifier::Ctrl + Modifier::Shift + Key::Oem3,
+            Modifier::Ctrl + Modifier::Shift + Key::Oem1,
         )
         .add_global_hotkey(
             Action::MonitorOffPlusLock,
-            Modifier::Ctrl + Modifier::Alt + Key::Oem3,
+            Modifier::Ctrl + Modifier::Alt + Key::Oem1,
         );
     for event in hotkey_def.listen_for_hotkeys()? {
         match event? {

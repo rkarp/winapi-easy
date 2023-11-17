@@ -9,35 +9,43 @@ use std::collections::HashMap;
 use std::io;
 use std::mem::MaybeUninit;
 use std::ops::Add;
-use std::ptr;
 use std::sync::mpsc;
 use std::thread;
 
 use num_enum::IntoPrimitive;
-use winapi::ctypes::c_int;
-use winapi::shared::minwindef::UINT;
-use winapi::shared::minwindef::{
-    BOOL,
-    INT,
-    LPARAM,
-};
-use winapi::um::winuser::{
-    self,
-    GetMessageW,
+use windows::Win32::Foundation::BOOL;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
     RegisterHotKey,
     UnregisterHotKey,
+    HOT_KEY_MODIFIERS,
     MOD_ALT,
     MOD_CONTROL,
     MOD_NOREPEAT,
     MOD_SHIFT,
     MOD_WIN,
+    VK_0,
+    VK_1,
+    VK_2,
+    VK_3,
+    VK_4,
+    VK_5,
+    VK_6,
+    VK_7,
+    VK_8,
+    VK_9,
+    VK_A,
     VK_ADD,
+    VK_B,
     VK_BACK,
+    VK_C,
+    VK_D,
     VK_DELETE,
     VK_DIVIDE,
     VK_DOWN,
+    VK_E,
     VK_END,
     VK_ESCAPE,
+    VK_F,
     VK_F1,
     VK_F10,
     VK_F11,
@@ -50,10 +58,18 @@ use winapi::um::winuser::{
     VK_F7,
     VK_F8,
     VK_F9,
+    VK_G,
+    VK_H,
     VK_HOME,
+    VK_I,
     VK_INSERT,
+    VK_J,
+    VK_K,
+    VK_L,
     VK_LEFT,
+    VK_M,
     VK_MULTIPLY,
+    VK_N,
     VK_NEXT,
     VK_NUMPAD0,
     VK_NUMPAD1,
@@ -65,6 +81,7 @@ use winapi::um::winuser::{
     VK_NUMPAD7,
     VK_NUMPAD8,
     VK_NUMPAD9,
+    VK_O,
     VK_OEM_1,
     VK_OEM_102,
     VK_OEM_2,
@@ -78,14 +95,29 @@ use winapi::um::winuser::{
     VK_OEM_MINUS,
     VK_OEM_PERIOD,
     VK_OEM_PLUS,
+    VK_P,
     VK_PAUSE,
     VK_PRIOR,
+    VK_Q,
+    VK_R,
     VK_RETURN,
     VK_RIGHT,
+    VK_S,
     VK_SPACE,
     VK_SUBTRACT,
+    VK_T,
     VK_TAB,
+    VK_U,
     VK_UP,
+    VK_V,
+    VK_W,
+    VK_X,
+    VK_Y,
+    VK_Z,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetMessageW,
+    MSG,
     WM_HOTKEY,
 };
 
@@ -121,7 +153,7 @@ struct HotkeyDef<ID> {
 ///     }
 /// }
 ///
-/// # std::result::Result::<(), std::io::Error>::Ok(())
+/// # Result::<(), std::io::Error>::Ok(())
 /// ```
 #[derive(Clone)]
 pub struct GlobalHotkeySet<ID> {
@@ -130,7 +162,7 @@ pub struct GlobalHotkeySet<ID> {
 }
 
 impl<ID> GlobalHotkeySet<ID> {
-    const MIN_ID: c_int = 1;
+    const MIN_ID: i32 = 1;
 }
 
 impl<ID> GlobalHotkeySet<ID>
@@ -166,10 +198,10 @@ where
                     .try_for_each(|(curr_id, hotkey_def)| {
                         let result: io::Result<BOOL> = unsafe {
                             RegisterHotKey(
-                                ptr::null_mut(),
+                                None,
                                 curr_id,
-                                hotkey_def.key_combination.modifiers.0 as UINT,
-                                c_int::from(hotkey_def.key_combination.key) as UINT,
+                                HOT_KEY_MODIFIERS(hotkey_def.key_combination.modifiers.0),
+                                hotkey_def.key_combination.key.into(),
                             )
                             .if_null_get_last_error()
                         };
@@ -177,7 +209,7 @@ where
                             Ok(())
                         } else {
                             (Self::MIN_ID..=curr_id - 1).rev().for_each(|id| unsafe {
-                                UnregisterHotKey(ptr::null_mut(), id)
+                                UnregisterHotKey(None, id)
                                     .if_null_panic("Cannot unregister hotkey");
                             });
                             result.map(|_| ())
@@ -187,20 +219,22 @@ where
                 tx_hotkey.send(Err(err)).unwrap_or(());
             } else {
                 self.hotkeys_active = true;
-                let id_assocs: HashMap<INT, ID> = ids()
+                let id_assocs: HashMap<i32, ID> = ids()
                     .zip(self.hotkey_defs.iter().map(|def| def.user_id))
                     .collect();
                 loop {
-                    let mut message: MaybeUninit<winuser::MSG> = MaybeUninit::uninit();
-                    let getmsg_result = unsafe {
-                        GetMessageW(message.as_mut_ptr(), ptr::null_mut(), WM_HOTKEY, WM_HOTKEY)
-                    };
+                    let mut message: MaybeUninit<MSG> = MaybeUninit::uninit();
+                    let getmsg_result =
+                        unsafe { GetMessageW(message.as_mut_ptr(), None, WM_HOTKEY, WM_HOTKEY) };
                     let message = unsafe { message.assume_init() };
                     let to_send = match getmsg_result {
-                        -1 => Some(Err(io::Error::last_os_error())),
-                        0 => break, // WM_QUIT
+                        BOOL(-1) => Some(Err(io::Error::last_os_error())),
+                        BOOL(0) => break, // WM_QUIT
                         _ => {
-                            if let Some(user_id) = id_assocs.get(&(message.wParam as INT)) {
+                            if let Some(user_id) = id_assocs
+                                .get(&message.wParam.0.try_into().expect(
+                                "ID from GetMessageW should be in range for ID map integer type",
+                            )) {
                                 Some(Ok(*user_id))
                             } else {
                                 None
@@ -225,7 +259,7 @@ impl<ID> Drop for GlobalHotkeySet<ID> {
         if self.hotkeys_active {
             for id in (Self::MIN_ID..).take(self.hotkey_defs.len()) {
                 unsafe {
-                    UnregisterHotKey(ptr::null_mut(), id).if_null_panic("Cannot unregister hotkey");
+                    UnregisterHotKey(None, id).if_null_panic("Cannot unregister hotkey");
                 }
             }
         }
@@ -234,150 +268,156 @@ impl<ID> Drop for GlobalHotkeySet<ID> {
 
 /// Non-modifier key usable for hotkeys.
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Hash, Debug)]
-#[repr(i32)]
+#[repr(u16)]
 pub enum Key {
-    Backspace = VK_BACK,
-    Tab = VK_TAB,
-    Return = VK_RETURN,
-    Pause = VK_PAUSE,
-    Esc = VK_ESCAPE,
-    Space = VK_SPACE,
-    PgUp = VK_PRIOR,
-    PgDown = VK_NEXT,
-    End = VK_END,
-    Home = VK_HOME,
-    LeftArrow = VK_LEFT,
-    UpArrow = VK_UP,
-    RightArrow = VK_RIGHT,
-    DownArrow = VK_DOWN,
-    Insert = VK_INSERT,
-    Delete = VK_DELETE,
-    Number0 = 0x30,
-    Number1 = 0x31,
-    Number2 = 0x32,
-    Number3 = 0x33,
-    Number4 = 0x34,
-    Number5 = 0x35,
-    Number6 = 0x36,
-    Number7 = 0x37,
-    Number8 = 0x38,
-    Number9 = 0x39,
-    A = 0x41,
-    B = 0x42,
-    C = 0x43,
-    D = 0x44,
-    E = 0x45,
-    F = 0x46,
-    G = 0x47,
-    H = 0x48,
-    I = 0x49,
-    J = 0x4A,
-    K = 0x4B,
-    L = 0x4C,
-    M = 0x4D,
-    N = 0x4E,
-    O = 0x4F,
-    P = 0x50,
-    Q = 0x51,
-    R = 0x52,
-    S = 0x53,
-    T = 0x54,
-    U = 0x55,
-    V = 0x56,
-    W = 0x57,
-    X = 0x58,
-    Y = 0x59,
-    Z = 0x5A,
-    Numpad0 = VK_NUMPAD0,
-    Numpad1 = VK_NUMPAD1,
-    Numpad2 = VK_NUMPAD2,
-    Numpad3 = VK_NUMPAD3,
-    Numpad4 = VK_NUMPAD4,
-    Numpad5 = VK_NUMPAD5,
-    Numpad6 = VK_NUMPAD6,
-    Numpad7 = VK_NUMPAD7,
-    Numpad8 = VK_NUMPAD8,
-    Numpad9 = VK_NUMPAD9,
-    Multiply = VK_MULTIPLY,
-    Add = VK_ADD,
-    Subtract = VK_SUBTRACT,
-    Divide = VK_DIVIDE,
-    F1 = VK_F1,
-    F2 = VK_F2,
-    F3 = VK_F3,
-    F4 = VK_F4,
-    F5 = VK_F5,
-    F6 = VK_F6,
-    F7 = VK_F7,
-    F8 = VK_F8,
-    F9 = VK_F9,
-    F10 = VK_F10,
-    F11 = VK_F11,
-    F12 = VK_F12,
+    Backspace = VK_BACK.0,
+    Tab = VK_TAB.0,
+    Return = VK_RETURN.0,
+    Pause = VK_PAUSE.0,
+    Esc = VK_ESCAPE.0,
+    Space = VK_SPACE.0,
+    PgUp = VK_PRIOR.0,
+    PgDown = VK_NEXT.0,
+    End = VK_END.0,
+    Home = VK_HOME.0,
+    LeftArrow = VK_LEFT.0,
+    UpArrow = VK_UP.0,
+    RightArrow = VK_RIGHT.0,
+    DownArrow = VK_DOWN.0,
+    Insert = VK_INSERT.0,
+    Delete = VK_DELETE.0,
+    Number0 = VK_0.0,
+    Number1 = VK_1.0,
+    Number2 = VK_2.0,
+    Number3 = VK_3.0,
+    Number4 = VK_4.0,
+    Number5 = VK_5.0,
+    Number6 = VK_6.0,
+    Number7 = VK_7.0,
+    Number8 = VK_8.0,
+    Number9 = VK_9.0,
+    A = VK_A.0,
+    B = VK_B.0,
+    C = VK_C.0,
+    D = VK_D.0,
+    E = VK_E.0,
+    F = VK_F.0,
+    G = VK_G.0,
+    H = VK_H.0,
+    I = VK_I.0,
+    J = VK_J.0,
+    K = VK_K.0,
+    L = VK_L.0,
+    M = VK_M.0,
+    N = VK_N.0,
+    O = VK_O.0,
+    P = VK_P.0,
+    Q = VK_Q.0,
+    R = VK_R.0,
+    S = VK_S.0,
+    T = VK_T.0,
+    U = VK_U.0,
+    V = VK_V.0,
+    W = VK_W.0,
+    X = VK_X.0,
+    Y = VK_Y.0,
+    Z = VK_Z.0,
+    Numpad0 = VK_NUMPAD0.0,
+    Numpad1 = VK_NUMPAD1.0,
+    Numpad2 = VK_NUMPAD2.0,
+    Numpad3 = VK_NUMPAD3.0,
+    Numpad4 = VK_NUMPAD4.0,
+    Numpad5 = VK_NUMPAD5.0,
+    Numpad6 = VK_NUMPAD6.0,
+    Numpad7 = VK_NUMPAD7.0,
+    Numpad8 = VK_NUMPAD8.0,
+    Numpad9 = VK_NUMPAD9.0,
+    Multiply = VK_MULTIPLY.0,
+    Add = VK_ADD.0,
+    Subtract = VK_SUBTRACT.0,
+    Divide = VK_DIVIDE.0,
+    F1 = VK_F1.0,
+    F2 = VK_F2.0,
+    F3 = VK_F3.0,
+    F4 = VK_F4.0,
+    F5 = VK_F5.0,
+    F6 = VK_F6.0,
+    F7 = VK_F7.0,
+    F8 = VK_F8.0,
+    F9 = VK_F9.0,
+    F10 = VK_F10.0,
+    F11 = VK_F11.0,
+    F12 = VK_F12.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
     /// * For the US standard keyboard, the ';:' key
     /// * For the German keyboard, the 'ü' key
-    Oem1 = VK_OEM_1,
+    Oem1 = VK_OEM_1.0,
     /// For any country/region, the '+' key
-    OemPlus = VK_OEM_PLUS,
+    OemPlus = VK_OEM_PLUS.0,
     /// For any country/region, the ',' key
-    OemComma = VK_OEM_COMMA,
+    OemComma = VK_OEM_COMMA.0,
     /// For any country/region, the '-' key
-    OemMinus = VK_OEM_MINUS,
+    OemMinus = VK_OEM_MINUS.0,
     /// For any country/region, the '.' key
-    OemPeriod = VK_OEM_PERIOD,
+    OemPeriod = VK_OEM_PERIOD.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
     /// * For the US standard keyboard, the '/?' key
     /// * For the German keyboard, the '#'' key
-    Oem2 = VK_OEM_2,
+    Oem2 = VK_OEM_2.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
     /// * For the US standard keyboard, the '`~' key
     /// * For the German keyboard, the 'ö' key
-    Oem3 = VK_OEM_3,
+    Oem3 = VK_OEM_3.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
     /// * For the US standard keyboard, the '[{' key
     /// * For the German keyboard, the 'ß?' key
-    Oem4 = VK_OEM_4,
+    Oem4 = VK_OEM_4.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
     /// * For the US standard keyboard, the '\|' key besides 'Enter'
     /// * For the German keyboard, the '^°' key
-    Oem5 = VK_OEM_5,
+    Oem5 = VK_OEM_5.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
     /// * For the US standard keyboard, the ']}' key
     /// * For the German keyboard, the '´`' key
-    Oem6 = VK_OEM_6,
+    Oem6 = VK_OEM_6.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
     /// * For the US standard keyboard, the 'single-quote/double-quote' key
     /// * For the German keyboard, the 'ä' key
-    Oem7 = VK_OEM_7,
-    Oem8 = VK_OEM_8,
+    Oem7 = VK_OEM_7.0,
+    Oem8 = VK_OEM_8.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
     /// * For the US standard keyboard, the '\|' key besides the 'z' key
     /// * For the German keyboard, the '<>' key
-    Oem102 = VK_OEM_102,
+    Oem102 = VK_OEM_102.0,
+}
+
+impl From<Key> for u32 {
+    fn from(value: Key) -> Self {
+        Self::from(u16::from(value))
+    }
 }
 
 /// Modifier key than cannot be used by itself for hotkeys.
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
-#[repr(isize)]
+#[repr(u32)]
 pub enum Modifier {
-    Alt = MOD_ALT,
-    Ctrl = MOD_CONTROL,
-    Shift = MOD_SHIFT,
-    Win = MOD_WIN,
+    Alt = MOD_ALT.0,
+    Ctrl = MOD_CONTROL.0,
+    Shift = MOD_SHIFT.0,
+    Win = MOD_WIN.0,
 }
 
 /// A combination of modifier keys.
 #[derive(Copy, Clone, Eq, PartialEq)]
-pub struct ModifierCombination(LPARAM);
+pub struct ModifierCombination(u32);
 
 /// A combination of zero or more modifiers and exactly one normal key.
 #[derive(Copy, Clone, Eq, PartialEq)]
@@ -390,7 +430,7 @@ impl KeyCombination {
     fn new_from(modifiers: ModifierCombination, key: Key) -> Self {
         KeyCombination {
             /// Changes the hotkey behavior so that the keyboard auto-repeat does not yield multiple hotkey notifications.
-            modifiers: ModifierCombination(modifiers.0 | MOD_NOREPEAT),
+            modifiers: ModifierCombination(modifiers.0 | MOD_NOREPEAT.0),
             key,
         }
     }

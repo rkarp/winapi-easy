@@ -11,11 +11,7 @@ use std::ptr;
 use std::ptr::NonNull;
 
 use winapi::ctypes::c_void;
-use winapi::shared::minwindef::{
-    HGLOBAL,
-    HMODULE,
-};
-use winapi::shared::ntdef::HANDLE;
+use winapi::shared::minwindef::HMODULE;
 use winapi::shared::windef::{
     HMENU,
     HWND,
@@ -24,7 +20,11 @@ use winapi::um::handleapi::{
     CloseHandle,
     INVALID_HANDLE_VALUE,
 };
-use winapi::um::winbase::{
+use windows::Win32::Foundation::{
+    BOOL,
+    HANDLE,
+};
+use windows::Win32::System::Memory::{
     GlobalLock,
     GlobalUnlock,
 };
@@ -133,6 +133,14 @@ impl<T> ReturnValue for *mut T {
     }
 }
 
+impl ReturnValue for BOOL {
+    const NULL_VALUE: Self = BOOL(0);
+}
+
+impl ReturnValue for HANDLE {
+    const NULL_VALUE: Self = HANDLE(0);
+}
+
 pub(crate) trait RawHandle: PtrLike {
     fn to_non_null(self) -> Option<NonNull<Self::Target>> {
         let ptr: *mut Self::Target = unsafe {
@@ -171,7 +179,7 @@ pub(crate) trait RawHandle: PtrLike {
     }
 }
 
-impl RawHandle for HANDLE {
+impl RawHandle for winapi::shared::ntdef::HANDLE {
     /// Checks if the handle value is invalid.
     ///
     /// **Caution**: This is not correct for all APIs, for example GetCurrentProcess will also return
@@ -244,14 +252,14 @@ impl<T: CloseableHandle> Drop for AutoClose<T> {
 }
 
 pub(crate) struct GlobalLockedData {
-    handle: HGLOBAL,
+    handle: HANDLE,
     ptr: NonNull<c_void>,
 }
 
 impl GlobalLockedData {
-    pub(crate) fn lock(handle: HGLOBAL) -> io::Result<Self> {
+    pub(crate) fn lock(handle: HANDLE) -> io::Result<Self> {
         unsafe {
-            GlobalLock(handle)
+            GlobalLock(handle.0)
                 .to_non_null_else_get_last_error()
                 .map(|ptr| GlobalLockedData { handle, ptr })
         }
@@ -260,12 +268,17 @@ impl GlobalLockedData {
     pub(crate) fn ptr(&mut self) -> *mut c_void {
         self.ptr.as_ptr()
     }
+    #[allow(dead_code)]
+    #[inline(always)]
+    pub(crate) fn handle(&self) -> HANDLE {
+        self.handle
+    }
 }
 
 impl Drop for GlobalLockedData {
     fn drop(&mut self) {
         unsafe {
-            GlobalUnlock(self.handle);
+            GlobalUnlock(self.handle.0);
         }
     }
 }

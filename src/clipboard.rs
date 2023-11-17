@@ -6,17 +6,16 @@ use std::ffi::OsString;
 use std::io;
 use std::os::windows::ffi::OsStringExt;
 use std::path::PathBuf;
-use std::ptr;
 
-use winapi::um::shellapi::{
-    DragQueryFileW,
-    HDROP,
-};
-use winapi::um::winuser::{
+use windows::Win32::System::DataExchange::{
     CloseClipboard,
     GetClipboardData,
     OpenClipboard,
-    CF_HDROP,
+};
+use windows::Win32::System::SystemServices::CF_HDROP;
+use windows::Win32::UI::Shell::{
+    DragQueryFileW,
+    HDROP,
 };
 
 use crate::internal::{
@@ -32,7 +31,7 @@ pub struct Clipboard(());
 impl Clipboard {
     pub fn new() -> io::Result<Clipboard> {
         unsafe {
-            OpenClipboard(ptr::null_mut())
+            OpenClipboard(None)
                 .if_null_get_last_error()
                 .map(|_| Clipboard(()))
         }
@@ -44,33 +43,27 @@ impl Clipboard {
     pub fn get_file_list(&self) -> io::Result<Vec<PathBuf>> {
         unsafe {
             let mut clipboard_data = {
-                let clipboard_data = GetClipboardData(CF_HDROP).if_null_get_last_error()?;
+                let clipboard_data = GetClipboardData(CF_HDROP.0)?;
                 GlobalLockedData::lock(clipboard_data)?
             };
 
-            let num_files =
-                DragQueryFileW(clipboard_data.ptr() as HDROP, u32::MAX, ptr::null_mut(), 0);
+            let num_files = DragQueryFileW(HDROP(clipboard_data.ptr() as isize), u32::MAX, None);
             let file_names: io::Result<Vec<PathBuf>> = (0..num_files)
                 .into_iter()
                 .map(|file_index| {
-                    let required_size = 1 + DragQueryFileW(
-                        clipboard_data.ptr() as HDROP,
-                        file_index,
-                        ptr::null_mut(),
-                        0,
-                    )
-                    .if_null_to_error(|| io::ErrorKind::Other.into())?;
+                    let required_size =
+                        1 + DragQueryFileW(HDROP(clipboard_data.ptr() as isize), file_index, None)
+                            .if_null_to_error(|| io::ErrorKind::Other.into())?;
                     let file_str_buf = {
-                        let mut buffer = Vec::with_capacity(required_size as usize);
+                        let mut buffer = vec![0; required_size as usize];
                         DragQueryFileW(
-                            clipboard_data.ptr() as HDROP,
+                            HDROP(clipboard_data.ptr() as isize),
                             file_index,
-                            buffer.as_mut_ptr(),
-                            required_size,
+                            Some(buffer.as_mut_slice()),
                         )
                         .if_null_to_error(|| io::ErrorKind::Other.into())?;
                         // Set length, remove terminating zero
-                        buffer.set_len(required_size as usize - 1);
+                        buffer.truncate(buffer.len() - 1);
                         buffer
                     };
                     let os_string = OsString::from_wide(&file_str_buf);
