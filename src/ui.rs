@@ -316,7 +316,7 @@ impl WindowHandle {
     }
 
     #[inline(always)]
-    pub fn flash(&mut self) {
+    pub fn flash(&self) {
         self.flash_custom(Default::default(), Default::default(), Default::default())
     }
 
@@ -581,7 +581,9 @@ pub struct WindowPlacement {
 
 impl WindowPlacement {
     pub fn get_show_state(&self) -> Option<WindowShowState> {
-        (self.raw_placement.showCmd as i32).try_into().ok()
+        (i32::try_from(self.raw_placement.showCmd).unwrap())
+            .try_into()
+            .ok()
     }
 
     pub fn set_show_state(&mut self, state: WindowShowState) {
@@ -787,7 +789,9 @@ fn get_notification_call_data(
     maybe_balloon_text: Option<Option<BalloonNotification>>,
 ) -> NOTIFYICONDATAW {
     let mut icon_data = NOTIFYICONDATAW {
-        cbSize: mem::size_of::<NOTIFYICONDATAW>() as u32,
+        cbSize: mem::size_of::<NOTIFYICONDATAW>()
+            .try_into()
+            .expect("NOTIFYICONDATAW size conversion failed"),
         hWnd: window_handle.as_immutable_ptr(),
         ..Default::default()
     };
@@ -799,7 +803,7 @@ fn get_notification_call_data(
             icon_data.guidItem = id;
             icon_data.uFlags |= NIF_GUID;
         }
-        NotificationIconId::Simple(simple_id) => icon_data.uID = simple_id as DWORD,
+        NotificationIconId::Simple(simple_id) => icon_data.uID = simple_id.into(),
     };
     if set_callback_message {
         icon_data.uCallbackMessage = message::RawMessage::ID_NOTIFICATION_ICON_MSG;

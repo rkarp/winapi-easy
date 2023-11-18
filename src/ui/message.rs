@@ -135,14 +135,15 @@ impl RawMessage {
             l_param,
         } = self;
         match message {
-            value if value >= WM_APP && value <= WM_APP + (u8::MAX as u32) => {
+            value if value >= WM_APP && value <= WM_APP + (u32::from(u8::MAX)) => {
                 listener
                     .handle_custom_user_message(&window, (message - WM_APP).try_into().unwrap());
                 None
             }
             Self::ID_NOTIFICATION_ICON_MSG => {
-                let icon_id = HIWORD(l_param as u32);
-                let event_code = LOWORD(l_param as u32) as u32;
+                let icon_id = HIWORD(u32::try_from(l_param).expect("Icon ID conversion failed"));
+                let event_code: u32 =
+                    LOWORD(u32::try_from(l_param).expect("Event code conversion failed")).into();
                 let xy_coords = {
                     // `w_param` does contain the coordinates of the click event, but they are not adjusted for DPI scaling, so we can't use them.
                     // Instead we have to call `GetMessagePos`, which will however return mouse coordinates even if the keyboard was used.

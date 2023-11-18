@@ -70,7 +70,9 @@ impl MenuHandle {
 
     fn set_info(&self) -> io::Result<()> {
         let raw_menu_info = MENUINFO {
-            cbSize: mem::size_of::<MENUINFO>() as u32,
+            cbSize: mem::size_of::<MENUINFO>()
+                .try_into()
+                .expect("MENUINFO size conversion failed"),
             fMask: MIM_APPLYTOSUBMENUS | MIM_STYLE,
             dwStyle: MNS_NOTIFYBYPOS,
             cyMax: 0,
@@ -98,7 +100,17 @@ impl MenuHandle {
     }
 
     pub(crate) fn get_item_id(&self, item_idx: u32) -> io::Result<u32> {
-        let id = unsafe { GetMenuItemID(self.as_immutable_ptr(), item_idx as i32) };
+        let id = unsafe {
+            GetMenuItemID(
+                self.as_immutable_ptr(),
+                item_idx.try_into().map_err(|_err| {
+                    io::Error::new(
+                        ErrorKind::InvalidInput,
+                        format!("Bad item index: {}", item_idx),
+                    )
+                })?,
+            )
+        };
         id.if_eq_to_error(-1i32 as u32, || ErrorKind::Other.into())?;
         Ok(id)
     }
@@ -197,7 +209,9 @@ struct SubMenuItemCallData<'a> {
 impl<'a> SubMenuItemCallData<'a> {
     fn new(mut menu_item: Option<&'a mut SubMenuItemRaw>, id: Option<u32>) -> Self {
         let mut item_info = MENUITEMINFOW {
-            cbSize: mem::size_of::<MENUITEMINFOW>() as u32,
+            cbSize: mem::size_of::<MENUITEMINFOW>()
+                .try_into()
+                .expect("MENUITEMINFOW size conversion failed"),
             ..Default::default()
         };
         match &mut menu_item {
