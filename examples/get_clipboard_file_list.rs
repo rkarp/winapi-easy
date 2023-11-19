@@ -1,3 +1,5 @@
+#![allow(clippy::uninlined_format_args)]
+
 use std::io;
 use winapi_easy::clipboard::Clipboard;
 

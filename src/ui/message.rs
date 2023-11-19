@@ -237,15 +237,15 @@ impl ThreadMessageLoop {
         loop {
             unsafe {
                 GetMessageW(&mut msg, ptr::null_mut(), 0, 0)
-                    .if_eq_to_error(-1, || io::Error::last_os_error())?;
+                    .if_eq_to_error(-1, io::Error::last_os_error)?;
             }
             if msg.message == WM_QUIT {
                 THREAD_LOOP_RUNNING.with(|running| running.set(false));
                 break;
             }
             unsafe {
-                TranslateMessage(&mut msg);
-                DispatchMessageW(&mut msg);
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
             }
             loop_callback()?;
         }

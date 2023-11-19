@@ -117,7 +117,7 @@ impl MenuHandle {
 
     fn get_item_count(&self) -> io::Result<i32> {
         let count = unsafe { GetMenuItemCount(self.as_immutable_ptr()) };
-        count.if_eq_to_error(-1, || io::Error::last_os_error())?;
+        count.if_eq_to_error(-1, io::Error::last_os_error)?;
         Ok(count)
     }
 

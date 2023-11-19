@@ -4,7 +4,6 @@ UI components: Windows, taskbar.
 
 use std::convert::TryInto;
 use std::io;
-use std::io::ErrorKind;
 use std::marker::PhantomData;
 use std::mem;
 use std::ptr;
@@ -180,7 +179,7 @@ impl WindowHandle {
 
     pub fn get_desktop_window() -> io::Result<Self> {
         let handle = unsafe { GetDesktopWindow() };
-        let handle = handle.to_non_null_else_error(|| ErrorKind::Other.into())?;
+        let handle = handle.to_non_null_else_error(|| io::ErrorKind::Other.into())?;
         Ok(Self::from_non_null(handle))
     }
 
@@ -243,7 +242,7 @@ impl WindowHandle {
         unsafe {
             SetForegroundWindow(self.as_immutable_ptr()).if_null_to_error(|| {
                 io::Error::new(
-                    ErrorKind::PermissionDenied,
+                    io::ErrorKind::PermissionDenied,
                     "Cannot bring window to foreground",
                 )
             })?;
@@ -266,7 +265,7 @@ impl WindowHandle {
             Ok(())
         } else {
             Err(io::Error::new(
-                ErrorKind::NotFound,
+                io::ErrorKind::NotFound,
                 "Cannot set show state because window does not exist",
             ))
         }
@@ -326,30 +325,33 @@ impl WindowHandle {
         duration: FlashDuration,
         frequency: FlashFrequency,
     ) {
-        let mut raw_config: FLASHWINFO = Default::default();
-        raw_config.cbSize = mem::size_of::<FLASHWINFO>() as UINT;
-        raw_config.hwnd = self.as_immutable_ptr();
-        let (count, mut flags) = match duration {
+        let (count, flags) = match duration {
             FlashDuration::Count(count) => (count, 0),
             FlashDuration::CountUntilForeground(count) => (count, FLASHW_TIMERNOFG),
             FlashDuration::ContinuousUntilForeground => (0, FLASHW_TIMERNOFG),
             FlashDuration::Continuous => (0, FLASHW_TIMER),
         };
-        flags |= DWORD::from(element);
-        raw_config.dwFlags = flags;
-        raw_config.uCount = count;
-        raw_config.dwTimeout = match frequency {
-            FlashFrequency::DefaultCursorBlinkRate => 0,
-            FlashFrequency::Milliseconds(ms) => ms,
+        let flags = flags | DWORD::from(element);
+        let mut raw_config = FLASHWINFO {
+            cbSize: mem::size_of::<FLASHWINFO>() as UINT,
+            hwnd: self.as_immutable_ptr(),
+            dwFlags: flags,
+            uCount: count,
+            dwTimeout: match frequency {
+                FlashFrequency::DefaultCursorBlinkRate => 0,
+                FlashFrequency::Milliseconds(ms) => ms,
+            },
         };
         unsafe { FlashWindowEx(&mut raw_config) };
     }
 
     pub fn flash_stop(&self) {
-        let mut raw_config: FLASHWINFO = Default::default();
-        raw_config.cbSize = mem::size_of::<FLASHWINFO>() as UINT;
-        raw_config.hwnd = self.as_immutable_ptr();
-        raw_config.dwFlags = FLASHW_STOP;
+        let mut raw_config = FLASHWINFO {
+            cbSize: mem::size_of::<FLASHWINFO>() as UINT,
+            hwnd: self.as_immutable_ptr(),
+            dwFlags: FLASHW_STOP,
+            ..Default::default()
+        };
         unsafe { FlashWindowEx(&mut raw_config) };
     }
 
@@ -951,7 +953,7 @@ impl Taskbar {
     /// thread::sleep(Duration::from_millis(3000));
     /// taskbar.set_progress_state(&mut window, ProgressState::NoProgress)?;
     ///
-    /// # std::result::Result::<(), std::io::Error>::Ok(())
+    /// # Result::<(), std::io::Error>::Ok(())
     /// ```
     pub fn set_progress_state(
         &mut self,

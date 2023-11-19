@@ -170,10 +170,7 @@ where
     ID: 'static + Copy + Send + Sync,
 {
     pub fn new() -> Self {
-        Self {
-            hotkey_defs: Vec::new(),
-            hotkeys_active: false,
-        }
+        Default::default()
     }
 
     pub fn add_global_hotkey<KC>(mut self, id: ID, key_combination: KC) -> Self
@@ -230,16 +227,11 @@ where
                     let to_send = match getmsg_result {
                         BOOL(-1) => Some(Err(io::Error::last_os_error())),
                         BOOL(0) => break, // WM_QUIT
-                        _ => {
-                            if let Some(user_id) = id_assocs
-                                .get(&message.wParam.0.try_into().expect(
+                        _ => id_assocs
+                            .get(&message.wParam.0.try_into().expect(
                                 "ID from GetMessageW should be in range for ID map integer type",
-                            )) {
-                                Some(Ok(*user_id))
-                            } else {
-                                None
-                            }
-                        }
+                            ))
+                            .map(|user_id| Ok(*user_id)),
                     };
                     if let Some(to_send) = to_send {
                         let send_result = tx_hotkey.send(to_send);
@@ -251,6 +243,15 @@ where
             }
         });
         Ok(rx_hotkey)
+    }
+}
+
+impl<ID> Default for GlobalHotkeySet<ID> {
+    fn default() -> Self {
+        Self {
+            hotkey_defs: Vec::new(),
+            hotkeys_active: false,
+        }
     }
 }
 
@@ -466,6 +467,7 @@ where
     type Output = ModifierCombination;
 
     fn add(self, rhs: T2) -> Self::Output {
+        #[allow(clippy::suspicious_arithmetic_impl)]
         ModifierCombination(self.0 | rhs.into().0)
     }
 }

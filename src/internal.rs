@@ -50,7 +50,7 @@ pub(crate) trait ReturnValue: PartialEq + Sized + Copy {
 
     #[inline]
     fn if_null_get_last_error(self) -> io::Result<Self> {
-        self.if_null_to_error(|| io::Error::last_os_error())
+        self.if_null_to_error(io::Error::last_os_error)
     }
 
     #[inline]
@@ -162,7 +162,7 @@ pub(crate) trait RawHandle: PtrLike {
 
     #[inline]
     fn to_non_null_else_get_last_error(self) -> io::Result<NonNull<Self::Target>> {
-        self.to_non_null_else_error(|| io::Error::last_os_error())
+        self.to_non_null_else_error(io::Error::last_os_error)
     }
 
     fn if_invalid_get_last_error(self) -> io::Result<Self> {
