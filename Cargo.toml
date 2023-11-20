@@ -18,17 +18,17 @@ targets = ["x86_64-pc-windows-msvc"]
 [dependencies]
 ntapi = "0.4.0"
 num_enum = "0.5.5"
-wio = "0.2.2"
 
 [dependencies.windows]
 version = "0.43.0"
 features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
-    "Win32_System_WindowsProgramming",
+    "Win32_System_Com",
     "Win32_System_DataExchange",
     "Win32_System_Memory",
     "Win32_System_SystemServices",
+    "Win32_System_WindowsProgramming",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
@@ -38,14 +38,17 @@ features = [
 version = "0.3.9"
 features = [
     "basetsd",
+    "consoleapi",
     "handleapi",
     "impl-debug",
     "impl-default",
+    "minwindef",
     "ntdef",
     "objbase",
     "processthreadsapi",
     "shellapi",
     "shobjidl_core",
+    "std",
     "tlhelp32",
     "winbase",
     "wincon",

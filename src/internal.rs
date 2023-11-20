@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::ffi;
+use std::ffi::c_void;
 use std::fmt::Display;
 use std::io;
 use std::io::ErrorKind;
@@ -10,7 +11,6 @@ use std::panic::{
 use std::ptr;
 use std::ptr::NonNull;
 
-use winapi::ctypes::c_void;
 use winapi::shared::minwindef::HMODULE;
 use winapi::shared::windef::{
     HMENU,

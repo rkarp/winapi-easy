@@ -14,7 +14,7 @@ use num_enum::{
     TryFromPrimitive,
 };
 use winapi::shared::basetsd::LONG_PTR;
-use winapi::shared::guiddef::GUID;
+use winapi::shared::guiddef;
 use winapi::shared::minwindef::{
     ATOM,
     BOOL,
@@ -23,10 +23,7 @@ use winapi::shared::minwindef::{
     TRUE,
     UINT,
 };
-use winapi::shared::ntdef::{
-    HRESULT,
-    WCHAR,
-};
+use winapi::shared::ntdef::WCHAR;
 use winapi::shared::windef::{
     HICON,
     HWND,
@@ -34,7 +31,6 @@ use winapi::shared::windef::{
     POINT,
     RECT,
 };
-use winapi::shared::winerror::S_OK;
 use winapi::um::consoleapi::AllocConsole;
 use winapi::um::shellapi::{
     Shell_NotifyIconW,
@@ -56,14 +52,6 @@ use winapi::um::shellapi::{
     NIS_HIDDEN,
     NOTIFYICONDATAW,
     NOTIFYICON_VERSION_4,
-};
-use winapi::um::shobjidl_core::{
-    ITaskbarList3,
-    TBPF_ERROR,
-    TBPF_INDETERMINATE,
-    TBPF_NOPROGRESS,
-    TBPF_NORMAL,
-    TBPF_PAUSED,
 };
 use winapi::um::wincon::GetConsoleWindow;
 use winapi::um::winuser::{
@@ -120,7 +108,19 @@ use winapi::um::winuser::{
     WPF_SETMINPOSITION,
     WS_OVERLAPPEDWINDOW,
 };
-use wio::com::ComPtr;
+use windows::core::GUID;
+use windows::Win32::UI::Shell::{
+    ITaskbarList3,
+    TaskbarList,
+    TBPFLAG,
+};
+use windows::Win32::UI::Shell::{
+    TBPF_ERROR,
+    TBPF_INDETERMINATE,
+    TBPF_NOPROGRESS,
+    TBPF_NORMAL,
+    TBPF_PAUSED,
+};
 
 use crate::com::ComInterface;
 use crate::internal::{
@@ -860,7 +860,7 @@ fn get_notification_call_data(
 #[derive(Copy, Clone)]
 pub enum NotificationIconId {
     Simple(u16),
-    GUID(GUID),
+    GUID(guiddef::GUID),
 }
 
 impl Default for NotificationIconId {
@@ -893,22 +893,22 @@ impl Default for BalloonNotificationStandardIcon {
 
 /// Taskbar progress state animation type.
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u32)]
+#[repr(i32)]
 pub enum ProgressState {
     /// Stops displaying progress and returns the button to its normal state.
-    NoProgress = TBPF_NOPROGRESS,
+    NoProgress = TBPF_NOPROGRESS.0,
     /// Shows a "working" animation without indicating a completion percentage.
-    Indeterminate = TBPF_INDETERMINATE,
+    Indeterminate = TBPF_INDETERMINATE.0,
     /// Shows a progress indicator displaying the amount of work being completed.
-    Normal = TBPF_NORMAL,
+    Normal = TBPF_NORMAL.0,
     /// The progress indicator turns red to show that an error has occurred. This is a determinate state.
     /// If the progress indicator is in the indeterminate state, it switches to a red determinate display
     /// of a generic percentage not indicative of actual progress.
-    Error = TBPF_ERROR,
+    Error = TBPF_ERROR.0,
     /// The progress indicator turns yellow to show that progress is currently stopped. This is a determinate state.
     /// If the progress indicator is in the indeterminate state, it switches to a yellow determinate display
     /// of a generic percentage not indicative of actual progress.
-    Paused = TBPF_PAUSED,
+    Paused = TBPF_PAUSED.0,
 }
 
 impl Default for ProgressState {
@@ -917,9 +917,15 @@ impl Default for ProgressState {
     }
 }
 
+impl From<ProgressState> for TBPFLAG {
+    fn from(value: ProgressState) -> Self {
+        TBPFLAG(value.into())
+    }
+}
+
 /// Taskbar functionality.
 pub struct Taskbar {
-    taskbar_list_3: ComPtr<ITaskbarList3>,
+    taskbar_list_3: ITaskbarList3,
 }
 
 impl Taskbar {
@@ -946,44 +952,51 @@ impl Taskbar {
     /// use std::thread;
     /// use std::time::Duration;
     ///
-    /// let mut window = WindowHandle::get_console_window().expect("Cannot get console window");
-    /// let mut taskbar = Taskbar::new()?;
+    /// let window = WindowHandle::get_console_window().expect("Cannot get console window");
+    /// let taskbar = Taskbar::new()?;
     ///
-    /// taskbar.set_progress_state(&mut window, ProgressState::Indeterminate)?;
+    /// taskbar.set_progress_state(&window, ProgressState::Indeterminate)?;
     /// thread::sleep(Duration::from_millis(3000));
-    /// taskbar.set_progress_state(&mut window, ProgressState::NoProgress)?;
+    /// taskbar.set_progress_state(&window, ProgressState::NoProgress)?;
     ///
     /// # Result::<(), std::io::Error>::Ok(())
     /// ```
     pub fn set_progress_state(
-        &mut self,
-        window: &mut WindowHandle,
+        &self,
+        window: &WindowHandle,
         state: ProgressState,
     ) -> io::Result<()> {
-        let ret_val: HRESULT = unsafe {
+        use windows::Win32::Foundation::HWND;
+        let ret_val = unsafe {
+            // TODO: Clean up HWND usage after migration to windows-rs
             self.taskbar_list_3
-                .SetProgressState(window.as_mutable_ptr(), state.into())
+                .SetProgressState(HWND(window.as_immutable_ptr() as isize), state.into())
         };
-        ret_val.if_not_eq_to_error(S_OK, || {
-            custom_err_with_code("Error setting progress state", ret_val)
-        })
+        ret_val.map_err(|err| custom_err_with_code("Error setting progress state", err.code()))
     }
 
     /// Sets the completion amount of the taskbar progress state animation.
     pub fn set_progress_value(
-        &mut self,
+        &self,
         window: &mut WindowHandle,
         completed: u64,
         total: u64,
     ) -> io::Result<()> {
-        let ret_val: HRESULT = unsafe {
-            self.taskbar_list_3
-                .SetProgressValue(window.as_mutable_ptr(), completed, total)
+        use windows::Win32::Foundation::HWND;
+        let ret_val = unsafe {
+            // TODO: Clean up HWND usage after migration to windows-rs
+            self.taskbar_list_3.SetProgressValue(
+                HWND(window.as_immutable_ptr() as isize),
+                completed,
+                total,
+            )
         };
-        ret_val.if_not_eq_to_error(S_OK, || {
-            custom_err_with_code("Error setting progress value", ret_val)
-        })
+        ret_val.map_err(|err| custom_err_with_code("Error setting progress value", err.code()))
     }
+}
+
+impl ComInterface for ITaskbarList3 {
+    const CLASS_GUID: GUID = TaskbarList;
 }
 
 pub fn allocate_console() -> io::Result<()> {

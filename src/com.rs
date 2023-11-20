@@ -4,27 +4,17 @@ Component Object Model (COM) initialization.
 
 use std::cell::Cell;
 use std::io;
-use std::ptr;
 
-use winapi::shared::guiddef::IID;
-use winapi::shared::winerror::{
-    S_FALSE,
-    S_OK,
+use windows::core::{
+    Interface,
+    GUID,
 };
-use winapi::shared::wtypesbase::CLSCTX_INPROC_SERVER;
-use winapi::um::combaseapi::{
+use windows::Win32::System::Com::{
     CoCreateInstance,
     CoInitializeEx,
+    CLSCTX_INPROC_SERVER,
+    COINIT_APARTMENTTHREADED,
 };
-use winapi::um::objbase::COINIT_APARTMENTTHREADED;
-use winapi::um::shobjidl_core::{
-    CLSID_TaskbarList,
-    ITaskbarList3,
-};
-use winapi::Interface;
-use wio::com::ComPtr;
-
-use crate::internal::custom_err_with_code;
 
 /// Initializes the COM library for the current thread. Will do nothing on further calls from the same thread.
 pub fn initialize_com() -> io::Result<()> {
@@ -33,13 +23,13 @@ pub fn initialize_com() -> io::Result<()> {
     }
     COM_INITIALIZED.with(|initialized| {
         if !initialized.get() {
-            let init_result = unsafe { CoInitializeEx(ptr::null_mut(), COINIT_APARTMENTTHREADED) };
+            let init_result = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
             match init_result {
-                S_OK | S_FALSE => {
+                Ok(()) => {
                     initialized.set(true);
                     Ok(())
                 }
-                err_code => Err(custom_err_with_code("Error initializing COM", err_code)),
+                Err(err) => Err(err.into()),
             }
         } else {
             Ok(())
@@ -47,31 +37,12 @@ pub fn initialize_com() -> io::Result<()> {
     })
 }
 
-pub(crate) trait ComInterface: Interface + Sized {
-    const CLSID: IID;
+pub(crate) trait ComInterface: Interface {
+    const CLASS_GUID: GUID;
 
-    fn new_instance() -> io::Result<ComPtr<Self>> {
+    fn new_instance() -> io::Result<Self> {
         initialize_com()?;
-        unsafe {
-            let mut tb_ptr: *mut Self = ptr::null_mut();
-            let hresult = CoCreateInstance(
-                &Self::CLSID,
-                ptr::null_mut(),
-                CLSCTX_INPROC_SERVER,
-                &Self::uuidof(),
-                &mut tb_ptr as *mut _ as *mut _,
-            );
-            match hresult {
-                S_OK => Ok(ComPtr::from_raw(tb_ptr)),
-                err_code => Err(custom_err_with_code(
-                    "Error creating ComInterface instance",
-                    err_code,
-                )),
-            }
-        }
+        let result = unsafe { CoCreateInstance(&Self::CLASS_GUID, None, CLSCTX_INPROC_SERVER) };
+        result.map_err(Into::into)
     }
-}
-
-impl ComInterface for ITaskbarList3 {
-    const CLSID: IID = CLSID_TaskbarList;
 }
