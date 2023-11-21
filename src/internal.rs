@@ -29,6 +29,29 @@ use windows::Win32::System::Memory::{
     GlobalUnlock,
 };
 
+pub(crate) trait ConvertableToIoResult {
+    type OkType;
+
+    fn to_std_io_result(self, error_message: &str) -> io::Result<Self::OkType>;
+}
+
+impl<T> ConvertableToIoResult for windows::core::Result<T> {
+    type OkType = T;
+
+    fn to_std_io_result(self, error_message: &str) -> io::Result<Self::OkType> {
+        self.map_err(|err| {
+            custom_err_with_code(
+                &format!(
+                    "{}, Message: '{}'",
+                    error_message,
+                    err.message().to_string_lossy()
+                ),
+                err.code(),
+            )
+        })
+    }
+}
+
 pub(crate) trait PtrLike: Sized + Copy {
     type Target;
 }
