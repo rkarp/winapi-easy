@@ -2,7 +2,7 @@
 Keyboard and hotkeys.
 
 ## Hotkeys
-* [GlobalHotkeySet](keyboard::GlobalHotkeySet): Define and listen to global hotkeys
+* [GlobalHotkeySet]: Define and listen to global hotkeys
 */
 
 use std::collections::HashMap;

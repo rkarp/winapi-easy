@@ -1,33 +1,16 @@
 use std::cell::Cell;
 use std::convert::TryInto;
-use std::ptr::NonNull;
-use std::{
-    io,
-    ptr,
-};
+use std::io;
 
-use winapi::shared::minwindef::{
-    DWORD,
-    HIWORD,
-    LOWORD,
+use windows::Win32::Foundation::{
+    BOOL,
+    HWND,
     LPARAM,
     LRESULT,
-    UINT,
     WPARAM,
 };
-use winapi::shared::windef::{
-    HMENU,
-    HWND,
-};
-use winapi::shared::windowsx::{
-    GET_X_LPARAM,
-    GET_Y_LPARAM,
-};
-use winapi::um::shellapi::{
-    NIN_KEYSELECT,
-    NIN_SELECT,
-};
-use winapi::um::winuser::{
+use windows::Win32::UI::Shell::NIN_SELECT;
+use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW,
     DispatchMessageW,
     GetMessagePos,
@@ -35,6 +18,7 @@ use winapi::um::winuser::{
     PostMessageW,
     PostQuitMessage,
     TranslateMessage,
+    HMENU,
     MSG,
     SIZE_MINIMIZED,
     WM_APP,
@@ -48,7 +32,6 @@ use winapi::um::winuser::{
 
 use crate::internal::{
     catch_unwind_and_abort,
-    ManagedHandle,
     ReturnValue,
 };
 use crate::ui::menu::MenuHandle;
@@ -56,6 +39,7 @@ use crate::ui::{
     Point,
     WindowHandle,
 };
+use windows_missing::*;
 
 #[derive(Copy, Clone)]
 pub enum Answer {
@@ -67,7 +51,7 @@ impl Answer {
     fn to_raw_lresult(self) -> Option<LRESULT> {
         match self {
             Answer::CallDefaultHandler => None,
-            Answer::Stop => Some(0),
+            Answer::Stop => Some(LRESULT(0)),
         }
     }
 }
@@ -106,7 +90,7 @@ pub trait WindowMessageListener {
 
 #[derive(Copy, Clone)]
 pub(crate) struct RawMessage {
-    pub(crate) message: UINT,
+    pub(crate) message: u32,
     pub(crate) w_param: WPARAM,
     pub(crate) l_param: LPARAM,
 }
@@ -141,9 +125,9 @@ impl RawMessage {
                 None
             }
             Self::ID_NOTIFICATION_ICON_MSG => {
-                let icon_id = HIWORD(u32::try_from(l_param).expect("Icon ID conversion failed"));
+                let icon_id = HIWORD(u32::try_from(l_param.0).expect("Icon ID conversion failed"));
                 let event_code: u32 =
-                    LOWORD(u32::try_from(l_param).expect("Event code conversion failed")).into();
+                    LOWORD(u32::try_from(l_param.0).expect("Event code conversion failed")).into();
                 let xy_coords = {
                     // `w_param` does contain the coordinates of the click event, but they are not adjusted for DPI scaling, so we can't use them.
                     // Instead we have to call `GetMessagePos`, which will however return mouse coordinates even if the keyboard was used.
@@ -167,16 +151,16 @@ impl RawMessage {
                 None
             }
             WM_MENUCOMMAND => {
-                let menu_handle =
-                    MenuHandle::from_non_null(NonNull::new(l_param as HMENU).unwrap());
+                let menu_handle = MenuHandle::from_maybe_null(HMENU(l_param.0))
+                    .expect("Menu handle should not be null here");
                 let item_id = menu_handle
-                    .get_item_id(w_param.try_into().unwrap())
+                    .get_item_id(w_param.0.try_into().unwrap())
                     .unwrap();
                 listener.handle_menu_command(&window, item_id);
                 None
             }
             WM_SIZE => {
-                if w_param == SIZE_MINIMIZED {
+                if w_param.0 == SIZE_MINIMIZED.try_into().unwrap() {
                     listener.handle_window_minimized(&window);
                 }
                 None
@@ -196,7 +180,7 @@ impl RawMessage {
     fn post_message(&self, window: Option<&WindowHandle>) -> io::Result<()> {
         unsafe {
             PostMessageW(
-                window.map_or(ptr::null_mut(), |window| window.as_immutable_ptr()),
+                window.map(Into::into),
                 self.message,
                 self.w_param,
                 self.l_param,
@@ -209,8 +193,8 @@ impl RawMessage {
     fn post_loop_wakeup_message() -> io::Result<()> {
         let wakeup_message = RawMessage {
             message: Self::ID_APP_WAKEUP_MSG,
-            w_param: 0,
-            l_param: 0,
+            w_param: WPARAM(0),
+            l_param: LPARAM(0),
         };
         wakeup_message.post_message(None)
     }
@@ -236,8 +220,8 @@ impl ThreadMessageLoop {
         let mut msg: MSG = Default::default();
         loop {
             unsafe {
-                GetMessageW(&mut msg, ptr::null_mut(), 0, 0)
-                    .if_eq_to_error(-1, io::Error::last_os_error)?;
+                GetMessageW(&mut msg, None, 0, 0)
+                    .if_eq_to_error(BOOL(-1), io::Error::last_os_error)?;
             }
             if msg.message == WM_QUIT {
                 THREAD_LOOP_RUNNING.with(|running| running.set(false));
@@ -269,7 +253,7 @@ impl ThreadMessageLoop {
 
 pub(crate) unsafe extern "system" fn generic_window_proc<WML>(
     h_wnd: HWND,
-    message: UINT,
+    message: u32,
     w_param: WPARAM,
     l_param: LPARAM,
 ) -> LRESULT
@@ -277,10 +261,8 @@ where
     WML: WindowMessageListener,
 {
     let call = move || {
-        let window = WindowHandle::from_non_null(
-            NonNull::new(h_wnd)
-                .expect("Window handle given to window procedure should never be NULL"),
-        );
+        let window = WindowHandle::from_maybe_null(h_wnd)
+            .expect("Window handle given to window procedure should never be NULL");
 
         let raw_message = RawMessage {
             message,
@@ -303,10 +285,44 @@ where
     catch_unwind_and_abort(call)
 }
 
-fn get_param_xy_coords(param: DWORD) -> Point {
-    let param = param.try_into().unwrap();
+fn get_param_xy_coords(param: u32) -> Point {
+    let param = LPARAM(param.try_into().unwrap());
     Point {
         x: GET_X_LPARAM(param),
         y: GET_Y_LPARAM(param),
+    }
+}
+
+mod windows_missing {
+    use windows::Win32::Foundation::LPARAM;
+    use windows::Win32::UI::Shell::{
+        NINF_KEY,
+        NIN_SELECT,
+    };
+
+    pub const NIN_KEYSELECT: u32 = NIN_SELECT | NINF_KEY;
+
+    #[allow(non_snake_case)]
+    #[inline]
+    pub fn LOWORD(l: u32) -> u16 {
+        (l << 16 >> 16).try_into().unwrap()
+    }
+
+    #[allow(non_snake_case)]
+    #[inline]
+    pub fn HIWORD(l: u32) -> u16 {
+        (l >> 16).try_into().unwrap()
+    }
+
+    #[allow(non_snake_case)]
+    #[inline]
+    pub fn GET_X_LPARAM(lp: LPARAM) -> i32 {
+        LOWORD(lp.0 as u32) as i16 as i32
+    }
+
+    #[allow(non_snake_case)]
+    #[inline]
+    pub fn GET_Y_LPARAM(lp: LPARAM) -> i32 {
+        HIWORD(lp.0 as u32) as i16 as i32
     }
 }

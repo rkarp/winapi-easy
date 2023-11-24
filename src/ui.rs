@@ -3,37 +3,43 @@ UI components: Windows, taskbar.
 */
 
 use std::convert::TryInto;
-use std::io;
 use std::marker::PhantomData;
 use std::mem;
-use std::ptr;
 use std::ptr::NonNull;
+use std::{
+    io,
+    vec,
+};
 
 use num_enum::{
     IntoPrimitive,
     TryFromPrimitive,
 };
-use winapi::shared::basetsd::LONG_PTR;
-use winapi::shared::guiddef;
-use winapi::shared::minwindef::{
-    ATOM,
-    BOOL,
-    DWORD,
-    LPARAM,
-    TRUE,
-    UINT,
+use windows::core::{
+    GUID,
+    PCWSTR,
 };
-use winapi::shared::ntdef::WCHAR;
-use winapi::shared::windef::{
-    HICON,
+use windows::Win32::Foundation::{
+    GetLastError,
+    SetLastError,
+    BOOL,
     HWND,
-    HWND__,
+    LPARAM,
+    NO_ERROR,
     POINT,
     RECT,
+    WPARAM,
 };
-use winapi::um::consoleapi::AllocConsole;
-use winapi::um::shellapi::{
+use windows::Win32::System::Console::{
+    AllocConsole,
+    GetConsoleWindow,
+};
+use windows::Win32::System::Shutdown::LockWorkStation;
+use windows::Win32::UI::Input::KeyboardAndMouse::SetActiveWindow;
+use windows::Win32::UI::Shell::{
+    ITaskbarList3,
     Shell_NotifyIconW,
+    TaskbarList,
     NIF_GUID,
     NIF_ICON,
     NIF_INFO,
@@ -41,10 +47,6 @@ use winapi::um::shellapi::{
     NIF_SHOWTIP,
     NIF_STATE,
     NIF_TIP,
-    NIIF_ERROR,
-    NIIF_INFO,
-    NIIF_NONE,
-    NIIF_WARNING,
     NIM_ADD,
     NIM_DELETE,
     NIM_MODIFY,
@@ -52,9 +54,22 @@ use winapi::um::shellapi::{
     NIS_HIDDEN,
     NOTIFYICONDATAW,
     NOTIFYICON_VERSION_4,
+    NOTIFY_ICON_INFOTIP_FLAGS,
+    NOTIFY_ICON_STATE,
+    TBPFLAG,
 };
-use winapi::um::wincon::GetConsoleWindow;
-use winapi::um::winuser::{
+use windows::Win32::UI::Shell::{
+    NIIF_ERROR,
+    NIIF_INFO,
+    NIIF_NONE,
+    NIIF_WARNING,
+    TBPF_ERROR,
+    TBPF_INDETERMINATE,
+    TBPF_NOPROGRESS,
+    TBPF_NORMAL,
+    TBPF_PAUSED,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW,
     DestroyWindow,
     EnumWindows,
@@ -69,17 +84,17 @@ use winapi::um::winuser::{
     GetWindowThreadProcessId,
     IsWindow,
     IsWindowVisible,
-    LockWorkStation,
     RegisterClassExW,
     SendMessageW,
-    SetActiveWindow,
     SetForegroundWindow,
     SetWindowLongPtrW,
     SetWindowPlacement,
+    SetWindowTextW,
     ShowWindow,
     UnregisterClassW,
     CW_USEDEFAULT,
     FLASHWINFO,
+    FLASHWINFO_FLAGS,
     FLASHW_ALL,
     FLASHW_CAPTION,
     FLASHW_STOP,
@@ -87,11 +102,13 @@ use winapi::um::winuser::{
     FLASHW_TIMERNOFG,
     FLASHW_TRAY,
     GWLP_USERDATA,
+    HICON,
     SC_CLOSE,
     SC_MAXIMIZE,
     SC_MINIMIZE,
     SC_MONITORPOWER,
     SC_RESTORE,
+    SHOW_WINDOW_CMD,
     SW_HIDE,
     SW_MAXIMIZE,
     SW_MINIMIZE,
@@ -108,26 +125,11 @@ use winapi::um::winuser::{
     WPF_SETMINPOSITION,
     WS_OVERLAPPEDWINDOW,
 };
-use windows::core::GUID;
-use windows::Win32::UI::Shell::{
-    ITaskbarList3,
-    TaskbarList,
-    TBPFLAG,
-};
-use windows::Win32::UI::Shell::{
-    TBPF_ERROR,
-    TBPF_INDETERMINATE,
-    TBPF_NOPROGRESS,
-    TBPF_NORMAL,
-    TBPF_PAUSED,
-};
 
 use crate::com::ComInterface;
 use crate::internal::{
     custom_err_with_code,
     sync_closure_to_callback2,
-    ManagedHandle,
-    RawHandle,
     ReturnValue,
 };
 use crate::process::{
@@ -153,94 +155,108 @@ pub mod menu;
 pub mod message;
 pub mod resource;
 
-const MAX_WINDOW_CLASS_NAME_CHARS: usize = 256;
-
 /// A (non-null) handle to a window.
 ///
-/// **Note**: If the window was not created by this thread, then it is not guaranteed that
-/// the handle continues pointing to the same window because the underlying handles
+/// **Note**: This handle is not [Send] and [Sync] because if the window was not created by this thread,
+/// then it is not guaranteed that the handle continues pointing to the same window because the underlying handles
 /// can get invalid or even recycled.
 #[derive(Eq, PartialEq)]
 pub struct WindowHandle {
-    handle: NonNull<HWND__>,
+    handle: HWND,
+    marker: PhantomData<*mut ()>
 }
 
 impl WindowHandle {
     /// Returns the console window associated with the current process, if there is one.
     pub fn get_console_window() -> Option<Self> {
         let handle = unsafe { GetConsoleWindow() };
-        handle.to_non_null().map(Self::from_non_null)
+        Self::from_maybe_null(handle)
     }
 
     pub fn get_foreground_window() -> Option<Self> {
         let handle = unsafe { GetForegroundWindow() };
-        handle.to_non_null().map(Self::from_non_null)
+        Self::from_maybe_null(handle)
     }
 
     pub fn get_desktop_window() -> io::Result<Self> {
         let handle = unsafe { GetDesktopWindow() };
-        let handle = handle.to_non_null_else_error(|| io::ErrorKind::Other.into())?;
-        Ok(Self::from_non_null(handle))
+        handle
+            .if_null_to_error(|| io::ErrorKind::Other.into())
+            .map(Self::from_non_null)
     }
 
     /// Returns all top-level windows of desktop apps.
     pub fn get_toplevel_windows() -> io::Result<Vec<Self>> {
         let mut result: Vec<WindowHandle> = Vec::new();
         let mut callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
-            let window_handle = handle
-                .to_non_null()
-                .expect("Window handle should not be null");
-            result.push(WindowHandle::from_non_null(window_handle));
-            TRUE
+            let window_handle =
+                Self::from_maybe_null(handle).expect("Window handle should not be null");
+            result.push(window_handle);
+            true.into()
         };
-        let ret_val = unsafe { EnumWindows(Some(sync_closure_to_callback2(&mut callback)), 0) };
+        let ret_val = unsafe {
+            EnumWindows(
+                Some(sync_closure_to_callback2(&mut callback)),
+                LPARAM::default(),
+            )
+        };
         ret_val.if_null_get_last_error()?;
         Ok(result)
     }
 
-    pub(crate) fn from_non_null(handle: NonNull<HWND__>) -> Self {
-        Self { handle }
+    pub(crate) fn from_non_null(handle: HWND) -> Self {
+        Self { handle, marker: PhantomData }
+    }
+
+    pub(crate) fn from_maybe_null(handle: HWND) -> Option<Self> {
+        if handle.0 != 0 {
+            Some(Self { handle, marker: PhantomData })
+        } else {
+            None
+        }
     }
 
     /// Checks if the handle points to an existing window.
     pub fn is_window(&self) -> bool {
-        let result = unsafe { IsWindow(self.as_immutable_ptr()) };
-        !result.is_null()
+        let result = unsafe { IsWindow(self) };
+        result.as_bool()
     }
 
     pub fn is_visible(&self) -> bool {
-        let result = unsafe { IsWindowVisible(self.as_immutable_ptr()) };
-        !result.is_null()
+        let result = unsafe { IsWindowVisible(self) };
+        result.as_bool()
     }
 
     pub fn get_caption_text(&self) -> String {
-        let required_length = unsafe { GetWindowTextLengthW(self.as_immutable_ptr()) };
+        let required_length = unsafe { GetWindowTextLengthW(self) };
         let required_length = if required_length <= 0 {
             return String::new();
         } else {
             1 + required_length
         };
 
-        let mut buffer: Vec<WCHAR> = Vec::with_capacity(required_length as usize);
-        let copied_chars = unsafe {
-            GetWindowTextW(
-                self.as_immutable_ptr(),
-                buffer.as_mut_ptr(),
-                required_length,
-            )
-        };
+        let mut buffer: Vec<u16> = vec![0; required_length as usize];
+        let copied_chars = unsafe { GetWindowTextW(self, buffer.as_mut()) };
         if copied_chars <= 0 {
             return String::new();
         }
+        // Normally unnecessary, but the text length can theoretically change between the 2 API calls
         unsafe {
             buffer.set_len(copied_chars as usize);
         }
         buffer.to_string_lossy()
     }
 
+    pub fn set_caption_text(&self, text: &str) -> io::Result<()> {
+        let ret_val =
+            unsafe { SetWindowTextW(self, PCWSTR::from_raw(text.to_wide_string().as_ptr())) };
+        ret_val.if_null_get_last_error()?;
+        Ok(())
+    }
+
     pub fn set_as_foreground(&self) -> io::Result<()> {
         unsafe {
-            SetForegroundWindow(self.as_immutable_ptr()).if_null_to_error(|| {
+            SetForegroundWindow(self).if_null_to_error(|| {
                 io::Error::new(
                     io::ErrorKind::PermissionDenied,
                     "Cannot bring window to foreground",
@@ -252,7 +268,7 @@ impl WindowHandle {
 
     pub fn set_as_active(&self) -> io::Result<()> {
         unsafe {
-            SetActiveWindow(self.as_immutable_ptr()).if_null_get_last_error()?;
+            SetActiveWindow(self).if_null_get_last_error()?;
         }
         Ok(())
     }
@@ -260,7 +276,7 @@ impl WindowHandle {
     pub fn set_show_state(&self, state: WindowShowState) -> io::Result<()> {
         if self.is_window() {
             unsafe {
-                ShowWindow(self.as_immutable_ptr(), state.into());
+                ShowWindow(self, state.into());
             }
             Ok(())
         } else {
@@ -273,34 +289,22 @@ impl WindowHandle {
 
     pub fn get_placement(&self) -> io::Result<WindowPlacement> {
         let mut raw_placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
-            length: mem::size_of::<WINDOWPLACEMENT>() as UINT,
+            length: mem::size_of::<WINDOWPLACEMENT>().try_into().unwrap(),
             ..Default::default()
         };
-        unsafe {
-            GetWindowPlacement(self.as_immutable_ptr(), &mut raw_placement)
-                .if_null_get_last_error()?
-        };
+        unsafe { GetWindowPlacement(self, &mut raw_placement).if_null_get_last_error()? };
         Ok(WindowPlacement { raw_placement })
     }
 
     pub fn set_placement(&self, placement: &WindowPlacement) -> io::Result<()> {
-        unsafe {
-            SetWindowPlacement(self.as_immutable_ptr(), &placement.raw_placement)
-                .if_null_get_last_error()?
-        };
+        unsafe { SetWindowPlacement(self, &placement.raw_placement).if_null_get_last_error()? };
         Ok(())
     }
 
     pub fn get_class_name(&self) -> io::Result<String> {
-        const BUFFER_SIZE: usize = MAX_WINDOW_CLASS_NAME_CHARS + 1;
-        let mut buffer: Vec<WCHAR> = Vec::with_capacity(BUFFER_SIZE);
-        let chars_copied = unsafe {
-            GetClassNameW(
-                self.as_immutable_ptr(),
-                buffer.as_mut_ptr(),
-                BUFFER_SIZE as i32,
-            )
-        };
+        const BUFFER_SIZE: usize = WindowClass::MAX_WINDOW_CLASS_NAME_CHARS + 1;
+        let mut buffer: Vec<u16> = vec![0; BUFFER_SIZE];
+        let chars_copied = unsafe { GetClassNameW(self, buffer.as_mut()) };
         chars_copied.if_null_get_last_error()?;
         unsafe {
             buffer.set_len(chars_copied as usize);
@@ -309,9 +313,9 @@ impl WindowHandle {
     }
 
     pub fn send_command(&self, action: WindowCommand) -> io::Result<()> {
-        let result =
-            unsafe { SendMessageW(self.as_immutable_ptr(), WM_SYSCOMMAND, action.into(), 0) };
-        result.if_non_null_to_error(|| custom_err_with_code("Cannot perform window action", result))
+        let result = unsafe { SendMessageW(self, WM_SYSCOMMAND, action.into(), LPARAM::default()) };
+        result
+            .if_non_null_to_error(|| custom_err_with_code("Cannot perform window action", result.0))
     }
 
     #[inline(always)]
@@ -326,15 +330,15 @@ impl WindowHandle {
         frequency: FlashFrequency,
     ) {
         let (count, flags) = match duration {
-            FlashDuration::Count(count) => (count, 0),
+            FlashDuration::Count(count) => (count, Default::default()),
             FlashDuration::CountUntilForeground(count) => (count, FLASHW_TIMERNOFG),
             FlashDuration::ContinuousUntilForeground => (0, FLASHW_TIMERNOFG),
             FlashDuration::Continuous => (0, FLASHW_TIMER),
         };
-        let flags = flags | DWORD::from(element);
-        let mut raw_config = FLASHWINFO {
-            cbSize: mem::size_of::<FLASHWINFO>() as UINT,
-            hwnd: self.as_immutable_ptr(),
+        let flags = flags | FLASHWINFO_FLAGS::from(element);
+        let raw_config = FLASHWINFO {
+            cbSize: mem::size_of::<FLASHWINFO>().try_into().unwrap(),
+            hwnd: self.into(),
             dwFlags: flags,
             uCount: count,
             dwTimeout: match frequency {
@@ -342,17 +346,17 @@ impl WindowHandle {
                 FlashFrequency::Milliseconds(ms) => ms,
             },
         };
-        unsafe { FlashWindowEx(&mut raw_config) };
+        unsafe { FlashWindowEx(&raw_config) };
     }
 
     pub fn flash_stop(&self) {
-        let mut raw_config = FLASHWINFO {
-            cbSize: mem::size_of::<FLASHWINFO>() as UINT,
-            hwnd: self.as_immutable_ptr(),
+        let raw_config = FLASHWINFO {
+            cbSize: mem::size_of::<FLASHWINFO>().try_into().unwrap(),
+            hwnd: self.into(),
             dwFlags: FLASHW_STOP,
             ..Default::default()
         };
-        unsafe { FlashWindowEx(&mut raw_config) };
+        unsafe { FlashWindowEx(&raw_config) };
     }
 
     #[inline(always)]
@@ -366,74 +370,79 @@ impl WindowHandle {
     }
 
     fn get_creator_thread_process_ids(&self) -> (ThreadId, ProcessId) {
-        let mut process_id: DWORD = 0;
-        let thread_id =
-            unsafe { GetWindowThreadProcessId(self.as_immutable_ptr(), &mut process_id) };
+        let mut process_id: u32 = 0;
+        let thread_id = unsafe { GetWindowThreadProcessId(self, Some(&mut process_id)) };
         (ThreadId(thread_id), ProcessId(process_id))
     }
 
     pub fn set_monitor_power(&self, level: MonitorPower) -> io::Result<()> {
         let result = unsafe {
             SendMessageW(
-                self.as_immutable_ptr(),
+                self,
                 WM_SYSCOMMAND,
-                SC_MONITORPOWER,
-                level.into(),
+                WPARAM(SC_MONITORPOWER.try_into().unwrap()),
+                LPARAM(level.into()),
             )
         };
         result.if_non_null_to_error(|| {
-            custom_err_with_code("Cannot set monitor power using window", result)
+            custom_err_with_code("Cannot set monitor power using window", result.0)
         })
     }
 
     pub(crate) unsafe fn get_user_data_ptr<T>(&self) -> Option<NonNull<T>> {
-        let ptr_value = GetWindowLongPtrW(self.as_immutable_ptr(), GWLP_USERDATA);
+        let ptr_value = GetWindowLongPtrW(self, GWLP_USERDATA);
         NonNull::new(ptr_value as *mut T)
     }
 
-    pub(crate) unsafe fn set_user_data_ptr<T>(&mut self, ptr: *const T) -> io::Result<()> {
-        SetWindowLongPtrW(self.as_mutable_ptr(), GWLP_USERDATA, ptr as LONG_PTR);
-        // TODO add error checking, distinguishing between old value 0 and an actual error (see MS docs)
+    pub(crate) unsafe fn set_user_data_ptr<T>(&self, ptr: *const T) -> io::Result<()> {
+        SetLastError(NO_ERROR);
+        let ret_val = SetWindowLongPtrW(self, GWLP_USERDATA, ptr as isize);
+        if ret_val == 0 {
+            let err_val = GetLastError();
+            if err_val != NO_ERROR {
+                return Err(custom_err_with_code(
+                    "Cannot set window procedure",
+                    err_val.0,
+                ));
+            }
+        }
         Ok(())
     }
+}
 
-    pub fn into_raw_handle(self) -> NonNull<HWND__> {
-        self.handle
+impl From<&WindowHandle> for HWND {
+    fn from(value: &WindowHandle) -> Self {
+        value.handle
     }
 }
 
-impl ManagedHandle for WindowHandle {
-    type Target = HWND__;
-
-    #[inline(always)]
-    fn as_immutable_ptr(&self) -> *mut Self::Target {
-        self.handle.as_immutable_ptr()
-    }
-}
-
-pub struct WindowClass<'res, WML, I> {
-    atom: ATOM,
-    icon: &'res I,
+pub struct WindowClass<'res, WML, I: 'res> {
+    atom: u16,
+    icon: I,
     phantom: PhantomData<(WML, &'res ())>,
+}
+
+impl WindowClass<'_, (), ()> {
+    const MAX_WINDOW_CLASS_NAME_CHARS: usize = 256;
 }
 
 impl<'res, WML: WindowMessageListener, I: Icon> WindowClass<'res, WML, I> {
     pub fn register_new(
         class_name: &str,
         background_brush: &'res impl Brush,
-        icon: &'res I,
+        icon: I,
         cursor: &'res impl Cursor,
     ) -> io::Result<Self> {
         let class_name_wide = class_name.to_wide_string();
 
         // No need to reserve extra window memory if we only need a single pointer
         let class_def = WNDCLASSEXW {
-            cbSize: mem::size_of::<WNDCLASSEXW>() as UINT,
+            cbSize: mem::size_of::<WNDCLASSEXW>().try_into().unwrap(),
             lpfnWndProc: Some(generic_window_proc::<WML>),
             hIcon: icon.as_handle()?,
             hCursor: cursor.as_handle()?,
             hbrBackground: background_brush.as_handle()?,
-            lpszClassName: class_name_wide.as_ptr(),
+            lpszClassName: PCWSTR::from_raw(class_name_wide.as_ptr()),
             ..Default::default()
         };
         let atom = unsafe { RegisterClassExW(&class_def).if_null_get_last_error()? };
@@ -448,7 +457,7 @@ impl<'res, WML: WindowMessageListener, I: Icon> WindowClass<'res, WML, I> {
 impl<WML, I> Drop for WindowClass<'_, WML, I> {
     fn drop(&mut self) {
         unsafe {
-            UnregisterClassW(self.atom as *const WCHAR, ptr::null_mut())
+            UnregisterClassW(PCWSTR(self.atom as *const u16), None)
                 .if_null_get_last_error()
                 .unwrap();
         }
@@ -467,24 +476,24 @@ impl<'class, 'listener, WML: WindowMessageListener, I: Icon> Window<'class, 'lis
         listener: &'listener WML,
         window_name: &str,
     ) -> io::Result<Self> {
-        let h_wnd: NonNull<HWND__> = unsafe {
+        let h_wnd: HWND = unsafe {
             CreateWindowExW(
-                0,
-                class.atom as *const WCHAR,
-                window_name.to_wide_string().as_ptr(),
+                Default::default(),
+                PCWSTR(class.atom as *const u16),
+                PCWSTR::from_raw(window_name.to_wide_string().as_ptr()),
                 WS_OVERLAPPEDWINDOW,
                 CW_USEDEFAULT,
                 0,
                 CW_USEDEFAULT,
                 0,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
+                None,
+                None,
+                None,
+                None,
             )
-            .to_non_null_else_get_last_error()?
+            .if_null_get_last_error()?
         };
-        let mut handle = WindowHandle::from_non_null(h_wnd);
+        let handle = WindowHandle::from_non_null(h_wnd);
         unsafe {
             handle.set_user_data_ptr(listener)?;
         }
@@ -495,38 +504,37 @@ impl<'class, 'listener, WML: WindowMessageListener, I: Icon> Window<'class, 'lis
         })
     }
 
-    pub fn add_notification_icon<'a>(
+    /// Adds a notification icon
+    pub fn add_notification_icon<'a, NI: Icon + 'a>(
         &'a self,
-        icon_id: NotificationIconId,
-        icon: Option<&'a impl Icon>,
-        tooltip_text: Option<&str>,
+        options: NotificationIconOptions<NI, &'a str>,
     ) -> io::Result<NotificationIcon<'a, WML, I>> {
         // For GUID handling maybe look at generating it from the executable path:
         // https://stackoverflow.com/questions/7432319/notifyicondata-guid-problem
-        let chosen_icon_handle = if let Some(icon) = icon {
+        let chosen_icon_handle = if let Some(icon) = options.icon {
             icon.as_handle()?
         } else {
             self.class.icon.as_handle()?
         };
-        let mut call_data = get_notification_call_data(
+        let call_data = get_notification_call_data(
             &self.handle,
-            icon_id,
+            options.icon_id,
             true,
             Some(chosen_icon_handle),
-            tooltip_text,
-            None,
+            options.tooltip_text,
+            Some(!options.visible),
             None,
         );
         unsafe {
-            Shell_NotifyIconW(NIM_ADD, &mut call_data).if_null_to_error(|| {
+            Shell_NotifyIconW(NIM_ADD, &call_data).if_null_to_error(|| {
                 io::Error::new(io::ErrorKind::Other, "Cannot add notification icon")
             })?;
-            Shell_NotifyIconW(NIM_SETVERSION, &mut call_data).if_null_to_error(|| {
+            Shell_NotifyIconW(NIM_SETVERSION, &call_data).if_null_to_error(|| {
                 io::Error::new(io::ErrorKind::Other, "Cannot set notification version")
             })?;
         };
         Ok(NotificationIcon {
-            id: icon_id,
+            id: options.icon_id,
             window: self,
         })
     }
@@ -536,7 +544,7 @@ impl<WML, I> Drop for Window<'_, '_, WML, I> {
     fn drop(&mut self) {
         unsafe {
             if self.handle.is_window() {
-                DestroyWindow(self.handle.as_mutable_ptr())
+                DestroyWindow(&self.handle)
                     .if_null_get_last_error()
                     .unwrap();
             }
@@ -557,18 +565,24 @@ impl<WML, I> AsMut<WindowHandle> for Window<'_, '_, WML, I> {
 }
 
 #[derive(IntoPrimitive, TryFromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(i32)]
+#[repr(u32)]
 pub enum WindowShowState {
-    Hide = SW_HIDE,
-    Maximize = SW_MAXIMIZE,
-    Minimize = SW_MINIMIZE,
-    Restore = SW_RESTORE,
-    Show = SW_SHOW,
-    ShowMinimized = SW_SHOWMINIMIZED,
-    ShowMinNoActivate = SW_SHOWMINNOACTIVE,
-    ShowNoActivate = SW_SHOWNA,
-    ShowNormalNoActivate = SW_SHOWNOACTIVATE,
-    ShowNormal = SW_SHOWNORMAL,
+    Hide = SW_HIDE.0,
+    Maximize = SW_MAXIMIZE.0,
+    Minimize = SW_MINIMIZE.0,
+    Restore = SW_RESTORE.0,
+    Show = SW_SHOW.0,
+    ShowMinimized = SW_SHOWMINIMIZED.0,
+    ShowMinNoActivate = SW_SHOWMINNOACTIVE.0,
+    ShowNoActivate = SW_SHOWNA.0,
+    ShowNormalNoActivate = SW_SHOWNOACTIVATE.0,
+    ShowNormal = SW_SHOWNORMAL.0,
+}
+
+impl From<WindowShowState> for SHOW_WINDOW_CMD {
+    fn from(value: WindowShowState) -> Self {
+        SHOW_WINDOW_CMD(value.into())
+    }
 }
 
 /// DPI-scaled virtual coordinates.
@@ -583,13 +597,11 @@ pub struct WindowPlacement {
 
 impl WindowPlacement {
     pub fn get_show_state(&self) -> Option<WindowShowState> {
-        (i32::try_from(self.raw_placement.showCmd).unwrap())
-            .try_into()
-            .ok()
+        self.raw_placement.showCmd.0.try_into().ok()
     }
 
     pub fn set_show_state(&mut self, state: WindowShowState) {
-        self.raw_placement.showCmd = i32::from(state) as u32;
+        self.raw_placement.showCmd = state.into();
     }
 
     pub fn get_minimized_position(&self) -> Point {
@@ -620,7 +632,7 @@ impl WindowPlacement {
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
 #[non_exhaustive]
-#[repr(usize)]
+#[repr(u32)]
 pub enum WindowCommand {
     Close = SC_CLOSE,
     Maximize = SC_MAXIMIZE,
@@ -628,17 +640,29 @@ pub enum WindowCommand {
     Restore = SC_RESTORE,
 }
 
+impl From<WindowCommand> for WPARAM {
+    fn from(value: WindowCommand) -> Self {
+        WPARAM(usize::try_from(u32::from(value)).unwrap())
+    }
+}
+
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
 #[repr(u32)]
 pub enum FlashElement {
-    Caption = FLASHW_CAPTION,
-    Taskbar = FLASHW_TRAY,
-    CaptionPlusTaskbar = FLASHW_ALL,
+    Caption = FLASHW_CAPTION.0,
+    Taskbar = FLASHW_TRAY.0,
+    CaptionPlusTaskbar = FLASHW_ALL.0,
 }
 
 impl Default for FlashElement {
     fn default() -> Self {
         FlashElement::CaptionPlusTaskbar
+    }
+}
+
+impl From<FlashElement> for FLASHWINFO_FLAGS {
+    fn from(value: FlashElement) -> Self {
+        FLASHWINFO_FLAGS(u32::from(value))
     }
 }
 
@@ -683,7 +707,7 @@ pub struct NotificationIcon<'a, WML, I> {
 
 impl<'a, WML, I> NotificationIcon<'a, WML, I> {
     pub fn set_icon(&mut self, icon: &'a impl Icon) -> io::Result<()> {
-        let mut call_data = get_notification_call_data(
+        let call_data = get_notification_call_data(
             &self.window.handle,
             self.id,
             false,
@@ -693,7 +717,7 @@ impl<'a, WML, I> NotificationIcon<'a, WML, I> {
             None,
         );
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &mut call_data).if_null_to_error(|| {
+            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error(|| {
                 io::Error::new(io::ErrorKind::Other, "Cannot set notification icon")
             })?;
         };
@@ -701,7 +725,7 @@ impl<'a, WML, I> NotificationIcon<'a, WML, I> {
     }
 
     pub fn set_icon_hidden_state(&mut self, hidden: bool) -> io::Result<()> {
-        let mut call_data = get_notification_call_data(
+        let call_data = get_notification_call_data(
             &self.window.handle,
             self.id,
             false,
@@ -711,7 +735,7 @@ impl<'a, WML, I> NotificationIcon<'a, WML, I> {
             None,
         );
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &mut call_data).if_null_to_error(|| {
+            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error(|| {
                 io::Error::new(
                     io::ErrorKind::Other,
                     "Cannot set notification icon hidden state",
@@ -722,7 +746,7 @@ impl<'a, WML, I> NotificationIcon<'a, WML, I> {
     }
 
     pub fn set_tooltip_text(&mut self, text: &str) -> io::Result<()> {
-        let mut call_data = get_notification_call_data(
+        let call_data = get_notification_call_data(
             &self.window.handle,
             self.id,
             false,
@@ -732,7 +756,7 @@ impl<'a, WML, I> NotificationIcon<'a, WML, I> {
             None,
         );
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &mut call_data).if_null_to_error(|| {
+            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error(|| {
                 io::Error::new(
                     io::ErrorKind::Other,
                     "Cannot set notification icon tooltip text",
@@ -746,7 +770,7 @@ impl<'a, WML, I> NotificationIcon<'a, WML, I> {
         &mut self,
         notification: Option<BalloonNotification>,
     ) -> io::Result<()> {
-        let mut call_data = get_notification_call_data(
+        let call_data = get_notification_call_data(
             &self.window.handle,
             self.id,
             false,
@@ -756,7 +780,7 @@ impl<'a, WML, I> NotificationIcon<'a, WML, I> {
             Some(notification),
         );
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &mut call_data).if_null_to_error(|| {
+            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error(|| {
                 io::Error::new(
                     io::ErrorKind::Other,
                     "Cannot set notification icon balloon text",
@@ -769,10 +793,10 @@ impl<'a, WML, I> NotificationIcon<'a, WML, I> {
 
 impl<WML, I> Drop for NotificationIcon<'_, WML, I> {
     fn drop(&mut self) {
-        let mut call_data =
+        let call_data =
             get_notification_call_data(&self.window.handle, self.id, false, None, None, None, None);
         unsafe {
-            Shell_NotifyIconW(NIM_DELETE, &mut call_data)
+            Shell_NotifyIconW(NIM_DELETE, &call_data)
                 .if_null_to_error(|| {
                     io::Error::new(io::ErrorKind::Other, "Cannot remove notification icon")
                 })
@@ -794,12 +818,10 @@ fn get_notification_call_data(
         cbSize: mem::size_of::<NOTIFYICONDATAW>()
             .try_into()
             .expect("NOTIFYICONDATAW size conversion failed"),
-        hWnd: window_handle.as_immutable_ptr(),
+        hWnd: window_handle.into(),
         ..Default::default()
     };
-    unsafe {
-        *icon_data.u.uVersion_mut() = NOTIFYICON_VERSION_4;
-    }
+    icon_data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
     match icon_id {
         NotificationIconId::GUID(id) => {
             icon_data.guidItem = id;
@@ -829,8 +851,8 @@ fn get_notification_call_data(
     }
     if let Some(hidden_state) = icon_hidden_state {
         if hidden_state {
-            icon_data.dwState |= NIS_HIDDEN;
-            icon_data.dwStateMask |= NIS_HIDDEN;
+            icon_data.dwState = NOTIFY_ICON_STATE(icon_data.dwState.0 | NIS_HIDDEN.0);
+            icon_data.dwStateMask |= NIS_HIDDEN.0;
         }
         icon_data.uFlags |= NIF_STATE;
     }
@@ -850,17 +872,18 @@ fn get_notification_call_data(
             for (i, w_char) in title_chars {
                 icon_data.szInfoTitle[i] = w_char;
             }
-            icon_data.dwInfoFlags |= DWORD::from(balloon.icon);
+            icon_data.dwInfoFlags =
+                NOTIFY_ICON_INFOTIP_FLAGS(icon_data.dwInfoFlags.0 | u32::from(balloon.icon));
         }
         icon_data.uFlags |= NIF_INFO;
     }
     icon_data
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum NotificationIconId {
     Simple(u16),
-    GUID(guiddef::GUID),
+    GUID(GUID),
 }
 
 impl Default for NotificationIconId {
@@ -869,7 +892,16 @@ impl Default for NotificationIconId {
     }
 }
 
-#[derive(Copy, Clone)]
+/// Options for a new notification icon used by [Window::add_notification_icon]
+#[derive(Eq, PartialEq, Default)]
+pub struct NotificationIconOptions<I, S> {
+    pub icon_id: NotificationIconId,
+    pub icon: Option<I>,
+    pub tooltip_text: Option<S>,
+    pub visible: bool,
+}
+
+#[derive(Copy, Clone, Default)]
 pub struct BalloonNotification<'a> {
     title: &'a str,
     body: &'a str,
@@ -879,10 +911,10 @@ pub struct BalloonNotification<'a> {
 #[derive(IntoPrimitive, Copy, Clone)]
 #[repr(u32)]
 pub enum BalloonNotificationStandardIcon {
-    None = NIIF_NONE,
-    Info = NIIF_INFO,
-    Warning = NIIF_WARNING,
-    Error = NIIF_ERROR,
+    None = NIIF_NONE.0,
+    Info = NIIF_INFO.0,
+    Warning = NIIF_WARNING.0,
+    Error = NIIF_ERROR.0,
 }
 
 impl Default for BalloonNotificationStandardIcon {
@@ -966,11 +998,9 @@ impl Taskbar {
         window: &WindowHandle,
         state: ProgressState,
     ) -> io::Result<()> {
-        use windows::Win32::Foundation::HWND;
         let ret_val = unsafe {
-            // TODO: Clean up HWND usage after migration to windows-rs
             self.taskbar_list_3
-                .SetProgressState(HWND(window.as_immutable_ptr() as isize), state.into())
+                .SetProgressState(HWND::from(window), state.into())
         };
         ret_val.map_err(|err| custom_err_with_code("Error setting progress state", err.code()))
     }
@@ -978,18 +1008,13 @@ impl Taskbar {
     /// Sets the completion amount of the taskbar progress state animation.
     pub fn set_progress_value(
         &self,
-        window: &mut WindowHandle,
+        window: &WindowHandle,
         completed: u64,
         total: u64,
     ) -> io::Result<()> {
-        use windows::Win32::Foundation::HWND;
         let ret_val = unsafe {
-            // TODO: Clean up HWND usage after migration to windows-rs
-            self.taskbar_list_3.SetProgressValue(
-                HWND(window.as_immutable_ptr() as isize),
-                completed,
-                total,
-            )
+            self.taskbar_list_3
+                .SetProgressValue(HWND::from(window), completed, total)
         };
         ret_val.map_err(|err| custom_err_with_code("Error setting progress value", err.code()))
     }
@@ -1015,7 +1040,13 @@ pub fn lock_workstation() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::ui::resource::{
+        BuiltinColor,
+        BuiltinCursor,
+        BuiltinIcon,
+    };
     use more_asserts::*;
+    use std::hint::black_box;
 
     use super::*;
 
@@ -1025,7 +1056,44 @@ mod tests {
         assert_gt!(all_windows.len(), 0);
         for window in all_windows {
             assert!(window.is_window());
+            assert!(window.get_placement().is_ok());
+            assert!(window.get_class_name().is_ok());
+            black_box(&window.get_caption_text());
+            black_box(&window.get_creator_thread_process_ids());
         }
+        Ok(())
+    }
+
+    #[test]
+    fn new_window_with_class() -> io::Result<()> {
+        struct MyListener;
+        impl WindowMessageListener for MyListener {}
+        const CLASS_NAME: &str = "myclass1";
+        const WINDOW_NAME: &str = "mywindow1";
+        const CAPTION_TEXT: &str = "Testwindow";
+
+        let listener = MyListener;
+        let background: BuiltinColor = Default::default();
+        let icon: BuiltinIcon = Default::default();
+        let cursor: BuiltinCursor = Default::default();
+        let class: WindowClass<MyListener, _> =
+            WindowClass::register_new(CLASS_NAME, &background, icon, &cursor)?;
+        let window = Window::create_new(&class, &listener, WINDOW_NAME)?;
+        let notification_icon_options = NotificationIconOptions {
+            icon: Some(icon),
+            tooltip_text: Some("A tooltip!"),
+            visible: false,
+            ..Default::default()
+        };
+        let mut notification_icon = window.add_notification_icon(notification_icon_options)?;
+        let balloon_notification = BalloonNotification::default();
+        notification_icon.set_balloon_notification(Some(balloon_notification))?;
+
+        assert_eq!(window.as_ref().get_caption_text(), WINDOW_NAME);
+        window.as_ref().set_caption_text(CAPTION_TEXT)?;
+        assert_eq!(window.as_ref().get_caption_text(), CAPTION_TEXT);
+        assert_eq!(window.as_ref().get_class_name()?, CLASS_NAME);
+
         Ok(())
     }
 }

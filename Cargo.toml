@@ -24,41 +24,24 @@ version = "0.43.0"
 features = [
     "Win32_Devices_FunctionDiscovery",
     "Win32_Foundation",
+    "Win32_Graphics_Gdi",
     "Win32_Media_Audio",
     "Win32_Storage_FileSystem",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
+    "Win32_System_Console",
     "Win32_System_DataExchange",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_LibraryLoader",
     "Win32_System_Memory",
+    "Win32_System_Shutdown",
     "Win32_System_SystemServices",
+    "Win32_System_Threading",
     "Win32_System_WindowsProgramming",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
-]
-
-[dependencies.winapi]
-version = "0.3.9"
-features = [
-    "basetsd",
-    "consoleapi",
-    "handleapi",
-    "impl-debug",
-    "impl-default",
-    "minwindef",
-    "ntdef",
-    "objbase",
-    "processthreadsapi",
-    "shellapi",
-    "shobjidl_core",
-    "std",
-    "tlhelp32",
-    "winbase",
-    "wincon",
-    "windowsx",
-    "winerror",
-    "winuser",
 ]
 
 [dev-dependencies]

@@ -1,20 +1,8 @@
 use std::io;
-use std::ptr;
-use std::ptr::NonNull;
 
 use num_enum::IntoPrimitive;
-use winapi::ctypes::c_void;
-use winapi::shared::minwindef::{
-    UINT,
-    WORD,
-};
-use winapi::shared::windef::{
-    HBRUSH,
-    HCURSOR,
-    HICON,
-};
-use winapi::um::winuser::{
-    LoadImageW,
+use windows::Win32::Foundation::HANDLE;
+use windows::Win32::Graphics::Gdi::{
     COLOR_3DDKSHADOW,
     COLOR_3DLIGHT,
     COLOR_ACTIVEBORDER,
@@ -45,43 +33,60 @@ use winapi::um::winuser::{
     COLOR_WINDOW,
     COLOR_WINDOWFRAME,
     COLOR_WINDOWTEXT,
+    HBRUSH,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    LoadImageW,
+    GDI_IMAGE_TYPE,
+    HCURSOR,
+    HICON,
     IMAGE_CURSOR,
     IMAGE_ICON,
     LR_DEFAULTSIZE,
     LR_SHARED,
-    MAKEINTRESOURCEW,
+    OCR_APPSTARTING,
+    OCR_CROSS,
+    OCR_HAND,
+    OCR_HELP,
+    OCR_IBEAM,
+    OCR_NO,
+    OCR_NORMAL,
+    OCR_SIZEALL,
+    OCR_SIZENESW,
+    OCR_SIZENS,
+    OCR_SIZENWSE,
+    OCR_SIZEWE,
+    OCR_UP,
+    OCR_WAIT,
+    OIC_ERROR,
+    OIC_INFORMATION,
+    OIC_QUES,
+    OIC_SAMPLE,
+    OIC_SHIELD,
+    OIC_WARNING,
 };
 
-use crate::internal::RawHandle;
+use windows_missing::*;
 
-pub trait Icon {
+pub trait Icon: Copy {
     fn as_handle(&self) -> io::Result<HICON>;
 }
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u16)]
+#[repr(u32)]
 pub enum BuiltinIcon {
-    Application = Self::OIC_SAMPLE,
-    QuestionMark = Self::OIC_QUES,
-    Warning = Self::OIC_WARNING,
-    Error = Self::OIC_ERROR,
-    Information = Self::OIC_INFORMATION,
-    Shield = Self::OIC_SHIELD,
-}
-
-impl BuiltinIcon {
-    const OIC_SAMPLE: u16 = 32512;
-    const OIC_QUES: u16 = 32514;
-    const OIC_WARNING: u16 = 32515;
-    const OIC_ERROR: u16 = 32513;
-    const OIC_INFORMATION: u16 = 32516;
-    const OIC_SHIELD: u16 = 32518;
+    Application = OIC_SAMPLE,
+    QuestionMark = OIC_QUES,
+    Warning = OIC_WARNING,
+    Error = OIC_ERROR,
+    Information = OIC_INFORMATION,
+    Shield = OIC_SHIELD,
 }
 
 impl Icon for BuiltinIcon {
     fn as_handle(&self) -> io::Result<HICON> {
         let handle = get_shared_image_handle((*self).into(), IMAGE_ICON)?;
-        Ok(handle.as_ptr() as HICON)
+        Ok(HICON(handle.0))
     }
 }
 
@@ -96,60 +101,42 @@ pub trait Cursor {
 }
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u16)]
+#[repr(u32)]
 pub enum BuiltinCursor {
     /// Standard arrow
-    Normal = Self::OCR_NORMAL,
+    Normal = OCR_NORMAL.0,
     /// Standard arrow and small hourglass
-    NormalPlusWaiting = Self::OCR_APPSTARTING,
+    NormalPlusWaiting = OCR_APPSTARTING.0,
     /// Hourglass
-    Waiting = Self::OCR_WAIT,
+    Waiting = OCR_WAIT.0,
     /// Arrow and question mark
-    NormalPlusQuestionMark = Self::OCR_HELP,
+    NormalPlusQuestionMark = OCR_HELP.0,
     /// Crosshair
-    Crosshair = Self::OCR_CROSS,
+    Crosshair = OCR_CROSS.0,
     /// Hand
-    Hand = Self::OCR_HAND,
+    Hand = OCR_HAND.0,
     /// I-beam
-    IBeam = Self::OCR_IBEAM,
+    IBeam = OCR_IBEAM.0,
     /// Slashed circle
-    SlashedCircle = Self::OCR_NO,
+    SlashedCircle = OCR_NO.0,
     /// Four-pointed arrow pointing north, south, east, and west
-    ArrowAllDirections = Self::OCR_SIZEALL,
+    ArrowAllDirections = OCR_SIZEALL.0,
     /// Double-pointed arrow pointing northeast and southwest
-    ArrowNESW = Self::OCR_SIZENESW,
+    ArrowNESW = OCR_SIZENESW.0,
     /// Double-pointed arrow pointing north and south
-    ArrowNS = Self::OCR_SIZENS,
+    ArrowNS = OCR_SIZENS.0,
     /// Double-pointed arrow pointing northwest and southeast
-    ArrowNWSE = Self::OCR_SIZENWSE,
+    ArrowNWSE = OCR_SIZENWSE.0,
     /// Double-pointed arrow pointing west and east
-    ArrowWE = Self::OCR_SIZEWE,
+    ArrowWE = OCR_SIZEWE.0,
     /// Vertical arrow
-    Up = Self::OCR_UP,
-}
-
-impl BuiltinCursor {
-    // https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setsystemcursor
-    const OCR_APPSTARTING: u16 = 32650;
-    const OCR_NORMAL: u16 = 32512;
-    const OCR_CROSS: u16 = 32515;
-    const OCR_HAND: u16 = 32649;
-    const OCR_HELP: u16 = 32651;
-    const OCR_IBEAM: u16 = 32513;
-    const OCR_NO: u16 = 32648;
-    const OCR_SIZEALL: u16 = 32646;
-    const OCR_SIZENESW: u16 = 32643;
-    const OCR_SIZENS: u16 = 32645;
-    const OCR_SIZENWSE: u16 = 32642;
-    const OCR_SIZEWE: u16 = 32644;
-    const OCR_UP: u16 = 32516;
-    const OCR_WAIT: u16 = 32514;
+    Up = OCR_UP.0,
 }
 
 impl Cursor for BuiltinCursor {
     fn as_handle(&self) -> io::Result<HCURSOR> {
         let handle = get_shared_image_handle((*self).into(), IMAGE_CURSOR)?;
-        Ok(handle.as_ptr() as HCURSOR)
+        Ok(HCURSOR(handle.0))
     }
 }
 
@@ -167,55 +154,73 @@ pub trait Brush {
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(i32)]
 pub enum BuiltinColor {
-    Scrollbar = COLOR_SCROLLBAR,
-    Background = COLOR_BACKGROUND,
-    ActiveCaption = COLOR_ACTIVECAPTION,
-    InactiveCaption = COLOR_INACTIVECAPTION,
-    Menu = COLOR_MENU,
-    Window = COLOR_WINDOW,
-    WindowFrame = COLOR_WINDOWFRAME,
-    MenuText = COLOR_MENUTEXT,
-    WindowText = COLOR_WINDOWTEXT,
-    CaptionText = COLOR_CAPTIONTEXT,
-    ActiveBorder = COLOR_ACTIVEBORDER,
-    InactiveBorder = COLOR_INACTIVEBORDER,
-    AppWorkspace = COLOR_APPWORKSPACE,
-    Highlight = COLOR_HIGHLIGHT,
-    HighlightText = COLOR_HIGHLIGHTTEXT,
-    ButtonFace = COLOR_BTNFACE,
-    ButtonShadow = COLOR_BTNSHADOW,
-    GrayText = COLOR_GRAYTEXT,
-    ButtonText = COLOR_BTNTEXT,
-    InactiveCaptionText = COLOR_INACTIVECAPTIONTEXT,
-    ButtonHighlight = COLOR_BTNHIGHLIGHT,
-    Shadow3DDark = COLOR_3DDKSHADOW,
-    Light3D = COLOR_3DLIGHT,
-    InfoText = COLOR_INFOTEXT,
-    InfoBlack = COLOR_INFOBK,
-    HotLight = COLOR_HOTLIGHT,
-    GradientActiveCaption = COLOR_GRADIENTACTIVECAPTION,
-    GradientInactiveCaption = COLOR_GRADIENTINACTIVECAPTION,
-    MenuHighlight = COLOR_MENUHILIGHT,
-    MenuBar = COLOR_MENUBAR,
+    Scrollbar = COLOR_SCROLLBAR.0,
+    Background = COLOR_BACKGROUND.0,
+    ActiveCaption = COLOR_ACTIVECAPTION.0,
+    InactiveCaption = COLOR_INACTIVECAPTION.0,
+    Menu = COLOR_MENU.0,
+    Window = COLOR_WINDOW.0,
+    WindowFrame = COLOR_WINDOWFRAME.0,
+    MenuText = COLOR_MENUTEXT.0,
+    WindowText = COLOR_WINDOWTEXT.0,
+    CaptionText = COLOR_CAPTIONTEXT.0,
+    ActiveBorder = COLOR_ACTIVEBORDER.0,
+    InactiveBorder = COLOR_INACTIVEBORDER.0,
+    AppWorkspace = COLOR_APPWORKSPACE.0,
+    Highlight = COLOR_HIGHLIGHT.0,
+    HighlightText = COLOR_HIGHLIGHTTEXT.0,
+    ButtonFace = COLOR_BTNFACE.0,
+    ButtonShadow = COLOR_BTNSHADOW.0,
+    GrayText = COLOR_GRAYTEXT.0,
+    ButtonText = COLOR_BTNTEXT.0,
+    InactiveCaptionText = COLOR_INACTIVECAPTIONTEXT.0,
+    ButtonHighlight = COLOR_BTNHIGHLIGHT.0,
+    Shadow3DDark = COLOR_3DDKSHADOW.0,
+    Light3D = COLOR_3DLIGHT.0,
+    InfoText = COLOR_INFOTEXT.0,
+    InfoBlack = COLOR_INFOBK.0,
+    HotLight = COLOR_HOTLIGHT.0,
+    GradientActiveCaption = COLOR_GRADIENTACTIVECAPTION.0,
+    GradientInactiveCaption = COLOR_GRADIENTINACTIVECAPTION.0,
+    MenuHighlight = COLOR_MENUHILIGHT.0,
+    MenuBar = COLOR_MENUBAR.0,
+}
+
+impl Default for BuiltinColor {
+    fn default() -> Self {
+        Self::Scrollbar
+    }
 }
 
 impl Brush for BuiltinColor {
     fn as_handle(&self) -> io::Result<HBRUSH> {
-        Ok(i32::from(*self) as HBRUSH)
+        Ok(HBRUSH(i32::from(*self).try_into().expect(
+            "Conversion of built in color IDs to isize should never fail",
+        )))
     }
 }
 
-fn get_shared_image_handle(resource_id: WORD, resource_type: UINT) -> io::Result<NonNull<c_void>> {
-    let handle: NonNull<c_void> = unsafe {
+fn get_shared_image_handle(resource_id: u32, resource_type: GDI_IMAGE_TYPE) -> io::Result<HANDLE> {
+    let handle = unsafe {
         LoadImageW(
-            ptr::null_mut(),
+            None,
             MAKEINTRESOURCEW(resource_id),
             resource_type,
             0,
             0,
             LR_SHARED | LR_DEFAULTSIZE,
-        )
-        .to_non_null_else_get_last_error()?
+        )?
     };
     Ok(handle)
+}
+
+mod windows_missing {
+    use windows::core::PCWSTR;
+
+    // Temporary function until this gets resolved: https://github.com/microsoft/windows-rs/issues/641
+    #[allow(non_snake_case)]
+    #[inline]
+    pub fn MAKEINTRESOURCEW(i: u32) -> PCWSTR {
+        PCWSTR(i as usize as *const u16)
+    }
 }

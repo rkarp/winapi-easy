@@ -1,17 +1,11 @@
-#![allow(unused_imports)]
-
-use std::cell::RefCell;
 use std::convert::TryInto;
 use std::io;
 use std::io::ErrorKind;
 use std::marker::PhantomData;
 use std::mem;
-use std::ptr;
-use std::ptr::NonNull;
 
-use winapi::shared::minwindef::TRUE;
-use winapi::shared::windef::HMENU__;
-use winapi::um::winuser::{
+use windows::core::PWSTR;
+use windows::Win32::UI::WindowsAndMessaging::{
     CreatePopupMenu,
     DestroyMenu,
     GetMenuItemCount,
@@ -19,6 +13,7 @@ use winapi::um::winuser::{
     InsertMenuItemW,
     SetMenuInfo,
     TrackPopupMenu,
+    HMENU,
     MENUINFO,
     MENUITEMINFOW,
     MFT_SEPARATOR,
@@ -30,42 +25,37 @@ use winapi::um::winuser::{
     MNS_NOTIFYBYPOS,
 };
 
-use crate::internal::{
-    custom_err_with_code,
-    sync_closure_to_callback2,
-    ManagedHandle,
-    RawHandle,
-    ReturnValue,
-};
-use crate::process::{
-    ProcessId,
-    ThreadId,
-};
-use crate::string::{
-    to_wide_chars_iter,
-    FromWideString,
-    ToWideString,
-};
+use crate::internal::ReturnValue;
+use crate::string::ToWideString;
 use crate::ui::{
     Point,
     WindowHandle,
 };
 
 #[derive(Eq, PartialEq)]
-pub struct MenuHandle {
-    raw_handle: NonNull<HMENU__>,
+pub(crate) struct MenuHandle {
+    raw_handle: HMENU,
 }
 
 impl MenuHandle {
     fn new_popup_menu() -> io::Result<Self> {
-        let handle = unsafe { CreatePopupMenu().to_non_null_else_get_last_error()? };
+        let handle = unsafe { CreatePopupMenu()?.if_null_get_last_error()? };
         let result = Self { raw_handle: handle };
         result.set_info()?;
         Ok(result)
     }
 
-    pub(crate) fn from_non_null(raw_handle: NonNull<HMENU__>) -> Self {
+    #[allow(unused)]
+    pub(crate) fn from_non_null(raw_handle: HMENU) -> Self {
         Self { raw_handle }
+    }
+
+    pub(crate) fn from_maybe_null(handle: HMENU) -> Option<Self> {
+        if handle.0 != 0 {
+            Some(Self { raw_handle: handle })
+        } else {
+            None
+        }
     }
 
     fn set_info(&self) -> io::Result<()> {
@@ -76,12 +66,12 @@ impl MenuHandle {
             fMask: MIM_APPLYTOSUBMENUS | MIM_STYLE,
             dwStyle: MNS_NOTIFYBYPOS,
             cyMax: 0,
-            hbrBack: ptr::null_mut(),
+            hbrBack: None.into(),
             dwContextHelpID: 0,
             dwMenuData: 0,
         };
         unsafe {
-            SetMenuInfo(self.as_immutable_ptr(), &raw_menu_info).if_null_get_last_error()?;
+            SetMenuInfo(self, &raw_menu_info).if_null_get_last_error()?;
         }
         Ok(())
     }
@@ -89,9 +79,9 @@ impl MenuHandle {
     fn insert_submenu_item(&self, idx: u32, item: SubMenuItem, id: u32) -> io::Result<()> {
         unsafe {
             InsertMenuItemW(
-                self.as_immutable_ptr(),
+                self,
                 idx,
-                TRUE,
+                true,
                 &SubMenuItemCallData::new(Some(&mut item.into()), Some(id)).item_info_struct,
             )
             .if_null_get_last_error()?;
@@ -102,7 +92,7 @@ impl MenuHandle {
     pub(crate) fn get_item_id(&self, item_idx: u32) -> io::Result<u32> {
         let id = unsafe {
             GetMenuItemID(
-                self.as_immutable_ptr(),
+                self,
                 item_idx.try_into().map_err(|_err| {
                     io::Error::new(
                         ErrorKind::InvalidInput,
@@ -116,25 +106,22 @@ impl MenuHandle {
     }
 
     fn get_item_count(&self) -> io::Result<i32> {
-        let count = unsafe { GetMenuItemCount(self.as_immutable_ptr()) };
+        let count = unsafe { GetMenuItemCount(self) };
         count.if_eq_to_error(-1, io::Error::last_os_error)?;
         Ok(count)
     }
 
-    fn destroy(&mut self) -> io::Result<()> {
+    fn destroy(&self) -> io::Result<()> {
         unsafe {
-            DestroyMenu(self.as_mutable_ptr()).if_null_get_last_error()?;
+            DestroyMenu(self).if_null_get_last_error()?;
         }
         Ok(())
     }
 }
 
-impl ManagedHandle for MenuHandle {
-    type Target = HMENU__;
-
-    #[inline(always)]
-    fn as_immutable_ptr(&self) -> *mut Self::Target {
-        self.raw_handle.as_immutable_ptr()
+impl From<&MenuHandle> for HMENU {
+    fn from(value: &MenuHandle) -> Self {
+        value.raw_handle
     }
 }
 
@@ -161,13 +148,13 @@ impl PopupMenu {
     pub fn show_popup_menu(&self, window: &WindowHandle, coords: Point) -> io::Result<()> {
         unsafe {
             TrackPopupMenu(
-                self.handle.as_immutable_ptr(),
-                0,
+                &self.handle,
+                Default::default(),
                 coords.x,
                 coords.y,
                 0,
-                window.as_immutable_ptr(),
-                ptr::null(),
+                window,
+                None,
             )
             .if_null_get_last_error()?;
         }
@@ -218,7 +205,7 @@ impl<'a> SubMenuItemCallData<'a> {
             Some(SubMenuItemRaw::WideText(ref mut wide_string)) => {
                 item_info.fMask |= MIIM_STRING;
                 item_info.cch = wide_string.len().try_into().unwrap();
-                item_info.dwTypeData = wide_string.as_mut_ptr();
+                item_info.dwTypeData = PWSTR::from_raw(wide_string.as_mut_ptr());
             }
             Some(SubMenuItemRaw::Separator) => {
                 item_info.fMask |= MIIM_FTYPE;
@@ -234,5 +221,21 @@ impl<'a> SubMenuItemCallData<'a> {
             item_info_struct: item_info,
             phantom: PhantomData,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_test_menu() -> io::Result<()> {
+        let menu = PopupMenu::new()?;
+        const TEST_ID: u32 = 42;
+        menu.insert_menu_item(SubMenuItem::Text("Show window"), TEST_ID, None)?;
+        menu.insert_menu_item(SubMenuItem::Separator, TEST_ID + 1, None)?;
+        assert_eq!(menu.handle.get_item_count()?, 2);
+        assert_eq!(menu.handle.get_item_id(0)?, TEST_ID);
+        Ok(())
     }
 }

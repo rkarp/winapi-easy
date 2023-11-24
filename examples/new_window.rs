@@ -15,6 +15,7 @@ use winapi_easy::ui::resource::{
     BuiltinIcon,
 };
 use winapi_easy::ui::{
+    NotificationIconOptions,
     Point,
     Window,
     WindowClass,
@@ -73,11 +74,17 @@ fn main() -> io::Result<()> {
     let icon: BuiltinIcon = Default::default();
     let cursor: BuiltinCursor = Default::default();
     let class: WindowClass<MyListener, _> =
-        WindowClass::register_new("myclass1", &background, &icon, &cursor)?;
+        WindowClass::register_new("myclass1", &background, icon, &cursor)?;
     let window = Window::create_new(&class, &listener, "mywindow1")?;
-    let _notification_icon =
-        window.add_notification_icon(Default::default(), Some(&icon), Some("A tooltip!"));
+    let notification_icon_options = NotificationIconOptions {
+        icon: Some(icon),
+        tooltip_text: Some("A tooltip!"),
+        visible: true,
+        ..Default::default()
+    };
+    let _notification_icon = window.add_notification_icon(notification_icon_options)?;
     let window_handle = window.as_ref();
+    window_handle.set_caption_text("My Window")?;
     window_handle.set_show_state(WindowShowState::Show)?;
     let popup = PopupMenu::new()?;
     popup.insert_menu_item(

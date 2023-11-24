@@ -1,5 +1,4 @@
 use std::cell::Cell;
-use std::ffi;
 use std::ffi::c_void;
 use std::fmt::Display;
 use std::io;
@@ -11,54 +10,21 @@ use std::panic::{
 use std::ptr;
 use std::ptr::NonNull;
 
-use winapi::shared::minwindef::HMODULE;
-use winapi::shared::windef::{
-    HMENU,
-    HWND,
-};
-use winapi::um::handleapi::{
-    CloseHandle,
-    INVALID_HANDLE_VALUE,
-};
 use windows::Win32::Foundation::{
+    CloseHandle,
     BOOL,
     HANDLE,
+    HINSTANCE,
+    HWND,
+    INVALID_HANDLE_VALUE,
+    LPARAM,
+    LRESULT,
 };
 use windows::Win32::System::Memory::{
     GlobalLock,
     GlobalUnlock,
 };
-
-pub(crate) trait ConvertableToIoResult {
-    type OkType;
-
-    fn to_std_io_result(self, error_message: &str) -> io::Result<Self::OkType>;
-}
-
-impl<T> ConvertableToIoResult for windows::core::Result<T> {
-    type OkType = T;
-
-    fn to_std_io_result(self, error_message: &str) -> io::Result<Self::OkType> {
-        self.map_err(|err| {
-            custom_err_with_code(
-                &format!(
-                    "{}, Message: '{}'",
-                    error_message,
-                    err.message().to_string_lossy()
-                ),
-                err.code(),
-            )
-        })
-    }
-}
-
-pub(crate) trait PtrLike: Sized + Copy {
-    type Target;
-}
-
-impl<T> PtrLike for *mut T {
-    type Target = T;
-}
+use windows::Win32::UI::WindowsAndMessaging::HMENU;
 
 pub(crate) trait ReturnValue: PartialEq + Sized + Copy {
     const NULL_VALUE: Self;
@@ -164,6 +130,30 @@ impl ReturnValue for HANDLE {
     const NULL_VALUE: Self = HANDLE(0);
 }
 
+impl ReturnValue for HWND {
+    const NULL_VALUE: Self = HWND(0);
+}
+
+impl ReturnValue for HMENU {
+    const NULL_VALUE: Self = HMENU(0);
+}
+
+impl ReturnValue for HINSTANCE {
+    const NULL_VALUE: Self = HINSTANCE(0);
+}
+
+impl ReturnValue for LRESULT {
+    const NULL_VALUE: Self = LRESULT(0);
+}
+
+pub(crate) trait PtrLike: Sized + Copy {
+    type Target;
+}
+
+impl<T> PtrLike for *mut T {
+    type Target = T;
+}
+
 pub(crate) trait RawHandle: PtrLike {
     fn to_non_null(self) -> Option<NonNull<Self::Target>> {
         let ptr: *mut Self::Target = unsafe {
@@ -202,22 +192,16 @@ pub(crate) trait RawHandle: PtrLike {
     }
 }
 
-impl RawHandle for winapi::shared::ntdef::HANDLE {
+impl RawHandle for *mut c_void {
     /// Checks if the handle value is invalid.
     ///
     /// **Caution**: This is not correct for all APIs, for example GetCurrentProcess will also return
     /// `-1` as a special handle representing the current process.
     #[inline]
     fn is_invalid(self) -> bool {
-        self == INVALID_HANDLE_VALUE
+        HANDLE(self as isize) == INVALID_HANDLE_VALUE
     }
 }
-
-impl RawHandle for HWND {}
-
-impl RawHandle for HMENU {}
-
-impl RawHandle for HMODULE {}
 
 pub(crate) trait ManagedHandle {
     type Target;
@@ -247,19 +231,19 @@ impl<T: ManagedHandle + CloseableHandle> ManagedHandle for AutoClose<T> {
 }
 
 pub(crate) trait CloseableHandle {
-    fn close(&mut self);
+    fn close(&self);
 }
 
-impl CloseableHandle for NonNull<c_void> {
-    fn close(&mut self) {
+impl CloseableHandle for HANDLE {
+    fn close(&self) {
         unsafe {
-            CloseHandle(self.as_ptr());
+            CloseHandle(*self);
         }
     }
 }
 
 pub(crate) struct AutoClose<T: CloseableHandle> {
-    entity: T,
+    pub(crate) entity: T,
 }
 
 impl<T: CloseableHandle> From<T> for AutoClose<T> {
@@ -306,7 +290,6 @@ impl Drop for GlobalLockedData {
     }
 }
 
-#[cfg(any())]
 #[allow(dead_code)]
 pub(crate) fn unpack_closure<F, IN, OUT>(
     closure: &mut F,
@@ -318,13 +301,13 @@ where
     where
         F: FnMut(IN) -> OUT,
     {
-        let raw_closure = raw_closure as *mut F;
+        let raw_closure = raw_closure.0 as *mut F;
         let closure: &mut F = unsafe { &mut *raw_closure };
         let call = || closure(input);
         catch_unwind_and_abort(call)
     }
 
-    (closure as *mut F as LPARAM, trampoline::<F, IN, OUT>)
+    (LPARAM(closure as *mut F as isize), trampoline::<F, IN, OUT>)
 }
 
 pub(crate) fn sync_closure_to_callback2<F, IN1, IN2, OUT>(
@@ -342,14 +325,13 @@ where
         F: FnMut(IN1, IN2) -> OUT,
     {
         let call = move || {
-            let unwrapped_closure: *mut ffi::c_void =
-                RAW_CLOSURE.with(|raw_closure| raw_closure.get());
+            let unwrapped_closure: *mut c_void = RAW_CLOSURE.with(|raw_closure| raw_closure.get());
             let closure: &mut F = &mut *(unwrapped_closure as *mut F);
             closure(input1, input2)
         };
         catch_unwind_and_abort(call)
     }
-    RAW_CLOSURE.with(|cell| cell.set(closure as *mut F as *mut ffi::c_void));
+    RAW_CLOSURE.with(|cell| cell.set(closure as *mut F as *mut c_void));
     trampoline::<F, IN1, IN2, OUT>
 }
 
