@@ -163,7 +163,7 @@ pub mod resource;
 #[derive(Eq, PartialEq)]
 pub struct WindowHandle {
     handle: HWND,
-    marker: PhantomData<*mut ()>
+    marker: PhantomData<*mut ()>,
 }
 
 impl WindowHandle {
@@ -205,12 +205,18 @@ impl WindowHandle {
     }
 
     pub(crate) fn from_non_null(handle: HWND) -> Self {
-        Self { handle, marker: PhantomData }
+        Self {
+            handle,
+            marker: PhantomData,
+        }
     }
 
     pub(crate) fn from_maybe_null(handle: HWND) -> Option<Self> {
         if handle.0 != 0 {
-            Some(Self { handle, marker: PhantomData })
+            Some(Self {
+                handle,
+                marker: PhantomData,
+            })
         } else {
             None
         }
@@ -502,6 +508,10 @@ impl<'class, 'listener, WML: WindowMessageListener, I: Icon> Window<'class, 'lis
             handle,
             phantom: PhantomData,
         })
+    }
+
+    pub fn set_listener(&self, listener: &'listener WML) -> io::Result<()> {
+        unsafe { self.handle.set_user_data_ptr(listener) }
     }
 
     /// Adds a notification icon

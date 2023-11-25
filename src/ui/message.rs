@@ -41,17 +41,20 @@ use crate::ui::{
 };
 use windows_missing::*;
 
+/// Indicates what should be done after the [WindowMessageListener] is done processing the message.
 #[derive(Copy, Clone)]
 pub enum Answer {
+    /// Call the default windows handler after the current message processing code.
     CallDefaultHandler,
-    Stop,
+    /// Message processing is finished, skip calling the windows handler.
+    MessageProcessed,
 }
 
 impl Answer {
     fn to_raw_lresult(self) -> Option<LRESULT> {
         match self {
             Answer::CallDefaultHandler => None,
-            Answer::Stop => Some(LRESULT(0)),
+            Answer::MessageProcessed => Some(LRESULT(0)),
         }
     }
 }
@@ -62,6 +65,17 @@ impl Default for Answer {
     }
 }
 
+/// A user-defined implementation for various windows message handlers.
+///
+/// The trait already defines a default for all methods, making it easier to just implement specific ones.
+///
+/// # Design rationale
+///
+/// The way the Windows API is structured, it doesn't seem to be possible to use closures here
+/// due to [crate::ui::Window] and [crate::ui::WindowClass] needing type parameters for the [WindowMessageListener],
+/// making it hard to swap out the listener since every [Fn] has its own type in Rust.
+///
+/// [Box] with dynamic dispatch [Fn] is also not practical due to allowing only `'static` lifetimes.
 pub trait WindowMessageListener {
     #[allow(unused_variables)]
     #[inline(always)]
@@ -88,6 +102,11 @@ pub trait WindowMessageListener {
     fn handle_custom_user_message(&self, window: &WindowHandle, message_id: u8) {}
 }
 
+#[derive(Copy, Clone, Default)]
+pub struct EmptyWindowMessageListener;
+
+impl WindowMessageListener for EmptyWindowMessageListener {}
+
 #[derive(Copy, Clone)]
 pub(crate) struct RawMessage {
     pub(crate) message: u32,
@@ -113,21 +132,20 @@ impl RawMessage {
         // Many messages won't go through the thread message loop, so we need to notify it.
         // No chance of an infinite loop here since the window procedure won't be called for messages with no associated windows.
         Self::post_loop_wakeup_message().unwrap();
-        let RawMessage {
-            message,
-            w_param,
-            l_param,
-        } = self;
-        match message {
+        match self.message {
             value if value >= WM_APP && value <= WM_APP + (u32::from(u8::MAX)) => {
-                listener
-                    .handle_custom_user_message(&window, (message - WM_APP).try_into().unwrap());
+                listener.handle_custom_user_message(
+                    &window,
+                    (self.message - WM_APP).try_into().unwrap(),
+                );
                 None
             }
             Self::ID_NOTIFICATION_ICON_MSG => {
-                let icon_id = HIWORD(u32::try_from(l_param.0).expect("Icon ID conversion failed"));
+                let icon_id =
+                    HIWORD(u32::try_from(self.l_param.0).expect("Icon ID conversion failed"));
                 let event_code: u32 =
-                    LOWORD(u32::try_from(l_param.0).expect("Event code conversion failed")).into();
+                    LOWORD(u32::try_from(self.l_param.0).expect("Event code conversion failed"))
+                        .into();
                 let xy_coords = {
                     // `w_param` does contain the coordinates of the click event, but they are not adjusted for DPI scaling, so we can't use them.
                     // Instead we have to call `GetMessagePos`, which will however return mouse coordinates even if the keyboard was used.
@@ -151,16 +169,16 @@ impl RawMessage {
                 None
             }
             WM_MENUCOMMAND => {
-                let menu_handle = MenuHandle::from_maybe_null(HMENU(l_param.0))
+                let menu_handle = MenuHandle::from_maybe_null(HMENU(self.l_param.0))
                     .expect("Menu handle should not be null here");
                 let item_id = menu_handle
-                    .get_item_id(w_param.0.try_into().unwrap())
+                    .get_item_id(self.w_param.0.try_into().unwrap())
                     .unwrap();
                 listener.handle_menu_command(&window, item_id);
                 None
             }
             WM_SIZE => {
-                if w_param.0 == SIZE_MINIMIZED.try_into().unwrap() {
+                if self.w_param.0 == SIZE_MINIMIZED.try_into().unwrap() {
                     listener.handle_window_minimized(&window);
                 }
                 None
@@ -200,18 +218,28 @@ impl RawMessage {
     }
 }
 
-thread_local! {
-    static THREAD_LOOP_RUNNING: Cell<bool> = Cell::new(false);
-}
-
 pub enum ThreadMessageLoop {}
 
 impl ThreadMessageLoop {
+    thread_local! {
+        static THREAD_LOOP_RUNNING: Cell<bool> = Cell::new(false);
+    }
+
+    /// Runs the Windows thread message loop.
+    ///
+    /// The user defined callback that will be called after every handled message.
+    /// This allows using local variables and [Result] propagation, in contrast to the [WindowMessageListener] methods.
+    ///
+    /// Only a single message loop may be running per thread.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the message loop is already running.
     pub fn run_thread_message_loop<F>(mut loop_callback: F) -> io::Result<()>
     where
         F: FnMut() -> io::Result<()>,
     {
-        THREAD_LOOP_RUNNING.with(|running| {
+        Self::THREAD_LOOP_RUNNING.with(|running| {
             if running.get() {
                 panic!("Cannot run two thread message loops on the same thread");
             }
@@ -224,7 +252,7 @@ impl ThreadMessageLoop {
                     .if_eq_to_error(BOOL(-1), io::Error::last_os_error)?;
             }
             if msg.message == WM_QUIT {
-                THREAD_LOOP_RUNNING.with(|running| running.set(false));
+                Self::THREAD_LOOP_RUNNING.with(|running| running.set(false));
                 break;
             }
             unsafe {
@@ -236,6 +264,14 @@ impl ThreadMessageLoop {
         Ok(())
     }
 
+    /// Posts a 'quit' message in the thread message loop.
+    ///
+    /// This will cause [ThreadMessageLoop::run_thread_message_loop] to return. It is meant to be called
+    /// from [WindowMessageListener] methods.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the message loop is not running.
     pub fn post_quit_message() {
         if !ThreadMessageLoop::is_loop_running() {
             panic!("Cannot post quit message because thread message loop is not running");
@@ -247,7 +283,7 @@ impl ThreadMessageLoop {
 
     #[inline(always)]
     fn is_loop_running() -> bool {
-        THREAD_LOOP_RUNNING.with(|running| running.get())
+        Self::THREAD_LOOP_RUNNING.with(|running| running.get())
     }
 }
 
