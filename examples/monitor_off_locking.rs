@@ -12,7 +12,7 @@ use winapi_easy::ui::{
     WindowShowState,
 };
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum Action {
     MonitorOff,
     MonitorOffPlusLock,

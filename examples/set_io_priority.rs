@@ -13,7 +13,7 @@ use winapi_easy::process::{
 use winapi_easy::ui::WindowHandle;
 
 fn main() -> io::Result<()> {
-    #[derive(Copy, Clone)]
+    #[derive(Copy, Clone, Debug)]
     enum Action {
         VeryLowPrio,
         NormalPrio,

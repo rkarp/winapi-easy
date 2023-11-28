@@ -123,7 +123,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::internal::ReturnValue;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct HotkeyDef<ID> {
     user_id: ID,
     key_combination: KeyCombination,
@@ -155,7 +155,7 @@ struct HotkeyDef<ID> {
 ///
 /// # Result::<(), std::io::Error>::Ok(())
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct GlobalHotkeySet<ID> {
     hotkey_defs: Vec<HotkeyDef<ID>>,
     hotkeys_active: bool,
@@ -407,7 +407,7 @@ impl From<Key> for u32 {
 }
 
 /// Modifier key than cannot be used by itself for hotkeys.
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u32)]
 pub enum Modifier {
     Alt = MOD_ALT.0,
@@ -417,11 +417,11 @@ pub enum Modifier {
 }
 
 /// A combination of modifier keys.
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct ModifierCombination(u32);
 
 /// A combination of zero or more modifiers and exactly one normal key.
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct KeyCombination {
     modifiers: ModifierCombination,
     key: Key,

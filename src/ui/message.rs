@@ -42,9 +42,10 @@ use crate::ui::{
 use windows_missing::*;
 
 /// Indicates what should be done after the [WindowMessageListener] is done processing the message.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default, Debug)]
 pub enum Answer {
     /// Call the default windows handler after the current message processing code.
+    #[default]
     CallDefaultHandler,
     /// Message processing is finished, skip calling the windows handler.
     MessageProcessed,
@@ -56,12 +57,6 @@ impl Answer {
             Answer::CallDefaultHandler => None,
             Answer::MessageProcessed => Some(LRESULT(0)),
         }
-    }
-}
-
-impl Default for Answer {
-    fn default() -> Self {
-        Answer::CallDefaultHandler
     }
 }
 
@@ -102,12 +97,12 @@ pub trait WindowMessageListener {
     fn handle_custom_user_message(&self, window: &WindowHandle, message_id: u8) {}
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Debug)]
 pub struct EmptyWindowMessageListener;
 
 impl WindowMessageListener for EmptyWindowMessageListener {}
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) struct RawMessage {
     pub(crate) message: u32,
     pub(crate) w_param: WPARAM,

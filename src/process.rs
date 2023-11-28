@@ -183,7 +183,7 @@ impl TryFrom<ProcessId> for Process {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct ProcessId(pub(crate) u32);
 
 /// A thread inside a Windows process
@@ -277,7 +277,7 @@ impl TryFrom<ThreadId> for Thread {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct ThreadId(pub(crate) u32);
 
 impl ThreadId {
@@ -300,7 +300,7 @@ impl ThreadId {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct ThreadInfo {
     raw_entry: THREADENTRY32,
 }

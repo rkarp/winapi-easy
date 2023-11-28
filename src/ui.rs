@@ -160,7 +160,7 @@ pub mod resource;
 /// **Note**: This handle is not [Send] and [Sync] because if the window was not created by this thread,
 /// then it is not guaranteed that the handle continues pointing to the same window because the underlying handles
 /// can get invalid or even recycled.
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug)]
 pub struct WindowHandle {
     handle: HWND,
     marker: PhantomData<*mut ()>,
@@ -600,7 +600,7 @@ pub type Point = POINT;
 /// DPI-scaled virtual coordinates of a rectangle.
 pub type Rectangle = RECT;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct WindowPlacement {
     raw_placement: WINDOWPLACEMENT,
 }
@@ -640,7 +640,7 @@ impl WindowPlacement {
     }
 }
 
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[non_exhaustive]
 #[repr(u32)]
 pub enum WindowCommand {
@@ -656,18 +656,13 @@ impl From<WindowCommand> for WPARAM {
     }
 }
 
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
 #[repr(u32)]
 pub enum FlashElement {
     Caption = FLASHW_CAPTION.0,
     Taskbar = FLASHW_TRAY.0,
+    #[default]
     CaptionPlusTaskbar = FLASHW_ALL.0,
-}
-
-impl Default for FlashElement {
-    fn default() -> Self {
-        FlashElement::CaptionPlusTaskbar
-    }
 }
 
 impl From<FlashElement> for FLASHWINFO_FLAGS {
@@ -676,7 +671,7 @@ impl From<FlashElement> for FLASHWINFO_FLAGS {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum FlashDuration {
     Count(u32),
     CountUntilForeground(u32),
@@ -690,21 +685,17 @@ impl Default for FlashDuration {
     }
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Default, Debug)]
 pub enum FlashFrequency {
+    #[default]
     DefaultCursorBlinkRate,
     Milliseconds(u32),
 }
 
-impl Default for FlashFrequency {
-    fn default() -> Self {
-        FlashFrequency::DefaultCursorBlinkRate
-    }
-}
-
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
 #[repr(isize)]
 pub enum MonitorPower {
+    #[default]
     On = -1,
     Low = 1,
     Off = 2,
@@ -890,7 +881,7 @@ fn get_notification_call_data(
     icon_data
 }
 
-#[derive(Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum NotificationIconId {
     Simple(u16),
     GUID(GUID),
@@ -903,7 +894,7 @@ impl Default for NotificationIconId {
 }
 
 /// Options for a new notification icon used by [Window::add_notification_icon]
-#[derive(Eq, PartialEq, Default)]
+#[derive(Eq, PartialEq, Default, Debug)]
 pub struct NotificationIconOptions<I, S> {
     pub icon_id: NotificationIconId,
     pub icon: Option<I>,
@@ -911,33 +902,29 @@ pub struct NotificationIconOptions<I, S> {
     pub visible: bool,
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Debug)]
 pub struct BalloonNotification<'a> {
     title: &'a str,
     body: &'a str,
     icon: BalloonNotificationStandardIcon,
 }
 
-#[derive(IntoPrimitive, Copy, Clone)]
+#[derive(IntoPrimitive, Copy, Clone, Default, Debug)]
 #[repr(u32)]
 pub enum BalloonNotificationStandardIcon {
+    #[default]
     None = NIIF_NONE.0,
     Info = NIIF_INFO.0,
     Warning = NIIF_WARNING.0,
     Error = NIIF_ERROR.0,
 }
 
-impl Default for BalloonNotificationStandardIcon {
-    fn default() -> Self {
-        BalloonNotificationStandardIcon::None
-    }
-}
-
 /// Taskbar progress state animation type.
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
 #[repr(i32)]
 pub enum ProgressState {
     /// Stops displaying progress and returns the button to its normal state.
+    #[default]
     NoProgress = TBPF_NOPROGRESS.0,
     /// Shows a "working" animation without indicating a completion percentage.
     Indeterminate = TBPF_INDETERMINATE.0,
@@ -951,12 +938,6 @@ pub enum ProgressState {
     /// If the progress indicator is in the indeterminate state, it switches to a yellow determinate display
     /// of a generic percentage not indicative of actual progress.
     Paused = TBPF_PAUSED.0,
-}
-
-impl Default for ProgressState {
-    fn default() -> Self {
-        ProgressState::NoProgress
-    }
 }
 
 impl From<ProgressState> for TBPFLAG {

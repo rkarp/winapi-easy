@@ -72,9 +72,10 @@ pub trait Icon: Copy {
     fn as_handle(&self) -> io::Result<HICON>;
 }
 
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
 #[repr(u32)]
 pub enum BuiltinIcon {
+    #[default]
     Application = OIC_SAMPLE,
     QuestionMark = OIC_QUES,
     Warning = OIC_WARNING,
@@ -90,20 +91,15 @@ impl Icon for BuiltinIcon {
     }
 }
 
-impl Default for BuiltinIcon {
-    fn default() -> Self {
-        BuiltinIcon::Application
-    }
-}
-
 pub trait Cursor {
     fn as_handle(&self) -> io::Result<HCURSOR>;
 }
 
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
 #[repr(u32)]
 pub enum BuiltinCursor {
     /// Standard arrow
+    #[default]
     Normal = OCR_NORMAL.0,
     /// Standard arrow and small hourglass
     NormalPlusWaiting = OCR_APPSTARTING.0,
@@ -140,20 +136,14 @@ impl Cursor for BuiltinCursor {
     }
 }
 
-impl Default for BuiltinCursor {
-    #[inline]
-    fn default() -> Self {
-        BuiltinCursor::Normal
-    }
-}
-
 pub trait Brush {
     fn as_handle(&self) -> io::Result<HBRUSH>;
 }
 
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
 #[repr(i32)]
 pub enum BuiltinColor {
+    #[default]
     Scrollbar = COLOR_SCROLLBAR.0,
     Background = COLOR_BACKGROUND.0,
     ActiveCaption = COLOR_ACTIVECAPTION.0,
@@ -184,12 +174,6 @@ pub enum BuiltinColor {
     GradientInactiveCaption = COLOR_GRADIENTINACTIVECAPTION.0,
     MenuHighlight = COLOR_MENUHILIGHT.0,
     MenuBar = COLOR_MENUBAR.0,
-}
-
-impl Default for BuiltinColor {
-    fn default() -> Self {
-        Self::Scrollbar
-    }
 }
 
 impl Brush for BuiltinColor {

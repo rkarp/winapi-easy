@@ -32,7 +32,7 @@ use crate::ui::{
     WindowHandle,
 };
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug)]
 pub(crate) struct MenuHandle {
     raw_handle: HMENU,
 }
@@ -168,7 +168,7 @@ impl Drop for PopupMenu {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum SubMenuItem<'a> {
     Text(&'a str),
     Separator,

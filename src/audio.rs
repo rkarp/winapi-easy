@@ -36,7 +36,7 @@ impl ComInterface for IMMDeviceEnumerator {
 }
 
 /// A representation of a windows audio output device.
-#[derive(Clone, Eq)]
+#[derive(Clone, Eq, Debug)]
 pub struct AudioOutputDevice {
     id: OsString,
     friendly_name: String,
