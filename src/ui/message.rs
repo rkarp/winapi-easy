@@ -97,6 +97,7 @@ pub trait WindowMessageListener {
     fn handle_custom_user_message(&self, window: &WindowHandle, message_id: u8) {}
 }
 
+/// A [WindowMessageListener] that leaves all handlers to their default empty impls.
 #[derive(Copy, Clone, Default, Debug)]
 pub struct EmptyWindowMessageListener;
 
@@ -213,6 +214,9 @@ impl RawMessage {
     }
 }
 
+/// Windows thread message loop functions.
+///
+/// This type is not meant to be instantiated.
 pub enum ThreadMessageLoop {}
 
 impl ThreadMessageLoop {

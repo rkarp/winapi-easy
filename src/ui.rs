@@ -247,9 +247,7 @@ impl WindowHandle {
             return String::new();
         }
         // Normally unnecessary, but the text length can theoretically change between the 2 API calls
-        unsafe {
-            buffer.set_len(copied_chars as usize);
-        }
+        buffer.truncate(copied_chars as usize);
         buffer.to_string_lossy()
     }
 
@@ -701,12 +699,16 @@ pub enum MonitorPower {
     Off = 2,
 }
 
+/// An icon in the Windows notification area.
+///
+/// This icon is always associated with a window and can be used in conjunction with [menu::PopupMenu].
 pub struct NotificationIcon<'a, WML, I> {
     id: NotificationIconId,
     window: &'a Window<'a, 'a, WML, I>,
 }
 
 impl<'a, WML, I> NotificationIcon<'a, WML, I> {
+    /// Sets the icon graphics.
     pub fn set_icon(&mut self, icon: &'a impl Icon) -> io::Result<()> {
         let call_data = get_notification_call_data(
             &self.window.handle,
@@ -725,6 +727,7 @@ impl<'a, WML, I> NotificationIcon<'a, WML, I> {
         Ok(())
     }
 
+    /// Allows showing or hiding the icon in the notification area.
     pub fn set_icon_hidden_state(&mut self, hidden: bool) -> io::Result<()> {
         let call_data = get_notification_call_data(
             &self.window.handle,
@@ -746,6 +749,7 @@ impl<'a, WML, I> NotificationIcon<'a, WML, I> {
         Ok(())
     }
 
+    /// Sets the tooltip text when hovering over the icon with the mouse.
     pub fn set_tooltip_text(&mut self, text: &str) -> io::Result<()> {
         let call_data = get_notification_call_data(
             &self.window.handle,
@@ -767,6 +771,7 @@ impl<'a, WML, I> NotificationIcon<'a, WML, I> {
         Ok(())
     }
 
+    /// Triggers a balloon notification above the notification icon.
     pub fn set_balloon_notification(
         &mut self,
         notification: Option<BalloonNotification>,
@@ -881,9 +886,14 @@ fn get_notification_call_data(
     icon_data
 }
 
+/// Notification icon ID given to the Windows API.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum NotificationIconId {
+    /// A simple ID.
     Simple(u16),
+    /// A GUID that allows Windows to track the icon between applidation restarts.
+    ///
+    /// This way the user can set preferences for icon visibility and position.
     GUID(GUID),
 }
 
@@ -904,9 +914,9 @@ pub struct NotificationIconOptions<I, S> {
 
 #[derive(Copy, Clone, Default, Debug)]
 pub struct BalloonNotification<'a> {
-    title: &'a str,
-    body: &'a str,
-    icon: BalloonNotificationStandardIcon,
+    pub title: &'a str,
+    pub body: &'a str,
+    pub icon: BalloonNotificationStandardIcon,
 }
 
 #[derive(IntoPrimitive, Copy, Clone, Default, Debug)]

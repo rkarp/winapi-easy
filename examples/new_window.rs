@@ -15,6 +15,7 @@ use winapi_easy::ui::resource::{
     BuiltinIcon,
 };
 use winapi_easy::ui::{
+    BalloonNotification,
     NotificationIconOptions,
     Point,
     Window,
@@ -33,6 +34,7 @@ enum MyMessage {
 impl MyMessage {
     const HIDE_WINDOW: u32 = 1;
     const SHOW_WINDOW: u32 = 2;
+    const SHOW_BALLOON_NOTIFICATION: u32 = 3;
 }
 
 struct MyListener {
@@ -82,7 +84,7 @@ fn main() -> io::Result<()> {
         visible: true,
         ..Default::default()
     };
-    let _notification_icon = window.add_notification_icon(notification_icon_options)?;
+    let mut notification_icon = window.add_notification_icon(notification_icon_options)?;
     let window_handle = window.as_ref();
     window_handle.set_caption_text("My Window")?;
     window_handle.set_show_state(WindowShowState::Show)?;
@@ -95,6 +97,11 @@ fn main() -> io::Result<()> {
     popup.insert_menu_item(
         SubMenuItem::Text("Hide window"),
         MyMessage::HIDE_WINDOW,
+        None,
+    )?;
+    popup.insert_menu_item(
+        SubMenuItem::Text("Show balloon notification"),
+        MyMessage::SHOW_BALLOON_NOTIFICATION,
         None,
     )?;
     let loop_callback = || {
@@ -114,6 +121,14 @@ fn main() -> io::Result<()> {
                 }
                 MyMessage::MenuItem(MyMessage::HIDE_WINDOW) => {
                     window_handle.set_show_state(WindowShowState::Hide)?;
+                }
+                MyMessage::MenuItem(MyMessage::SHOW_BALLOON_NOTIFICATION) => {
+                    let notification = BalloonNotification {
+                        title: "A notification",
+                        body: "Lorem ipsum",
+                        ..Default::default()
+                    };
+                    notification_icon.set_balloon_notification(Some(notification))?;
                 }
                 MyMessage::MenuItem(_) => panic!(),
             }
