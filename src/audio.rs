@@ -1,3 +1,5 @@
+//! Audio device control.
+
 use std::ffi::{
     c_void,
     OsStr,

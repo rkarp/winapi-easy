@@ -1,6 +1,4 @@
-/*!
-UI components: Windows, taskbar.
-*/
+//! UI components: Windows, taskbar.
 
 use std::convert::TryInto;
 use std::marker::PhantomData;
@@ -157,9 +155,19 @@ pub mod resource;
 
 /// A (non-null) handle to a window.
 ///
-/// **Note**: This handle is not [Send] and [Sync] because if the window was not created by this thread,
+/// # Multithreading
+///
+/// This handle is not [`Send`] and [`Sync`] because if the window was not created by this thread,
 /// then it is not guaranteed that the handle continues pointing to the same window because the underlying handles
 /// can get invalid or even recycled.
+///
+/// # Mutability
+///
+/// Even though various functions on this type are mutating, they all take non-mut references since
+/// it would be too hard to guarantee exclusive references when window messages are involved. The problem
+/// in that case is that the windows API will call back into Rust code and that code would then need
+/// exclusive references, which would at least make the API rather cumbersome. If an elegant solution
+/// to this problem is found, this API may change.
 #[derive(Eq, PartialEq, Debug)]
 pub struct WindowHandle {
     handle: HWND,
@@ -173,11 +181,13 @@ impl WindowHandle {
         Self::from_maybe_null(handle)
     }
 
+    /// Returns the current foreground window, if any.
     pub fn get_foreground_window() -> Option<Self> {
         let handle = unsafe { GetForegroundWindow() };
         Self::from_maybe_null(handle)
     }
 
+    /// Returns the 'desktop' window.
     pub fn get_desktop_window() -> io::Result<Self> {
         let handle = unsafe { GetDesktopWindow() };
         handle
@@ -233,6 +243,7 @@ impl WindowHandle {
         result.as_bool()
     }
 
+    /// Returns the window caption text, converted to UTF-8 in a potentially lossy way.
     pub fn get_caption_text(&self) -> String {
         let required_length = unsafe { GetWindowTextLengthW(self) };
         let required_length = if required_length <= 0 {
@@ -251,6 +262,7 @@ impl WindowHandle {
         buffer.to_string_lossy()
     }
 
+    /// Sets the window caption text.
     pub fn set_caption_text(&self, text: &str) -> io::Result<()> {
         let ret_val =
             unsafe { SetWindowTextW(self, PCWSTR::from_raw(text.to_wide_string().as_ptr())) };
@@ -258,6 +270,7 @@ impl WindowHandle {
         Ok(())
     }
 
+    /// Brings the window to the foreground.
     pub fn set_as_foreground(&self) -> io::Result<()> {
         unsafe {
             SetForegroundWindow(self).if_null_to_error(|| {
@@ -270,6 +283,7 @@ impl WindowHandle {
         Ok(())
     }
 
+    /// Sets the window as the currently active (selected) window.
     pub fn set_as_active(&self) -> io::Result<()> {
         unsafe {
             SetActiveWindow(self).if_null_get_last_error()?;
@@ -277,6 +291,7 @@ impl WindowHandle {
         Ok(())
     }
 
+    /// Changes the window show state.
     pub fn set_show_state(&self, state: WindowShowState) -> io::Result<()> {
         if self.is_window() {
             unsafe {
@@ -291,6 +306,7 @@ impl WindowHandle {
         }
     }
 
+    /// Returns the window's show state and positions.
     pub fn get_placement(&self) -> io::Result<WindowPlacement> {
         let mut raw_placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
             length: mem::size_of::<WINDOWPLACEMENT>().try_into().unwrap(),
@@ -300,38 +316,50 @@ impl WindowHandle {
         Ok(WindowPlacement { raw_placement })
     }
 
+    /// Sets the window's show state and positions.
     pub fn set_placement(&self, placement: &WindowPlacement) -> io::Result<()> {
         unsafe { SetWindowPlacement(self, &placement.raw_placement).if_null_get_last_error()? };
         Ok(())
     }
 
+    /// Returns the class name of the window's associated [`WindowClass`].
     pub fn get_class_name(&self) -> io::Result<String> {
         const BUFFER_SIZE: usize = WindowClass::MAX_WINDOW_CLASS_NAME_CHARS + 1;
         let mut buffer: Vec<u16> = vec![0; BUFFER_SIZE];
         let chars_copied = unsafe { GetClassNameW(self, buffer.as_mut()) };
         chars_copied.if_null_get_last_error()?;
-        unsafe {
-            buffer.set_len(chars_copied as usize);
-        }
+        buffer.truncate(chars_copied as usize);
         Ok(buffer.to_string_lossy())
     }
 
+    /// Sends a command to the window, same as if one of the symbols in its top right were clicked.
     pub fn send_command(&self, action: WindowCommand) -> io::Result<()> {
-        let result = unsafe { SendMessageW(self, WM_SYSCOMMAND, action.into(), LPARAM::default()) };
+        let result = unsafe {
+            SendMessageW(
+                self,
+                WM_SYSCOMMAND,
+                WPARAM(action.to_usize()),
+                LPARAM::default(),
+            )
+        };
         result
             .if_non_null_to_error(|| custom_err_with_code("Cannot perform window action", result.0))
     }
 
+    /// Flashes the window using default flash settings.
+    ///
+    /// Same as [`Self::flash_custom`] using [`Default::default`] for all parameters.
     #[inline(always)]
     pub fn flash(&self) {
         self.flash_custom(Default::default(), Default::default(), Default::default())
     }
 
+    /// Flashes the window, allowing various customization parameters.
     pub fn flash_custom(
         &self,
         element: FlashElement,
         duration: FlashDuration,
-        frequency: FlashFrequency,
+        frequency: FlashInterval,
     ) {
         let (count, flags) = match duration {
             FlashDuration::Count(count) => (count, Default::default()),
@@ -339,20 +367,21 @@ impl WindowHandle {
             FlashDuration::ContinuousUntilForeground => (0, FLASHW_TIMERNOFG),
             FlashDuration::Continuous => (0, FLASHW_TIMER),
         };
-        let flags = flags | FLASHWINFO_FLAGS::from(element);
+        let flags = flags | element.to_flashwinfo_flags();
         let raw_config = FLASHWINFO {
             cbSize: mem::size_of::<FLASHWINFO>().try_into().unwrap(),
             hwnd: self.into(),
             dwFlags: flags,
             uCount: count,
             dwTimeout: match frequency {
-                FlashFrequency::DefaultCursorBlinkRate => 0,
-                FlashFrequency::Milliseconds(ms) => ms,
+                FlashInterval::DefaultCursorBlinkInterval => 0,
+                FlashInterval::Milliseconds(ms) => ms,
             },
         };
         unsafe { FlashWindowEx(&raw_config) };
     }
 
+    /// Stops the window from flashing.
     pub fn flash_stop(&self) {
         let raw_config = FLASHWINFO {
             cbSize: mem::size_of::<FLASHWINFO>().try_into().unwrap(),
@@ -363,11 +392,13 @@ impl WindowHandle {
         unsafe { FlashWindowEx(&raw_config) };
     }
 
+    /// Returns the thread ID that created this window.
     #[inline(always)]
     pub fn get_creator_thread_id(&self) -> ThreadId {
         self.get_creator_thread_process_ids().0
     }
 
+    /// Returns the process ID that created this window.
     #[inline(always)]
     pub fn get_creator_process_id(&self) -> ProcessId {
         self.get_creator_thread_process_ids().1
@@ -379,6 +410,10 @@ impl WindowHandle {
         (ThreadId(thread_id), ProcessId(process_id))
     }
 
+    /// Turns the monitor on or off.
+    ///
+    /// Windows requires this command to be sent through a window, e.g. using
+    /// [`WindowHandle::get_foreground_window`].
     pub fn set_monitor_power(&self, level: MonitorPower) -> io::Result<()> {
         let result = unsafe {
             SendMessageW(
@@ -414,12 +449,21 @@ impl WindowHandle {
     }
 }
 
+impl From<WindowHandle> for HWND {
+    /// Returns the underlying raw window handle used by [`windows`].
+    fn from(value: WindowHandle) -> Self {
+        value.handle
+    }
+}
+
 impl From<&WindowHandle> for HWND {
+    /// Returns the underlying raw window handle used by [`windows`].
     fn from(value: &WindowHandle) -> Self {
         value.handle
     }
 }
 
+/// Window class serving as a base for [`Window`].
 pub struct WindowClass<'res, WML, I: 'res> {
     atom: u16,
     icon: I,
@@ -431,6 +475,9 @@ impl WindowClass<'_, (), ()> {
 }
 
 impl<'res, WML: WindowMessageListener, I: Icon> WindowClass<'res, WML, I> {
+    /// Registers a new class.
+    ///
+    /// This class can then be used to create instances of [`Window`].
     pub fn register_new(
         class_name: &str,
         background_brush: &'res impl Brush,
@@ -459,6 +506,7 @@ impl<'res, WML: WindowMessageListener, I: Icon> WindowClass<'res, WML, I> {
 }
 
 impl<WML, I> Drop for WindowClass<'_, WML, I> {
+    /// Unregisters the class on drop.
     fn drop(&mut self) {
         unsafe {
             UnregisterClassW(PCWSTR(self.atom as *const u16), None)
@@ -468,6 +516,7 @@ impl<WML, I> Drop for WindowClass<'_, WML, I> {
     }
 }
 
+/// A window based on a [`WindowClass`].
 pub struct Window<'class, 'listener, WML, I> {
     class: &'class WindowClass<'class, WML, I>,
     handle: WindowHandle,
@@ -475,6 +524,9 @@ pub struct Window<'class, 'listener, WML, I> {
 }
 
 impl<'class, 'listener, WML: WindowMessageListener, I: Icon> Window<'class, 'listener, WML, I> {
+    /// Creates a new window.
+    ///
+    /// User interaction with the window will result in messages sent to the [`WindowMessageListener`] provided here.
     pub fn create_new(
         class: &'class WindowClass<WML, I>,
         listener: &'listener WML,
@@ -508,11 +560,18 @@ impl<'class, 'listener, WML: WindowMessageListener, I: Icon> Window<'class, 'lis
         })
     }
 
+    /// Changes the [`WindowMessageListener`].
+    ///
+    /// Doing this is likely only possible using a [`WindowMessageListener`] that doesn't contain any closures
+    /// since [`Window`] requires the listener to be of a specific type and closures in Rust each have
+    /// their own (new) type.
     pub fn set_listener(&self, listener: &'listener WML) -> io::Result<()> {
         unsafe { self.handle.set_user_data_ptr(listener) }
     }
 
-    /// Adds a notification icon
+    /// Adds a notification icon.
+    ///
+    /// The window's [`WindowMessageListener`] will receive messages when user interactions with the icon occur.
     pub fn add_notification_icon<'a, NI: Icon + 'a>(
         &'a self,
         options: NotificationIconOptions<NI, &'a str>,
@@ -572,6 +631,11 @@ impl<WML, I> AsMut<WindowHandle> for Window<'_, '_, WML, I> {
     }
 }
 
+/// Window show state such as 'minimized' or 'hidden'.
+///
+/// Changing this state for a window can be done with [`WindowHandle::set_show_state`].
+///
+/// [`WindowHandle::get_placement`] and [`WindowPlacement::get_show_state`] can be used to read the state.
 #[derive(IntoPrimitive, TryFromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u32)]
 pub enum WindowShowState {
@@ -598,6 +662,7 @@ pub type Point = POINT;
 /// DPI-scaled virtual coordinates of a rectangle.
 pub type Rectangle = RECT;
 
+/// Window show state plus positions.
 #[derive(Copy, Clone, Debug)]
 pub struct WindowPlacement {
     raw_placement: WINDOWPLACEMENT,
@@ -638,6 +703,7 @@ impl WindowPlacement {
     }
 }
 
+/// Window command corresponding to its buttons in the top right corner.
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[non_exhaustive]
 #[repr(u32)]
@@ -648,12 +714,13 @@ pub enum WindowCommand {
     Restore = SC_RESTORE,
 }
 
-impl From<WindowCommand> for WPARAM {
-    fn from(value: WindowCommand) -> Self {
-        WPARAM(usize::try_from(u32::from(value)).unwrap())
+impl WindowCommand {
+    fn to_usize(self) -> usize {
+        usize::try_from(u32::from(self)).unwrap()
     }
 }
 
+/// The target of the flash animation.
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
 #[repr(u32)]
 pub enum FlashElement {
@@ -663,12 +730,13 @@ pub enum FlashElement {
     CaptionPlusTaskbar = FLASHW_ALL.0,
 }
 
-impl From<FlashElement> for FLASHWINFO_FLAGS {
-    fn from(value: FlashElement) -> Self {
-        FLASHWINFO_FLAGS(u32::from(value))
+impl FlashElement {
+    fn to_flashwinfo_flags(self) -> FLASHWINFO_FLAGS {
+        FLASHWINFO_FLAGS(u32::from(self))
     }
 }
 
+/// The amount of times the window should be flashed.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum FlashDuration {
     Count(u32),
@@ -683,13 +751,17 @@ impl Default for FlashDuration {
     }
 }
 
+/// The interval between flashes.
 #[derive(Copy, Clone, Eq, PartialEq, Default, Debug)]
-pub enum FlashFrequency {
+pub enum FlashInterval {
     #[default]
-    DefaultCursorBlinkRate,
+    DefaultCursorBlinkInterval,
     Milliseconds(u32),
 }
 
+/// Monitor power state.
+///
+/// Can be set using [`WindowHandle::set_monitor_power`].
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
 #[repr(isize)]
 pub enum MonitorPower {
@@ -701,7 +773,7 @@ pub enum MonitorPower {
 
 /// An icon in the Windows notification area.
 ///
-/// This icon is always associated with a window and can be used in conjunction with [menu::PopupMenu].
+/// This icon is always associated with a window and can be used in conjunction with [`menu::PopupMenu`].
 pub struct NotificationIcon<'a, WML, I> {
     id: NotificationIconId,
     window: &'a Window<'a, 'a, WML, I>,
@@ -903,7 +975,7 @@ impl Default for NotificationIconId {
     }
 }
 
-/// Options for a new notification icon used by [Window::add_notification_icon]
+/// Options for a new notification icon used by [`Window::add_notification_icon`].
 #[derive(Eq, PartialEq, Default, Debug)]
 pub struct NotificationIconOptions<I, S> {
     pub icon_id: NotificationIconId,
@@ -912,6 +984,9 @@ pub struct NotificationIconOptions<I, S> {
     pub visible: bool,
 }
 
+/// A Balloon notification above the Windows notification area.
+///
+/// Used with [`NotificationIcon::set_balloon_notification`].
 #[derive(Copy, Clone, Default, Debug)]
 pub struct BalloonNotification<'a> {
     pub title: &'a str,
@@ -919,6 +994,7 @@ pub struct BalloonNotification<'a> {
     pub icon: BalloonNotificationStandardIcon,
 }
 
+/// Built-in Windows standard icons for balloon notifications.
 #[derive(IntoPrimitive, Copy, Clone, Default, Debug)]
 #[repr(u32)]
 pub enum BalloonNotificationStandardIcon {
@@ -1025,6 +1101,7 @@ impl ComInterface for ITaskbarList3 {
     const CLASS_GUID: GUID = TaskbarList;
 }
 
+/// Creates a console window for the current process if there is none.
 pub fn allocate_console() -> io::Result<()> {
     unsafe {
         AllocConsole().if_null_get_last_error()?;
@@ -1032,6 +1109,7 @@ pub fn allocate_console() -> io::Result<()> {
     Ok(())
 }
 
+/// Locks the computer, same as the user action.
 pub fn lock_workstation() -> io::Result<()> {
     // Because the function executes asynchronously, a nonzero return value indicates that the operation has been initiated.
     // It does not indicate whether the workstation has been successfully locked.

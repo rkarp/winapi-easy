@@ -1,9 +1,20 @@
 # winapi-easy
-An ergonomic and safe interface to some winapi functionality.
+An ergonomic and safe interface to some Windows API functionality.
 
 [![Latest version](https://img.shields.io/crates/v/winapi-easy)](https://crates.io/crates/winapi-easy)
 [![Documentation](https://docs.rs/winapi-easy/badge.svg)](https://docs.rs/winapi-easy)
 ![License](https://img.shields.io/crates/l/winapi-easy)
+
+## Design
+
+This is an **experimental** library designed to explore how the Windows API could look like if it had these properties:
+
+* Properly typed parameters, making wrong usage of the API difficult
+* No unsafe functionality exposed to the user outside of 'escape hatches'
+* Consistent error handling without special numerical return values
+
+Expect breaking changes between versions. Any kind of feature completeness is also unrealistic given the huge size
+of the Windows API.
 
 ## Features
 
@@ -17,10 +28,10 @@ An ergonomic and safe interface to some winapi functionality.
 * Window actions like minimize, flash
 * Set taskbar progress animation for the console window
 * Turn monitor off
-* Lock workstation
 * COM initialization
 * Get a file list from the Windows clipboard
 * Refresh icon cache
+* Set default audio output device
 
 ## License
 

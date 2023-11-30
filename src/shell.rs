@@ -1,3 +1,5 @@
+//! Windows Shell functionality.
+
 use windows::Win32::UI::Shell::SHChangeNotify;
 use windows::Win32::UI::Shell::SHCNE_ASSOCCHANGED;
 use windows::Win32::UI::Shell::SHCNF_IDLIST;

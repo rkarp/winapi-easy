@@ -1,9 +1,4 @@
-/*!
-Keyboard and hotkeys.
-
-## Hotkeys
-* [GlobalHotkeySet]: Define and listen to global hotkeys
-*/
+//! Keyboard and hotkeys.
 
 use std::collections::HashMap;
 use std::io;
@@ -143,8 +138,8 @@ struct HotkeyDef<ID> {
 /// }
 ///
 /// let hotkeys = GlobalHotkeySet::new()
-///     .add_global_hotkey(MyAction::One, Modifier::Ctrl + Modifier::Alt + Key::A)
-///     .add_global_hotkey(MyAction::Two, Modifier::Shift + Modifier::Alt + Key::B);
+///     .add_hotkey(MyAction::One, Modifier::Ctrl + Modifier::Alt + Key::A)
+///     .add_hotkey(MyAction::Two, Modifier::Shift + Modifier::Alt + Key::B);
 ///
 /// for action in hotkeys.listen_for_hotkeys()? {
 ///     match action? {
@@ -173,7 +168,10 @@ where
         Default::default()
     }
 
-    pub fn add_global_hotkey<KC>(mut self, id: ID, key_combination: KC) -> Self
+    /// Adds a hotkey.
+    ///
+    /// This does not register the hotkey combination with Windows yet.
+    pub fn add_hotkey<KC>(mut self, id: ID, key_combination: KC) -> Self
     where
         KC: Into<KeyCombination>,
     {
@@ -185,6 +183,7 @@ where
         self
     }
 
+    /// Registers the hotkeys with the system and then reacts to hotkey events.
     pub fn listen_for_hotkeys(mut self) -> io::Result<impl IntoIterator<Item = io::Result<ID>>> {
         let (tx_hotkey, rx_hotkey) = mpsc::channel();
         thread::spawn(move || {

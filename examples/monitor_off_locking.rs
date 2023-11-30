@@ -23,11 +23,11 @@ fn main() -> io::Result<()> {
         console_window.set_show_state(WindowShowState::Minimize)?;
     }
     let hotkey_def = GlobalHotkeySet::new()
-        .add_global_hotkey(
+        .add_hotkey(
             Action::MonitorOff,
             Modifier::Ctrl + Modifier::Shift + Key::Oem1,
         )
-        .add_global_hotkey(
+        .add_hotkey(
             Action::MonitorOffPlusLock,
             Modifier::Ctrl + Modifier::Alt + Key::Oem1,
         );

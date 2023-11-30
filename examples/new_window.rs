@@ -2,8 +2,8 @@ use std::io;
 
 use std::cell::Cell;
 use winapi_easy::ui::menu::{
+    MenuItem,
     PopupMenu,
-    SubMenuItem,
 };
 use winapi_easy::ui::message::{
     ThreadMessageLoop,
@@ -89,18 +89,10 @@ fn main() -> io::Result<()> {
     window_handle.set_caption_text("My Window")?;
     window_handle.set_show_state(WindowShowState::Show)?;
     let popup = PopupMenu::new()?;
+    popup.insert_menu_item(MenuItem::Text("Show window"), MyMessage::SHOW_WINDOW, None)?;
+    popup.insert_menu_item(MenuItem::Text("Hide window"), MyMessage::HIDE_WINDOW, None)?;
     popup.insert_menu_item(
-        SubMenuItem::Text("Show window"),
-        MyMessage::SHOW_WINDOW,
-        None,
-    )?;
-    popup.insert_menu_item(
-        SubMenuItem::Text("Hide window"),
-        MyMessage::HIDE_WINDOW,
-        None,
-    )?;
-    popup.insert_menu_item(
-        SubMenuItem::Text("Show balloon notification"),
+        MenuItem::Text("Show balloon notification"),
         MyMessage::SHOW_BALLOON_NOTIFICATION,
         None,
     )?;

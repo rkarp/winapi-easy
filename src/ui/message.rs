@@ -1,3 +1,5 @@
+//! Window and thread message handling.
+
 use std::cell::Cell;
 use std::convert::TryInto;
 use std::io;
@@ -41,9 +43,9 @@ use crate::ui::{
 };
 use windows_missing::*;
 
-/// Indicates what should be done after the [WindowMessageListener] is done processing the message.
+/// Indicates what should be done after the [`WindowMessageListener`] is done processing the message.
 #[derive(Copy, Clone, Default, Debug)]
-pub enum Answer {
+pub enum ListenerAnswer {
     /// Call the default windows handler after the current message processing code.
     #[default]
     CallDefaultHandler,
@@ -51,11 +53,11 @@ pub enum Answer {
     MessageProcessed,
 }
 
-impl Answer {
+impl ListenerAnswer {
     fn to_raw_lresult(self) -> Option<LRESULT> {
         match self {
-            Answer::CallDefaultHandler => None,
-            Answer::MessageProcessed => Some(LRESULT(0)),
+            ListenerAnswer::CallDefaultHandler => None,
+            ListenerAnswer::MessageProcessed => Some(LRESULT(0)),
         }
     }
 }
@@ -67,37 +69,44 @@ impl Answer {
 /// # Design rationale
 ///
 /// The way the Windows API is structured, it doesn't seem to be possible to use closures here
-/// due to [crate::ui::Window] and [crate::ui::WindowClass] needing type parameters for the [WindowMessageListener],
-/// making it hard to swap out the listener since every [Fn] has its own type in Rust.
+/// due to [`crate::ui::Window`] and [`crate::ui::WindowClass`] needing type parameters for the [`WindowMessageListener`],
+/// making it hard to swap out the listener since every `Fn` has its own type in Rust.
 ///
-/// [Box] with dynamic dispatch [Fn] is also not practical due to allowing only `'static` lifetimes.
+/// `Box` with dynamic dispatch `Fn` is also not practical due to allowing only `'static` lifetimes.
 pub trait WindowMessageListener {
+    /// An item from a window's menu was selected by the user.
     #[allow(unused_variables)]
     #[inline(always)]
     fn handle_menu_command(&self, window: &WindowHandle, selected_item_id: u32) {}
+    /// A 'minimize window' action was performed.
     #[allow(unused_variables)]
     #[inline(always)]
     fn handle_window_minimized(&self, window: &WindowHandle) {}
+    /// A 'close window' action was performed.
     #[allow(unused_variables)]
     #[inline(always)]
-    fn handle_window_close(&self, window: &WindowHandle) -> Answer {
+    fn handle_window_close(&self, window: &WindowHandle) -> ListenerAnswer {
         Default::default()
     }
+    /// A window was destroyed and removed from the screen.
     #[allow(unused_variables)]
     #[inline(always)]
     fn handle_window_destroy(&self, window: &WindowHandle) {}
+    /// A notification icon was selected (triggered).
     #[allow(unused_variables)]
     #[inline(always)]
     fn handle_notification_icon_select(&self, icon_id: u16, xy_coords: Point) {}
+    /// A notification icon was context-selected (e.g. right-clicked).
     #[allow(unused_variables)]
     #[inline(always)]
     fn handle_notification_icon_context_select(&self, icon_id: u16, xy_coords: Point) {}
+    /// A custom user message was sent.
     #[allow(unused_variables)]
     #[inline(always)]
     fn handle_custom_user_message(&self, window: &WindowHandle, message_id: u8) {}
 }
 
-/// A [WindowMessageListener] that leaves all handlers to their default empty impls.
+/// A [`WindowMessageListener`] that leaves all handlers to their default empty impls.
 #[derive(Copy, Clone, Default, Debug)]
 pub struct EmptyWindowMessageListener;
 
@@ -191,7 +200,7 @@ impl RawMessage {
     /// Posts a message to the thread message queue and returns immediately.
     ///
     /// If no window is given, the window procedure won't be called by `DispatchMessageW`.
-    fn post_message(&self, window: Option<&WindowHandle>) -> io::Result<()> {
+    fn post_to_queue(&self, window: Option<&WindowHandle>) -> io::Result<()> {
         unsafe {
             PostMessageW(
                 window.map(Into::into),
@@ -210,7 +219,7 @@ impl RawMessage {
             w_param: WPARAM(0),
             l_param: LPARAM(0),
         };
-        wakeup_message.post_message(None)
+        wakeup_message.post_to_queue(None)
     }
 }
 
@@ -227,7 +236,7 @@ impl ThreadMessageLoop {
     /// Runs the Windows thread message loop.
     ///
     /// The user defined callback that will be called after every handled message.
-    /// This allows using local variables and [Result] propagation, in contrast to the [WindowMessageListener] methods.
+    /// This allows using local variables and `Result` propagation, in contrast to the [`WindowMessageListener`] methods.
     ///
     /// Only a single message loop may be running per thread.
     ///
@@ -265,8 +274,8 @@ impl ThreadMessageLoop {
 
     /// Posts a 'quit' message in the thread message loop.
     ///
-    /// This will cause [ThreadMessageLoop::run_thread_message_loop] to return. It is meant to be called
-    /// from [WindowMessageListener] methods.
+    /// This will cause [`Self::run_thread_message_loop`] to return. It is meant to be called
+    /// from [`WindowMessageListener`] methods.
     ///
     /// # Panics
     ///

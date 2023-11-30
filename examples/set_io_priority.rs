@@ -19,11 +19,11 @@ fn main() -> io::Result<()> {
         NormalPrio,
     }
     let hotkey_events = GlobalHotkeySet::new()
-        .add_global_hotkey(
+        .add_hotkey(
             Action::VeryLowPrio,
             Modifier::Ctrl + Modifier::Alt + Key::PgDown,
         )
-        .add_global_hotkey(
+        .add_hotkey(
             Action::NormalPrio,
             Modifier::Ctrl + Modifier::Alt + Key::PgUp,
         )

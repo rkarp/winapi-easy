@@ -1,3 +1,5 @@
+//! Filesystem functionality.
+
 use std::io;
 use std::path::Path;
 use windows::Win32::Storage::FileSystem::{
@@ -14,12 +16,13 @@ use windows::Win32::System::WindowsProgramming::{
 use crate::internal::ReturnValue;
 use crate::string::ZeroTerminatedWideString;
 
+/// Additional methods on [Path] using Windows-specific functionality.
 pub trait PathExt: AsRef<Path> {
     /// Copies a file.
     ///
-    /// - Will copy symlinks themselves, not their targets
-    /// - Will block until the operation is complete
-    /// - Will fail if the target path already exists
+    /// - Will copy symlinks themselves, not their targets.
+    /// - Will block until the operation is complete.
+    /// - Will fail if the target path already exists.
     fn copy_file_to<Q: AsRef<Path>>(&self, new_path: Q) -> io::Result<()> {
         let source = ZeroTerminatedWideString::from_os_str(self.as_ref().as_os_str());
         let target = ZeroTerminatedWideString::from_os_str(new_path.as_ref().as_os_str());
@@ -40,10 +43,12 @@ pub trait PathExt: AsRef<Path> {
 
     /// Moves a file or directory within a volume or a file between volumes.
     ///
-    /// - The operation is equivalent to a rename if `new_name` is on the same volume.
+    /// - The operation is equivalent to a rename if the new path is on the same volume.
     /// - Only files can be moved between volumes, not directories.
-    /// - Will block until the operation is complete
-    /// - Will fail if the target path already exists
+    /// - Will move symlinks themselves, not their targets.
+    /// - Symlinks can be moved within the same volume (renamed) without extended permission.
+    /// - Will block until the operation is complete.
+    /// - Will fail if the target path already exists.
     fn move_to<Q: AsRef<Path>>(&self, new_path: Q) -> io::Result<()> {
         let source = ZeroTerminatedWideString::from_os_str(self.as_ref().as_os_str());
         let target = ZeroTerminatedWideString::from_os_str(new_path.as_ref().as_os_str());

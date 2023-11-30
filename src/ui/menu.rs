@@ -1,3 +1,5 @@
+//! Menus and menu items.
+
 use std::convert::TryInto;
 use std::io;
 use std::io::ErrorKind;
@@ -35,24 +37,34 @@ use crate::ui::{
 #[derive(Eq, PartialEq, Debug)]
 pub(crate) struct MenuHandle {
     raw_handle: HMENU,
+    marker: PhantomData<*mut ()>,
 }
 
 impl MenuHandle {
     fn new_popup_menu() -> io::Result<Self> {
         let handle = unsafe { CreatePopupMenu()?.if_null_get_last_error()? };
-        let result = Self { raw_handle: handle };
+        let result = Self {
+            raw_handle: handle,
+            marker: PhantomData,
+        };
         result.set_info()?;
         Ok(result)
     }
 
     #[allow(unused)]
     pub(crate) fn from_non_null(raw_handle: HMENU) -> Self {
-        Self { raw_handle }
+        Self {
+            raw_handle,
+            marker: PhantomData,
+        }
     }
 
     pub(crate) fn from_maybe_null(handle: HMENU) -> Option<Self> {
         if handle.0 != 0 {
-            Some(Self { raw_handle: handle })
+            Some(Self {
+                raw_handle: handle,
+                marker: PhantomData,
+            })
         } else {
             None
         }
@@ -76,13 +88,13 @@ impl MenuHandle {
         Ok(())
     }
 
-    fn insert_submenu_item(&self, idx: u32, item: SubMenuItem, id: u32) -> io::Result<()> {
+    fn insert_submenu_item(&self, idx: u32, item: MenuItem, id: u32) -> io::Result<()> {
         unsafe {
             InsertMenuItemW(
                 self,
                 idx,
                 true,
-                &SubMenuItemCallData::new(Some(&mut item.into()), Some(id)).item_info_struct,
+                &MenuItemCallData::new(Some(&mut item.into()), Some(id)).item_info_struct,
             )
             .if_null_get_last_error()?;
         }
@@ -119,12 +131,20 @@ impl MenuHandle {
     }
 }
 
+impl From<MenuHandle> for HMENU {
+    fn from(value: MenuHandle) -> Self {
+        value.raw_handle
+    }
+}
+
 impl From<&MenuHandle> for HMENU {
     fn from(value: &MenuHandle) -> Self {
         value.raw_handle
     }
 }
 
+/// A popup menu for use with [`crate::ui::NotificationIcon`].
+#[derive(Debug)]
 pub struct PopupMenu {
     handle: MenuHandle,
 }
@@ -136,8 +156,11 @@ impl PopupMenu {
         })
     }
 
-    pub fn insert_menu_item(&self, item: SubMenuItem, id: u32, idx: Option<u32>) -> io::Result<()> {
-        let idx = match idx {
+    /// Inserts a menu item.
+    ///
+    /// If no index is given, it will be inserted after the last item.
+    pub fn insert_menu_item(&self, item: MenuItem, id: u32, index: Option<u32>) -> io::Result<()> {
+        let idx = match index {
             Some(idx) => idx,
             None => self.handle.get_item_count()?.try_into().unwrap(),
         };
@@ -145,6 +168,10 @@ impl PopupMenu {
         Ok(())
     }
 
+    /// Shows the popup menu at the given coordinates.
+    ///
+    /// The coordinates can for example be retrieved from the window message handler, see
+    /// [crate::ui::message::WindowMessageListener::handle_notification_icon_context_select]
     pub fn show_popup_menu(&self, window: &WindowHandle, coords: Point) -> io::Result<()> {
         unsafe {
             TrackPopupMenu(
@@ -168,33 +195,36 @@ impl Drop for PopupMenu {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum SubMenuItem<'a> {
+/// A menu item.
+///
+/// Can be added with [`PopupMenu::insert_menu_item`].
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum MenuItem<'a> {
     Text(&'a str),
     Separator,
 }
 
-enum SubMenuItemRaw {
+enum MenuItemRaw {
     WideText(Vec<u16>),
     Separator,
 }
 
-impl<'a> From<SubMenuItem<'a>> for SubMenuItemRaw {
-    fn from(item: SubMenuItem<'a>) -> Self {
+impl<'a> From<MenuItem<'a>> for MenuItemRaw {
+    fn from(item: MenuItem<'a>) -> Self {
         match item {
-            SubMenuItem::Text(text) => SubMenuItemRaw::WideText(text.to_wide_string()),
-            SubMenuItem::Separator => SubMenuItemRaw::Separator,
+            MenuItem::Text(text) => MenuItemRaw::WideText(text.to_wide_string()),
+            MenuItem::Separator => MenuItemRaw::Separator,
         }
     }
 }
 
-struct SubMenuItemCallData<'a> {
+struct MenuItemCallData<'a> {
     item_info_struct: MENUITEMINFOW,
-    phantom: PhantomData<&'a SubMenuItemRaw>,
+    phantom: PhantomData<&'a MenuItemRaw>,
 }
 
-impl<'a> SubMenuItemCallData<'a> {
-    fn new(mut menu_item: Option<&'a mut SubMenuItemRaw>, id: Option<u32>) -> Self {
+impl<'a> MenuItemCallData<'a> {
+    fn new(mut menu_item: Option<&'a mut MenuItemRaw>, id: Option<u32>) -> Self {
         let mut item_info = MENUITEMINFOW {
             cbSize: mem::size_of::<MENUITEMINFOW>()
                 .try_into()
@@ -202,12 +232,12 @@ impl<'a> SubMenuItemCallData<'a> {
             ..Default::default()
         };
         match &mut menu_item {
-            Some(SubMenuItemRaw::WideText(ref mut wide_string)) => {
+            Some(MenuItemRaw::WideText(ref mut wide_string)) => {
                 item_info.fMask |= MIIM_STRING;
                 item_info.cch = wide_string.len().try_into().unwrap();
                 item_info.dwTypeData = PWSTR::from_raw(wide_string.as_mut_ptr());
             }
-            Some(SubMenuItemRaw::Separator) => {
+            Some(MenuItemRaw::Separator) => {
                 item_info.fMask |= MIIM_FTYPE;
                 item_info.fType |= MFT_SEPARATOR;
             }
@@ -232,8 +262,8 @@ mod tests {
     fn create_test_menu() -> io::Result<()> {
         let menu = PopupMenu::new()?;
         const TEST_ID: u32 = 42;
-        menu.insert_menu_item(SubMenuItem::Text("Show window"), TEST_ID, None)?;
-        menu.insert_menu_item(SubMenuItem::Separator, TEST_ID + 1, None)?;
+        menu.insert_menu_item(MenuItem::Text("Show window"), TEST_ID, None)?;
+        menu.insert_menu_item(MenuItem::Separator, TEST_ID + 1, None)?;
         assert_eq!(menu.handle.get_item_count()?, 2);
         assert_eq!(menu.handle.get_item_id(0)?, TEST_ID);
         Ok(())

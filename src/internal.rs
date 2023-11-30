@@ -339,6 +339,8 @@ pub(crate) fn catch_unwind_and_abort<F: FnOnce() -> R, R>(f: F) -> R {
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(result) => result,
         Err(_) => {
+            // Don't print anything when catching unwinds because the default panic hook already does.
+            //
             // Abort is safe because it doesn't unwind.
             std::process::abort();
         }

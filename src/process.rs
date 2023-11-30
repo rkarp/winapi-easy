@@ -1,6 +1,4 @@
-/*!
-Processes, threads.
-*/
+//! Processes, threads.
 
 use std::convert::TryFrom;
 use std::ffi::c_void;
@@ -33,7 +31,9 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleExW;
 use windows::Win32::System::Threading;
 use windows::Win32::System::Threading::{
     GetCurrentProcess,
+    GetCurrentProcessId,
     GetCurrentThread,
+    GetCurrentThreadId,
     GetProcessId,
     GetThreadId,
     NtQueryInformationProcess,
@@ -61,7 +61,7 @@ use crate::internal::{
 };
 use crate::ui::WindowHandle;
 
-/// A Windows process
+/// A Windows process.
 pub struct Process {
     handle: AutoClose<HANDLE>,
 }
@@ -75,6 +75,9 @@ impl Process {
         Self::from_maybe_null(pseudo_handle).expect("Pseudo process handle should never be null")
     }
 
+    /// Tries to acquire a process handle from an ID.
+    ///
+    /// This may fail due to insufficient access rights.
     pub fn from_id<I>(id: I) -> io::Result<Self>
     where
         I: Into<ProcessId>,
@@ -121,6 +124,9 @@ impl Process {
         Ok(())
     }
 
+    /// Returns the I/O priority of the process.
+    ///
+    /// Will return `None` if it is an unknown value.
     pub fn get_io_priority(&self) -> io::Result<Option<IoPriority>> {
         let mut raw_io_priority: i32 = 0;
         let mut return_length: u32 = 0;
@@ -183,10 +189,18 @@ impl TryFrom<ProcessId> for Process {
     }
 }
 
+/// ID of a [`Process`].
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct ProcessId(pub(crate) u32);
 
-/// A thread inside a Windows process
+impl ProcessId {
+    /// Returns the current process ID.
+    pub fn current() -> Self {
+        Self(unsafe { GetCurrentProcessId() })
+    }
+}
+
+/// A thread inside a Windows process.
 pub struct Thread {
     handle: AutoClose<HANDLE>,
 }
@@ -200,6 +214,9 @@ impl Thread {
         Self::from_maybe_null(pseudo_handle).expect("Pseudo thread handle should never be null")
     }
 
+    /// Tries to acquire a thread handle from an ID.
+    ///
+    /// This may fail due to insufficient access rights.
     pub fn from_id<I>(id: I) -> io::Result<Self>
     where
         I: Into<ThreadId>,
@@ -277,11 +294,18 @@ impl TryFrom<ThreadId> for Thread {
     }
 }
 
+/// ID of a [`Thread`].
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct ThreadId(pub(crate) u32);
 
 impl ThreadId {
-    pub fn get_nonchild_windows(self: ThreadId) -> Vec<WindowHandle> {
+    /// Returns the current thread ID.
+    pub fn current() -> Self {
+        Self(unsafe { GetCurrentThreadId() })
+    }
+
+    /// Returns all top-level (non-child) windows created by the thread.
+    pub fn get_nonchild_windows(self) -> Vec<WindowHandle> {
         let mut result: Vec<WindowHandle> = Vec::new();
         let mut callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
             let window_handle =
@@ -300,12 +324,14 @@ impl ThreadId {
     }
 }
 
+/// Infos about a [`Thread`].
 #[derive(Copy, Clone, Debug)]
 pub struct ThreadInfo {
     raw_entry: THREADENTRY32,
 }
 
 impl ThreadInfo {
+    /// Returns all threads of all processes.
     pub fn all_threads() -> io::Result<Vec<Self>> {
         #[inline(always)]
         fn get_empty_thread_entry() -> THREADENTRY32 {
@@ -335,6 +361,7 @@ impl ThreadInfo {
         Ok(result)
     }
 
+    /// Returns all threads of the given process.
     pub fn all_process_threads<P>(process_id: P) -> io::Result<Vec<Self>>
     where
         P: Into<ProcessId>,
@@ -353,15 +380,18 @@ impl ThreadInfo {
         }
     }
 
+    /// Returns the ID of the thread.
     pub fn get_thread_id(&self) -> ThreadId {
         ThreadId(self.raw_entry.th32ThreadID)
     }
 
+    /// Returns the ID of the process that contains the thread.
     pub fn get_owner_process_id(&self) -> ProcessId {
         ProcessId(self.raw_entry.th32OwnerProcessID)
     }
 }
 
+/// Process CPU priority.
 #[derive(IntoPrimitive, Clone, Copy, Eq, PartialEq, Debug)]
 #[repr(u32)]
 pub enum ProcessPriority {
@@ -379,6 +409,7 @@ impl From<ProcessPriority> for PROCESS_CREATION_FLAGS {
     }
 }
 
+/// Thread CPU priority.
 #[derive(IntoPrimitive, Clone, Copy, Eq, PartialEq, Debug)]
 #[repr(i32)]
 pub enum ThreadPriority {
@@ -397,6 +428,7 @@ impl From<ThreadPriority> for THREAD_PRIORITY {
     }
 }
 
+/// Process or thread IO priority. This is independent of the standard CPU priorities.
 #[derive(IntoPrimitive, TryFromPrimitive, Clone, Copy, Eq, PartialEq, Debug)]
 #[repr(u32)]
 pub enum IoPriority {
@@ -417,12 +449,14 @@ impl From<ProcessInformationClass> for PROCESSINFOCLASS {
     }
 }
 
+/// A handle to a module (EXE or DLL).
 pub struct ModuleHandle {
     #[allow(unused)]
     raw_handle: HINSTANCE,
 }
 
 impl ModuleHandle {
+    /// Returns the module handle of the currently executed code.
     pub fn get_current() -> io::Result<Self> {
         let raw_handle = unsafe {
             let mut h_module: HINSTANCE = Default::default();

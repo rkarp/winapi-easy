@@ -1,3 +1,5 @@
+//! Application resources.
+
 use std::io;
 
 use num_enum::IntoPrimitive;
