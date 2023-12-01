@@ -12,7 +12,7 @@ use windows::Win32::System::DataExchange::{
     GetClipboardData,
     OpenClipboard,
 };
-use windows::Win32::System::SystemServices::CF_HDROP;
+use windows::Win32::System::Ole::CF_HDROP;
 use windows::Win32::UI::Shell::{
     DragQueryFileW,
     HDROP,
@@ -43,7 +43,7 @@ impl Clipboard {
     pub fn get_file_list(&self) -> io::Result<Vec<PathBuf>> {
         unsafe {
             let mut clipboard_data = {
-                let clipboard_data = GetClipboardData(CF_HDROP.0)?;
+                let clipboard_data = GetClipboardData(CF_HDROP.0.into())?;
                 GlobalLockedData::lock(clipboard_data)?
             };
 
