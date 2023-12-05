@@ -1,6 +1,7 @@
 use std::io;
 
 use winapi_easy::keyboard::{
+    send_key_combination,
     GlobalHotkeySet,
     Key,
     Modifier,
@@ -16,6 +17,8 @@ use winapi_easy::ui::{
 enum Action {
     MonitorOff,
     MonitorOffPlusLock,
+    VolumeUp,
+    VolumeDown,
 }
 
 fn main() -> io::Result<()> {
@@ -30,14 +33,29 @@ fn main() -> io::Result<()> {
         .add_hotkey(
             Action::MonitorOffPlusLock,
             Modifier::Ctrl + Modifier::Alt + Key::Oem1,
-        );
+        )
+        .add_hotkey(Action::VolumeUp, Modifier::Win + Key::PgUp)
+        .add_hotkey(Action::VolumeDown, Modifier::Win + Key::PgDown);
     for event in hotkey_def.listen_for_hotkeys()? {
+        let monitor_off = || -> io::Result<()> {
+            let foreground_window = WindowHandle::get_foreground_window().unwrap();
+            foreground_window.set_monitor_power(MonitorPower::Off)
+        };
         match event? {
-            Action::MonitorOffPlusLock => lock_workstation()?,
-            Action::MonitorOff => (),
+            Action::MonitorOffPlusLock => {
+                lock_workstation()?;
+                monitor_off()?;
+            }
+            Action::MonitorOff => {
+                monitor_off()?;
+            }
+            Action::VolumeUp => {
+                send_key_combination(&[Key::VolumeUp])?;
+            }
+            Action::VolumeDown => {
+                send_key_combination(&[Key::VolumeDown])?;
+            }
         }
-        let foreground_window = WindowHandle::get_foreground_window().unwrap();
-        foreground_window.set_monitor_power(MonitorPower::Off)?;
     }
     Ok(())
 }

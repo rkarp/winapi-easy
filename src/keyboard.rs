@@ -1,23 +1,32 @@
 //! Keyboard and hotkeys.
 
 use std::collections::HashMap;
-use std::io;
-use std::mem::MaybeUninit;
 use std::ops::Add;
 use std::sync::mpsc;
 use std::thread;
+use std::{
+    io,
+    mem,
+};
 
 use num_enum::IntoPrimitive;
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     RegisterHotKey,
+    SendInput,
     UnregisterHotKey,
     HOT_KEY_MODIFIERS,
+    INPUT,
+    INPUT_0,
+    INPUT_KEYBOARD,
+    KEYBDINPUT,
+    KEYEVENTF_KEYUP,
     MOD_ALT,
     MOD_CONTROL,
     MOD_NOREPEAT,
     MOD_SHIFT,
     MOD_WIN,
+    VIRTUAL_KEY,
     VK_0,
     VK_1,
     VK_2,
@@ -30,10 +39,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_9,
     VK_A,
     VK_ADD,
+    VK_APPS,
     VK_B,
     VK_BACK,
     VK_C,
+    VK_CAPITAL,
     VK_D,
+    VK_DECIMAL,
     VK_DELETE,
     VK_DIVIDE,
     VK_DOWN,
@@ -61,11 +73,16 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_J,
     VK_K,
     VK_L,
+    VK_LCONTROL,
     VK_LEFT,
+    VK_LMENU,
+    VK_LSHIFT,
+    VK_LWIN,
     VK_M,
     VK_MULTIPLY,
     VK_N,
     VK_NEXT,
+    VK_NUMLOCK,
     VK_NUMPAD0,
     VK_NUMPAD1,
     VK_NUMPAD2,
@@ -95,9 +112,15 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_PRIOR,
     VK_Q,
     VK_R,
+    VK_RCONTROL,
     VK_RETURN,
     VK_RIGHT,
+    VK_RMENU,
+    VK_RSHIFT,
+    VK_RWIN,
     VK_S,
+    VK_SCROLL,
+    VK_SNAPSHOT,
     VK_SPACE,
     VK_SUBTRACT,
     VK_T,
@@ -105,6 +128,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_U,
     VK_UP,
     VK_V,
+    VK_VOLUME_DOWN,
+    VK_VOLUME_MUTE,
+    VK_VOLUME_UP,
     VK_W,
     VK_X,
     VK_Y,
@@ -171,6 +197,8 @@ where
     /// Adds a hotkey.
     ///
     /// This does not register the hotkey combination with Windows yet.
+    ///
+    /// Not all key combinations may work as hotkeys.
     pub fn add_hotkey<KC>(mut self, id: ID, key_combination: KC) -> Self
     where
         KC: Into<KeyCombination>,
@@ -219,10 +247,9 @@ where
                     .zip(self.hotkey_defs.iter().map(|def| def.user_id))
                     .collect();
                 loop {
-                    let mut message: MaybeUninit<MSG> = MaybeUninit::uninit();
+                    let mut message: MSG = Default::default();
                     let getmsg_result =
-                        unsafe { GetMessageW(message.as_mut_ptr(), None, WM_HOTKEY, WM_HOTKEY) };
-                    let message = unsafe { message.assume_init() };
+                        unsafe { GetMessageW(&mut message, None, WM_HOTKEY, WM_HOTKEY) };
                     let to_send = match getmsg_result {
                         BOOL(-1) => Some(Err(io::Error::last_os_error())),
                         BOOL(0) => break, // WM_QUIT
@@ -267,6 +294,10 @@ impl<ID> Drop for GlobalHotkeySet<ID> {
 }
 
 /// Non-modifier key usable for hotkeys.
+///
+/// # Related docs
+///
+/// [Microsoft docs for virtual key codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes)
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Hash, Debug)]
 #[repr(u16)]
 pub enum Key {
@@ -274,6 +305,7 @@ pub enum Key {
     Tab = VK_TAB.0,
     Return = VK_RETURN.0,
     Pause = VK_PAUSE.0,
+    CapsLock = VK_CAPITAL.0,
     Esc = VK_ESCAPE.0,
     Space = VK_SPACE.0,
     PgUp = VK_PRIOR.0,
@@ -284,6 +316,7 @@ pub enum Key {
     UpArrow = VK_UP.0,
     RightArrow = VK_RIGHT.0,
     DownArrow = VK_DOWN.0,
+    PrintScreen = VK_SNAPSHOT.0,
     Insert = VK_INSERT.0,
     Delete = VK_DELETE.0,
     Number0 = VK_0.0,
@@ -322,6 +355,9 @@ pub enum Key {
     X = VK_X.0,
     Y = VK_Y.0,
     Z = VK_Z.0,
+    LeftWindows = VK_LWIN.0,
+    RightWindows = VK_RWIN.0,
+    Menu = VK_APPS.0,
     Numpad0 = VK_NUMPAD0.0,
     Numpad1 = VK_NUMPAD1.0,
     Numpad2 = VK_NUMPAD2.0,
@@ -335,6 +371,7 @@ pub enum Key {
     Multiply = VK_MULTIPLY.0,
     Add = VK_ADD.0,
     Subtract = VK_SUBTRACT.0,
+    Decimal = VK_DECIMAL.0,
     Divide = VK_DIVIDE.0,
     F1 = VK_F1.0,
     F2 = VK_F2.0,
@@ -348,6 +385,17 @@ pub enum Key {
     F10 = VK_F10.0,
     F11 = VK_F11.0,
     F12 = VK_F12.0,
+    NumLock = VK_NUMLOCK.0,
+    ScrollLock = VK_SCROLL.0,
+    LeftShift = VK_LSHIFT.0,
+    RightShift = VK_RSHIFT.0,
+    LeftCtrl = VK_LCONTROL.0,
+    RightCtrl = VK_RCONTROL.0,
+    LeftAlt = VK_LMENU.0,
+    RightAlt = VK_RMENU.0,
+    VolumeMute = VK_VOLUME_MUTE.0,
+    VolumeDown = VK_VOLUME_DOWN.0,
+    VolumeUp = VK_VOLUME_UP.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
     /// * For the US standard keyboard, the ';:' key
@@ -485,4 +533,56 @@ impl Add<Key> for Modifier {
     fn add(self, rhs: Key) -> Self::Output {
         KeyCombination::new_from(self.into(), rhs)
     }
+}
+
+/// Globally sends a key combination as if the user had performed it.
+///
+/// This will cause a 'press' event for each key in the list (in the given order),
+/// followed by a sequence of 'release' events (in the inverse order of the list).
+pub fn send_key_combination(keys: &[Key]) -> io::Result<()> {
+    let raw_input_pairs: Vec<_> = keys
+        .iter()
+        .copied()
+        .map(|key: Key| {
+            let raw_key = u16::from(key);
+            let raw_keybdinput = KEYBDINPUT {
+                wVk: VIRTUAL_KEY(raw_key),
+                wScan: 0,
+                dwFlags: Default::default(),
+                time: 0,
+                dwExtraInfo: 0,
+            };
+            let raw_keybdinput_release = KEYBDINPUT {
+                dwFlags: raw_keybdinput.dwFlags | KEYEVENTF_KEYUP,
+                ..raw_keybdinput
+            };
+            let raw_input = INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 { ki: raw_keybdinput },
+            };
+            let raw_input_release = INPUT {
+                Anonymous: INPUT_0 {
+                    ki: raw_keybdinput_release,
+                },
+                ..raw_input
+            };
+            (raw_input, raw_input_release)
+        })
+        .collect();
+    let raw_inputs: Vec<_> = raw_input_pairs
+        .iter()
+        .map(|x| x.0)
+        .chain(raw_input_pairs.iter().rev().map(|x| x.1))
+        .collect();
+    let raw_input_size = mem::size_of::<INPUT>()
+        .try_into()
+        .expect("Struct size conversion failed");
+
+    let expected_sent_size =
+        u32::try_from(raw_inputs.len()).expect("Inputs length conversion failed");
+    unsafe {
+        SendInput(raw_inputs.as_slice(), raw_input_size)
+            .if_not_eq_to_error(expected_sent_size, io::Error::last_os_error)?;
+    }
+    Ok(())
 }

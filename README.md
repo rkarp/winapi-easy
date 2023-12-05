@@ -19,6 +19,7 @@ of the Windows API.
 ## Features
 
 * Add global hotkeys
+* Send keystroke combinations
 * List threads
 * Set CPU priority for any process / thread
 * Set IO priority for any process
