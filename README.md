@@ -27,7 +27,7 @@ of the Windows API.
 * Get toplevel windows
 * Get windows associated with a thread
 * Window actions like minimize, flash
-* Set taskbar progress animation for the console window
+* Set taskbar progress animation for a window
 * Turn monitor off
 * COM initialization
 * Get a file list from the Windows clipboard

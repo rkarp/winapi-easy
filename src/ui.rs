@@ -1,6 +1,11 @@
 //! UI components: Windows, taskbar.
 
 use std::convert::TryInto;
+use std::error::Error;
+use std::fmt::{
+    Display,
+    Formatter,
+};
 use std::marker::PhantomData;
 use std::mem;
 use std::ptr::NonNull;
@@ -462,6 +467,26 @@ impl From<&WindowHandle> for HWND {
         value.handle
     }
 }
+
+impl TryFrom<HWND> for WindowHandle {
+    type Error = TryFromHWNDError;
+
+    /// Returns a new window handle from a raw handle if it is non-null.
+    fn try_from(value: HWND) -> Result<Self, Self::Error> {
+        WindowHandle::from_maybe_null(value).ok_or(TryFromHWNDError(()))
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub struct TryFromHWNDError(pub(crate) ());
+
+impl Display for TryFromHWNDError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HWND value must not be null")
+    }
+}
+
+impl Error for TryFromHWNDError {}
 
 /// Window class serving as a base for [`Window`].
 pub struct WindowClass<'res, WML, I: 'res> {
