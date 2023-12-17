@@ -14,7 +14,8 @@ use windows::Win32::Foundation::{
     CloseHandle,
     BOOL,
     HANDLE,
-    HINSTANCE,
+    HGLOBAL,
+    HMODULE,
     HWND,
     INVALID_HANDLE_VALUE,
     LPARAM,
@@ -138,8 +139,8 @@ impl ReturnValue for HMENU {
     const NULL_VALUE: Self = HMENU(0);
 }
 
-impl ReturnValue for HINSTANCE {
-    const NULL_VALUE: Self = HINSTANCE(0);
+impl ReturnValue for HMODULE {
+    const NULL_VALUE: Self = HMODULE(0);
 }
 
 impl ReturnValue for LRESULT {
@@ -259,14 +260,14 @@ impl<T: CloseableHandle> Drop for AutoClose<T> {
 }
 
 pub(crate) struct GlobalLockedData {
-    handle: HANDLE,
+    handle: HGLOBAL,
     ptr: NonNull<c_void>,
 }
 
 impl GlobalLockedData {
-    pub(crate) fn lock(handle: HANDLE) -> io::Result<Self> {
+    pub(crate) fn lock(handle: HGLOBAL) -> io::Result<Self> {
         unsafe {
-            GlobalLock(handle.0)
+            GlobalLock(handle)
                 .to_non_null_else_get_last_error()
                 .map(|ptr| GlobalLockedData { handle, ptr })
         }
@@ -277,7 +278,7 @@ impl GlobalLockedData {
     }
     #[allow(dead_code)]
     #[inline(always)]
-    pub(crate) fn handle(&self) -> HANDLE {
+    pub(crate) fn handle(&self) -> HGLOBAL {
         self.handle
     }
 }
@@ -285,7 +286,7 @@ impl GlobalLockedData {
 impl Drop for GlobalLockedData {
     fn drop(&mut self) {
         unsafe {
-            GlobalUnlock(self.handle.0);
+            GlobalUnlock(self.handle);
         }
     }
 }

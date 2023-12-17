@@ -129,7 +129,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_OVERLAPPEDWINDOW,
 };
 
-use crate::com::ComInterface;
+use crate::com::ComInterfaceExt;
 use crate::internal::{
     custom_err_with_code,
     sync_closure_to_callback2,
@@ -175,7 +175,7 @@ pub mod resource;
 /// to this problem is found, this API may change.
 #[derive(Eq, PartialEq, Debug)]
 pub struct WindowHandle {
-    handle: HWND,
+    raw_handle: HWND,
     marker: PhantomData<*mut ()>,
 }
 
@@ -221,7 +221,7 @@ impl WindowHandle {
 
     pub(crate) fn from_non_null(handle: HWND) -> Self {
         Self {
-            handle,
+            raw_handle: handle,
             marker: PhantomData,
         }
     }
@@ -229,7 +229,7 @@ impl WindowHandle {
     pub(crate) fn from_maybe_null(handle: HWND) -> Option<Self> {
         if handle.0 != 0 {
             Some(Self {
-                handle,
+                raw_handle: handle,
                 marker: PhantomData,
             })
         } else {
@@ -239,18 +239,18 @@ impl WindowHandle {
 
     /// Checks if the handle points to an existing window.
     pub fn is_window(&self) -> bool {
-        let result = unsafe { IsWindow(self) };
+        let result = unsafe { IsWindow(self.raw_handle) };
         result.as_bool()
     }
 
     pub fn is_visible(&self) -> bool {
-        let result = unsafe { IsWindowVisible(self) };
+        let result = unsafe { IsWindowVisible(self.raw_handle) };
         result.as_bool()
     }
 
     /// Returns the window caption text, converted to UTF-8 in a potentially lossy way.
     pub fn get_caption_text(&self) -> String {
-        let required_length = unsafe { GetWindowTextLengthW(self) };
+        let required_length = unsafe { GetWindowTextLengthW(self.raw_handle) };
         let required_length = if required_length <= 0 {
             return String::new();
         } else {
@@ -258,7 +258,7 @@ impl WindowHandle {
         };
 
         let mut buffer: Vec<u16> = vec![0; required_length as usize];
-        let copied_chars = unsafe { GetWindowTextW(self, buffer.as_mut()) };
+        let copied_chars = unsafe { GetWindowTextW(self.raw_handle, buffer.as_mut()) };
         if copied_chars <= 0 {
             return String::new();
         }
@@ -269,8 +269,12 @@ impl WindowHandle {
 
     /// Sets the window caption text.
     pub fn set_caption_text(&self, text: &str) -> io::Result<()> {
-        let ret_val =
-            unsafe { SetWindowTextW(self, PCWSTR::from_raw(text.to_wide_string().as_ptr())) };
+        let ret_val = unsafe {
+            SetWindowTextW(
+                self.raw_handle,
+                PCWSTR::from_raw(text.to_wide_string().as_ptr()),
+            )
+        };
         ret_val.if_null_get_last_error()?;
         Ok(())
     }
@@ -278,7 +282,7 @@ impl WindowHandle {
     /// Brings the window to the foreground.
     pub fn set_as_foreground(&self) -> io::Result<()> {
         unsafe {
-            SetForegroundWindow(self).if_null_to_error(|| {
+            SetForegroundWindow(self.raw_handle).if_null_to_error(|| {
                 io::Error::new(
                     io::ErrorKind::PermissionDenied,
                     "Cannot bring window to foreground",
@@ -291,7 +295,7 @@ impl WindowHandle {
     /// Sets the window as the currently active (selected) window.
     pub fn set_as_active(&self) -> io::Result<()> {
         unsafe {
-            SetActiveWindow(self).if_null_get_last_error()?;
+            SetActiveWindow(self.raw_handle).if_null_get_last_error()?;
         }
         Ok(())
     }
@@ -300,7 +304,7 @@ impl WindowHandle {
     pub fn set_show_state(&self, state: WindowShowState) -> io::Result<()> {
         if self.is_window() {
             unsafe {
-                ShowWindow(self, state.into());
+                ShowWindow(self.raw_handle, state.into());
             }
             Ok(())
         } else {
@@ -317,13 +321,18 @@ impl WindowHandle {
             length: mem::size_of::<WINDOWPLACEMENT>().try_into().unwrap(),
             ..Default::default()
         };
-        unsafe { GetWindowPlacement(self, &mut raw_placement).if_null_get_last_error()? };
+        unsafe {
+            GetWindowPlacement(self.raw_handle, &mut raw_placement).if_null_get_last_error()?
+        };
         Ok(WindowPlacement { raw_placement })
     }
 
     /// Sets the window's show state and positions.
     pub fn set_placement(&self, placement: &WindowPlacement) -> io::Result<()> {
-        unsafe { SetWindowPlacement(self, &placement.raw_placement).if_null_get_last_error()? };
+        unsafe {
+            SetWindowPlacement(self.raw_handle, &placement.raw_placement)
+                .if_null_get_last_error()?
+        };
         Ok(())
     }
 
@@ -331,7 +340,7 @@ impl WindowHandle {
     pub fn get_class_name(&self) -> io::Result<String> {
         const BUFFER_SIZE: usize = WindowClass::MAX_WINDOW_CLASS_NAME_CHARS + 1;
         let mut buffer: Vec<u16> = vec![0; BUFFER_SIZE];
-        let chars_copied = unsafe { GetClassNameW(self, buffer.as_mut()) };
+        let chars_copied = unsafe { GetClassNameW(self.raw_handle, buffer.as_mut()) };
         chars_copied.if_null_get_last_error()?;
         buffer.truncate(chars_copied as usize);
         Ok(buffer.to_string_lossy())
@@ -341,7 +350,7 @@ impl WindowHandle {
     pub fn send_command(&self, action: WindowCommand) -> io::Result<()> {
         let result = unsafe {
             SendMessageW(
-                self,
+                self.raw_handle,
                 WM_SYSCOMMAND,
                 WPARAM(action.to_usize()),
                 LPARAM::default(),
@@ -411,7 +420,7 @@ impl WindowHandle {
 
     fn get_creator_thread_process_ids(&self) -> (ThreadId, ProcessId) {
         let mut process_id: u32 = 0;
-        let thread_id = unsafe { GetWindowThreadProcessId(self, Some(&mut process_id)) };
+        let thread_id = unsafe { GetWindowThreadProcessId(self.raw_handle, Some(&mut process_id)) };
         (ThreadId(thread_id), ProcessId(process_id))
     }
 
@@ -422,7 +431,7 @@ impl WindowHandle {
     pub fn set_monitor_power(&self, level: MonitorPower) -> io::Result<()> {
         let result = unsafe {
             SendMessageW(
-                self,
+                self.raw_handle,
                 WM_SYSCOMMAND,
                 WPARAM(SC_MONITORPOWER.try_into().unwrap()),
                 LPARAM(level.into()),
@@ -434,13 +443,13 @@ impl WindowHandle {
     }
 
     pub(crate) unsafe fn get_user_data_ptr<T>(&self) -> Option<NonNull<T>> {
-        let ptr_value = GetWindowLongPtrW(self, GWLP_USERDATA);
+        let ptr_value = GetWindowLongPtrW(self.raw_handle, GWLP_USERDATA);
         NonNull::new(ptr_value as *mut T)
     }
 
     pub(crate) unsafe fn set_user_data_ptr<T>(&self, ptr: *const T) -> io::Result<()> {
         SetLastError(NO_ERROR);
-        let ret_val = SetWindowLongPtrW(self, GWLP_USERDATA, ptr as isize);
+        let ret_val = SetWindowLongPtrW(self.raw_handle, GWLP_USERDATA, ptr as isize);
         if ret_val == 0 {
             let err_val = GetLastError();
             if err_val != NO_ERROR {
@@ -457,14 +466,14 @@ impl WindowHandle {
 impl From<WindowHandle> for HWND {
     /// Returns the underlying raw window handle used by [`windows`].
     fn from(value: WindowHandle) -> Self {
-        value.handle
+        value.raw_handle
     }
 }
 
 impl From<&WindowHandle> for HWND {
     /// Returns the underlying raw window handle used by [`windows`].
     fn from(value: &WindowHandle) -> Self {
-        value.handle
+        value.raw_handle
     }
 }
 
@@ -636,7 +645,7 @@ impl<WML, I> Drop for Window<'_, '_, WML, I> {
     fn drop(&mut self) {
         unsafe {
             if self.handle.is_window() {
-                DestroyWindow(&self.handle)
+                DestroyWindow(self.handle.raw_handle)
                     .if_null_get_last_error()
                     .unwrap();
             }
@@ -1122,7 +1131,7 @@ impl Taskbar {
     }
 }
 
-impl ComInterface for ITaskbarList3 {
+impl ComInterfaceExt for ITaskbarList3 {
     const CLASS_GUID: GUID = TaskbarList;
 }
 

@@ -6,7 +6,7 @@ use std::cell::Cell;
 use std::io;
 
 use windows::core::{
-    Interface,
+    ComInterface,
     GUID,
 };
 use windows::Win32::System::Com::{
@@ -37,7 +37,7 @@ pub fn initialize_com() -> io::Result<()> {
     })
 }
 
-pub(crate) trait ComInterface: Interface {
+pub(crate) trait ComInterfaceExt: ComInterface {
     const CLASS_GUID: GUID;
 
     fn new_instance() -> io::Result<Self> {

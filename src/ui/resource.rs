@@ -3,7 +3,6 @@
 use std::io;
 
 use num_enum::IntoPrimitive;
-use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Graphics::Gdi::{
     COLOR_3DDKSHADOW,
     COLOR_3DLIGHT,
@@ -44,6 +43,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     HICON,
     IMAGE_CURSOR,
     IMAGE_ICON,
+    LOADIMAGE_HANDLE,
     LR_DEFAULTSIZE,
     LR_SHARED,
     OCR_APPSTARTING,
@@ -186,7 +186,10 @@ impl Brush for BuiltinColor {
     }
 }
 
-fn get_shared_image_handle(resource_id: u32, resource_type: GDI_IMAGE_TYPE) -> io::Result<HANDLE> {
+fn get_shared_image_handle(
+    resource_id: u32,
+    resource_type: GDI_IMAGE_TYPE,
+) -> io::Result<LOADIMAGE_HANDLE> {
     let handle = unsafe {
         LoadImageW(
             None,

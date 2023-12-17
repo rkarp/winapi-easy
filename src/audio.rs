@@ -31,9 +31,9 @@ use windows::Win32::System::Com::{
     STGM_READ,
 };
 
-use crate::com::ComInterface;
+use crate::com::ComInterfaceExt;
 
-impl ComInterface for IMMDeviceEnumerator {
+impl ComInterfaceExt for IMMDeviceEnumerator {
     const CLASS_GUID: GUID = MMDeviceEnumerator;
 }
 
@@ -125,14 +125,14 @@ mod policy_config {
     use std::ffi::c_void;
 
     use windows::core::{
+        ComInterface,
         Interface,
-        Vtable,
         GUID,
         PCWSTR,
     };
     use windows::Win32::Media::Audio::ERole;
 
-    use crate::com::ComInterface;
+    use crate::com::ComInterfaceExt;
 
     #[repr(transparent)]
     pub struct IPolicyConfig(windows::core::IUnknown);
@@ -147,8 +147,8 @@ mod policy_config {
             P0: Into<PCWSTR>,
             P1: Into<ERole>,
         {
-            (Vtable::vtable(self).SetDefaultEndpoint)(
-                Vtable::as_raw(self),
+            (Interface::vtable(self).SetDefaultEndpoint)(
+                Interface::as_raw(self),
                 deviceId.into(),
                 eRole.into(),
             )
@@ -156,7 +156,7 @@ mod policy_config {
         }
     }
 
-    windows::core::interface_hierarchy!(IPolicyConfig, windows::core::IUnknown);
+    windows::imp::interface_hierarchy!(IPolicyConfig, windows::core::IUnknown);
 
     impl Clone for IPolicyConfig {
         fn clone(&self) -> Self {
@@ -175,10 +175,10 @@ mod policy_config {
         }
     }
 
-    unsafe impl Vtable for IPolicyConfig {
+    unsafe impl Interface for IPolicyConfig {
         type Vtable = IPolicyConfig_Vtbl;
     }
-    unsafe impl Interface for IPolicyConfig {
+    unsafe impl ComInterface for IPolicyConfig {
         const IID: GUID = GUID::from_u128(0xf8679f50_850a_41cf_9c72_430f290290c8);
     }
 
@@ -197,7 +197,7 @@ mod policy_config {
 
     const CPolicyConfigClient: GUID = GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
 
-    impl ComInterface for IPolicyConfig {
+    impl ComInterfaceExt for IPolicyConfig {
         const CLASS_GUID: GUID = CPolicyConfigClient;
     }
 }

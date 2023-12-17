@@ -5,6 +5,7 @@ use std::io;
 use std::os::windows::ffi::OsStringExt;
 use std::path::PathBuf;
 
+use windows::Win32::Foundation::HGLOBAL;
 use windows::Win32::System::DataExchange::{
     CloseClipboard,
     GetClipboardData,
@@ -28,13 +29,12 @@ pub fn get_file_list() -> io::Result<Vec<PathBuf>> {
     let f = || {
         let mut clipboard_data = {
             let clipboard_data = unsafe { GetClipboardData(CF_HDROP.0.into()) }?;
-            GlobalLockedData::lock(clipboard_data)?
+            GlobalLockedData::lock(HGLOBAL(clipboard_data.0))?
         };
 
         let num_files =
             unsafe { DragQueryFileW(HDROP(clipboard_data.ptr() as isize), u32::MAX, None) };
         let file_names: io::Result<Vec<PathBuf>> = (0..num_files)
-            .into_iter()
             .map(|file_index| {
                 let required_size = unsafe {
                     1 + DragQueryFileW(HDROP(clipboard_data.ptr() as isize), file_index, None)

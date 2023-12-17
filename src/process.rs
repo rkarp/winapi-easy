@@ -16,7 +16,7 @@ use num_enum::{
 use windows::Win32::Foundation::{
     BOOL,
     HANDLE,
-    HINSTANCE,
+    HMODULE,
     HWND,
     LPARAM,
 };
@@ -452,14 +452,14 @@ impl From<ProcessInformationClass> for PROCESSINFOCLASS {
 /// A handle to a module (EXE or DLL).
 pub struct ModuleHandle {
     #[allow(unused)]
-    raw_handle: HINSTANCE,
+    raw_handle: HMODULE,
 }
 
 impl ModuleHandle {
     /// Returns the module handle of the currently executed code.
     pub fn get_current() -> io::Result<Self> {
         let raw_handle = unsafe {
-            let mut h_module: HINSTANCE = Default::default();
+            let mut h_module: HMODULE = Default::default();
             GetModuleHandleExW(0, None, &mut h_module);
             h_module.if_null_get_last_error()?
         };

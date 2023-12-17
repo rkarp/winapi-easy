@@ -78,12 +78,12 @@ impl MenuHandle {
             fMask: MIM_APPLYTOSUBMENUS | MIM_STYLE,
             dwStyle: MNS_NOTIFYBYPOS,
             cyMax: 0,
-            hbrBack: None.into(),
+            hbrBack: Default::default(),
             dwContextHelpID: 0,
             dwMenuData: 0,
         };
         unsafe {
-            SetMenuInfo(self, &raw_menu_info).if_null_get_last_error()?;
+            SetMenuInfo(self.raw_handle, &raw_menu_info).if_null_get_last_error()?;
         }
         Ok(())
     }
@@ -91,7 +91,7 @@ impl MenuHandle {
     fn insert_submenu_item(&self, idx: u32, item: MenuItem, id: u32) -> io::Result<()> {
         unsafe {
             InsertMenuItemW(
-                self,
+                self.raw_handle,
                 idx,
                 true,
                 &MenuItemCallData::new(Some(&mut item.into()), Some(id)).item_info_struct,
@@ -104,7 +104,7 @@ impl MenuHandle {
     pub(crate) fn get_item_id(&self, item_idx: u32) -> io::Result<u32> {
         let id = unsafe {
             GetMenuItemID(
-                self,
+                self.raw_handle,
                 item_idx.try_into().map_err(|_err| {
                     io::Error::new(
                         ErrorKind::InvalidInput,
@@ -118,14 +118,14 @@ impl MenuHandle {
     }
 
     fn get_item_count(&self) -> io::Result<i32> {
-        let count = unsafe { GetMenuItemCount(self) };
+        let count = unsafe { GetMenuItemCount(self.raw_handle) };
         count.if_eq_to_error(-1, io::Error::last_os_error)?;
         Ok(count)
     }
 
     fn destroy(&self) -> io::Result<()> {
         unsafe {
-            DestroyMenu(self).if_null_get_last_error()?;
+            DestroyMenu(self.raw_handle).if_null_get_last_error()?;
         }
         Ok(())
     }
@@ -175,12 +175,12 @@ impl PopupMenu {
     pub fn show_popup_menu(&self, window: &WindowHandle, coords: Point) -> io::Result<()> {
         unsafe {
             TrackPopupMenu(
-                &self.handle,
+                self.handle.raw_handle,
                 Default::default(),
                 coords.x,
                 coords.y,
                 0,
-                window,
+                window.raw_handle,
                 None,
             )
             .if_null_get_last_error()?;

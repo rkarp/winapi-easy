@@ -203,7 +203,7 @@ impl RawMessage {
     fn post_to_queue(&self, window: Option<&WindowHandle>) -> io::Result<()> {
         unsafe {
             PostMessageW(
-                window.map(Into::into),
+                window.map(|x| &x.raw_handle),
                 self.message,
                 self.w_param,
                 self.l_param,
