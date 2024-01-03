@@ -132,7 +132,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::com::ComInterfaceExt;
 use crate::internal::{
     custom_err_with_code,
-    sync_closure_to_callback2,
+    with_sync_closure_to_callback2,
     ReturnValue,
 };
 use crate::process::{
@@ -209,13 +209,8 @@ impl WindowHandle {
             result.push(window_handle);
             true.into()
         };
-        let ret_val = unsafe {
-            EnumWindows(
-                Some(sync_closure_to_callback2(&mut callback)),
-                LPARAM::default(),
-            )
-        };
-        ret_val.if_null_get_last_error()?;
+        let acceptor = |raw_callback| unsafe { EnumWindows(Some(raw_callback), LPARAM::default()) };
+        with_sync_closure_to_callback2(&mut callback, acceptor).if_null_get_last_error()?;
         Ok(result)
     }
 

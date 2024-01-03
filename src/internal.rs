@@ -311,6 +311,7 @@ where
     (LPARAM(closure as *mut F as isize), trampoline::<F, IN, OUT>)
 }
 
+#[allow(dead_code)]
 pub(crate) fn sync_closure_to_callback2<F, IN1, IN2, OUT>(
     closure: &mut F,
 ) -> unsafe extern "system" fn(IN1, IN2) -> OUT
@@ -334,6 +335,39 @@ where
     }
     RAW_CLOSURE.with(|cell| cell.set(closure as *mut F as *mut c_void));
     trampoline::<F, IN1, IN2, OUT>
+}
+
+/// Converts a 2 parameter closure to a Windows callback function and feeds it to the acceptor.
+///
+/// # Safety
+///
+/// This function ensures that the unsafe callback does not outlive the closure. Still, the acceptor must not
+/// use the unsafe callback in a way that would cause Windows to call it after this function has returned.
+pub(crate) fn with_sync_closure_to_callback2<F, A, O, IN1, IN2, OUT>(
+    closure: &mut F,
+    acceptor: A,
+) -> O
+where
+    F: FnMut(IN1, IN2) -> OUT,
+    A: FnOnce(unsafe extern "system" fn(IN1, IN2) -> OUT) -> O,
+{
+    thread_local! {
+        static RAW_CLOSURE: Cell<*mut c_void> = Cell::new(ptr::null_mut());
+    }
+
+    unsafe extern "system" fn trampoline<F, IN1, IN2, OUT>(input1: IN1, input2: IN2) -> OUT
+    where
+        F: FnMut(IN1, IN2) -> OUT,
+    {
+        let call = move || {
+            let unwrapped_closure: *mut c_void = RAW_CLOSURE.with(|raw_closure| raw_closure.get());
+            let closure: &mut F = &mut *(unwrapped_closure as *mut F);
+            closure(input1, input2)
+        };
+        catch_unwind_and_abort(call)
+    }
+    RAW_CLOSURE.with(|cell| cell.set(closure as *mut F as *mut c_void));
+    acceptor(trampoline::<F, IN1, IN2, OUT>)
 }
 
 pub(crate) fn catch_unwind_and_abort<F: FnOnce() -> R, R>(f: F) -> R {

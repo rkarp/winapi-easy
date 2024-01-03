@@ -55,7 +55,7 @@ use windows::Win32::UI::WindowsAndMessaging::EnumThreadWindows;
 
 use crate::internal::{
     custom_err_with_code,
-    sync_closure_to_callback2,
+    with_sync_closure_to_callback2,
     AutoClose,
     ReturnValue,
 };
@@ -313,13 +313,10 @@ impl ThreadId {
             result.push(window_handle);
             true.into()
         };
-        let _ = unsafe {
-            EnumThreadWindows(
-                self.0,
-                Some(sync_closure_to_callback2(&mut callback)),
-                LPARAM::default(),
-            )
+        let acceptor = |raw_callback| {
+            let _ = unsafe { EnumThreadWindows(self.0, Some(raw_callback), LPARAM::default()) };
         };
+        with_sync_closure_to_callback2(&mut callback, acceptor);
         result
     }
 }
