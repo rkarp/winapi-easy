@@ -9,7 +9,10 @@ use std::{
     mem,
 };
 
-use num_enum::IntoPrimitive;
+use num_enum::{
+    FromPrimitive,
+    IntoPrimitive,
+};
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     RegisterHotKey,
@@ -139,10 +142,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     GetMessageW,
     MSG,
+    WHEEL_DELTA,
     WM_HOTKEY,
 };
 
 use crate::internal::ReturnValue;
+
+pub mod hooking;
 
 #[derive(Copy, Clone, Debug)]
 struct HotkeyDef<ID> {
@@ -155,7 +161,7 @@ struct HotkeyDef<ID> {
 /// # Examples
 ///
 /// ```no_run
-/// use winapi_easy::keyboard::{GlobalHotkeySet, Modifier, Key};
+/// use winapi_easy::input::{GlobalHotkeySet, Modifier, Key};
 ///
 /// #[derive(Copy, Clone)]
 /// enum MyAction {
@@ -298,7 +304,7 @@ impl<ID> Drop for GlobalHotkeySet<ID> {
 /// # Related docs
 ///
 /// [Microsoft docs for virtual key codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes)
-#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(FromPrimitive, IntoPrimitive, Copy, Clone, Eq, PartialEq, Hash, Debug)]
 #[repr(u16)]
 pub enum Key {
     Backspace = VK_BACK.0,
@@ -445,6 +451,9 @@ pub enum Key {
     /// * For the US standard keyboard, the '\|' key besides the 'z' key
     /// * For the German keyboard, the '<>' key
     Oem102 = VK_OEM_102.0,
+    /// Other virtual key code.
+    #[num_enum(catch_all)]
+    Other(u16),
 }
 
 impl From<Key> for u32 {
@@ -585,4 +594,38 @@ pub fn send_key_combination(keys: &[Key]) -> io::Result<()> {
             .if_not_eq_to_error(expected_sent_size, io::Error::last_os_error)?;
     }
     Ok(())
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    /// X-Button 1 or 2.
+    ///
+    /// Other X-Buttons are not handled by the Windows API.
+    XButton(u16),
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum MouseScrollEvent {
+    Up,
+    Down,
+    /// Values other than positive or negative [`WHEEL_DELTA`] are used for mouses
+    /// with continuous scroll wheels.
+    Continuous(i16),
+}
+
+impl MouseScrollEvent {
+    pub(crate) fn from_raw_movement(raw_movement: u16) -> Self {
+        let raw_movement = raw_movement as i16;
+        const WHEEL_DELTA_INT: i16 = WHEEL_DELTA as _;
+        if raw_movement == WHEEL_DELTA_INT {
+            MouseScrollEvent::Up
+        } else if raw_movement == -WHEEL_DELTA_INT {
+            MouseScrollEvent::Down
+        } else {
+            MouseScrollEvent::Continuous(raw_movement)
+        }
+    }
 }

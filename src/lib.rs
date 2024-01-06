@@ -11,7 +11,7 @@ pub mod audio;
 pub mod clipboard;
 pub mod com;
 pub mod fs;
-pub mod keyboard;
+pub mod input;
 pub mod process;
 pub mod shell;
 pub mod ui;

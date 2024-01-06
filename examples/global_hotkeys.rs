@@ -1,6 +1,6 @@
 use std::io;
 
-use winapi_easy::keyboard::{
+use winapi_easy::input::{
     send_key_combination,
     GlobalHotkeySet,
     Key,

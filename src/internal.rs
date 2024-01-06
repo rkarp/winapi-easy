@@ -391,3 +391,37 @@ where
         format!("{}. Code: {}", err_text, result_code),
     )
 }
+
+pub(crate) mod windows_missing {
+    use windows::Win32::Foundation::LPARAM;
+    use windows::Win32::UI::Shell::{
+        NINF_KEY,
+        NIN_SELECT,
+    };
+
+    pub const NIN_KEYSELECT: u32 = NIN_SELECT | NINF_KEY;
+
+    #[allow(non_snake_case)]
+    #[inline]
+    pub fn LOWORD(l: u32) -> u16 {
+        (l << u16::BITS >> u16::BITS).try_into().unwrap()
+    }
+
+    #[allow(non_snake_case)]
+    #[inline]
+    pub fn HIWORD(l: u32) -> u16 {
+        (l >> u16::BITS).try_into().unwrap()
+    }
+
+    #[allow(non_snake_case)]
+    #[inline]
+    pub fn GET_X_LPARAM(lp: LPARAM) -> i32 {
+        LOWORD(lp.0 as u32) as i16 as i32
+    }
+
+    #[allow(non_snake_case)]
+    #[inline]
+    pub fn GET_Y_LPARAM(lp: LPARAM) -> i32 {
+        HIWORD(lp.0 as u32) as i16 as i32
+    }
+}

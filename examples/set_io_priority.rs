@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 use std::io;
 
-use winapi_easy::keyboard::{
+use winapi_easy::input::{
     GlobalHotkeySet,
     Key,
     Modifier,

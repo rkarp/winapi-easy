@@ -32,6 +32,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_SIZE,
 };
 
+use crate::internal::windows_missing::*;
 use crate::internal::{
     catch_unwind_and_abort,
     ReturnValue,
@@ -41,7 +42,6 @@ use crate::ui::{
     Point,
     WindowHandle,
 };
-use windows_missing::*;
 
 /// Indicates what should be done after the [`WindowMessageListener`] is done processing the message.
 #[derive(Copy, Clone, Default, Debug)]
@@ -334,39 +334,5 @@ fn get_param_xy_coords(param: u32) -> Point {
     Point {
         x: GET_X_LPARAM(param),
         y: GET_Y_LPARAM(param),
-    }
-}
-
-mod windows_missing {
-    use windows::Win32::Foundation::LPARAM;
-    use windows::Win32::UI::Shell::{
-        NINF_KEY,
-        NIN_SELECT,
-    };
-
-    pub const NIN_KEYSELECT: u32 = NIN_SELECT | NINF_KEY;
-
-    #[allow(non_snake_case)]
-    #[inline]
-    pub fn LOWORD(l: u32) -> u16 {
-        (l << 16 >> 16).try_into().unwrap()
-    }
-
-    #[allow(non_snake_case)]
-    #[inline]
-    pub fn HIWORD(l: u32) -> u16 {
-        (l >> 16).try_into().unwrap()
-    }
-
-    #[allow(non_snake_case)]
-    #[inline]
-    pub fn GET_X_LPARAM(lp: LPARAM) -> i32 {
-        LOWORD(lp.0 as u32) as i16 as i32
-    }
-
-    #[allow(non_snake_case)]
-    #[inline]
-    pub fn GET_Y_LPARAM(lp: LPARAM) -> i32 {
-        HIWORD(lp.0 as u32) as i16 as i32
     }
 }
