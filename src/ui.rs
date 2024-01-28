@@ -144,7 +144,7 @@ use crate::string::{
     FromWideString,
     ToWideString,
 };
-use crate::ui::message::{
+use crate::ui::messaging::{
     generic_window_proc,
     WindowMessageListener,
 };
@@ -155,7 +155,7 @@ use crate::ui::resource::{
 };
 
 pub mod menu;
-pub mod message;
+pub mod messaging;
 pub mod resource;
 
 /// A (non-null) handle to a window.
@@ -937,7 +937,7 @@ fn get_notification_call_data(
         NotificationIconId::Simple(simple_id) => icon_data.uID = simple_id.into(),
     };
     if set_callback_message {
-        icon_data.uCallbackMessage = message::RawMessage::ID_NOTIFICATION_ICON_MSG;
+        icon_data.uCallbackMessage = messaging::RawMessage::ID_NOTIFICATION_ICON_MSG;
         icon_data.uFlags |= NIF_MESSAGE;
     }
     if let Some(icon) = maybe_icon {

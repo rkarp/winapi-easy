@@ -1,11 +1,9 @@
 //! Window and thread message handling.
 
-use std::cell::Cell;
 use std::convert::TryInto;
 use std::io;
 
 use windows::Win32::Foundation::{
-    BOOL,
     HWND,
     LPARAM,
     LRESULT,
@@ -14,21 +12,15 @@ use windows::Win32::Foundation::{
 use windows::Win32::UI::Shell::NIN_SELECT;
 use windows::Win32::UI::WindowsAndMessaging::{
     DefWindowProcW,
-    DispatchMessageW,
     GetMessagePos,
-    GetMessageW,
     PostMessageW,
-    PostQuitMessage,
-    TranslateMessage,
     HMENU,
-    MSG,
     SIZE_MINIMIZED,
     WM_APP,
     WM_CLOSE,
     WM_CONTEXTMENU,
     WM_DESTROY,
     WM_MENUCOMMAND,
-    WM_QUIT,
     WM_SIZE,
 };
 
@@ -220,78 +212,6 @@ impl RawMessage {
             l_param: LPARAM(0),
         };
         wakeup_message.post_to_queue(None)
-    }
-}
-
-/// Windows thread message loop functions.
-///
-/// This type is not meant to be instantiated.
-pub enum ThreadMessageLoop {}
-
-impl ThreadMessageLoop {
-    thread_local! {
-        static THREAD_LOOP_RUNNING: Cell<bool> = Cell::new(false);
-    }
-
-    /// Runs the Windows thread message loop.
-    ///
-    /// The user defined callback that will be called after every handled message.
-    /// This allows using local variables and `Result` propagation, in contrast to the [`WindowMessageListener`] methods.
-    ///
-    /// Only a single message loop may be running per thread.
-    ///
-    /// # Panics
-    ///
-    /// Will panic if the message loop is already running.
-    pub fn run_thread_message_loop<F>(mut loop_callback: F) -> io::Result<()>
-    where
-        F: FnMut() -> io::Result<()>,
-    {
-        Self::THREAD_LOOP_RUNNING.with(|running| {
-            if running.get() {
-                panic!("Cannot run two thread message loops on the same thread");
-            }
-            running.set(true);
-        });
-        let mut msg: MSG = Default::default();
-        loop {
-            unsafe {
-                GetMessageW(&mut msg, None, 0, 0)
-                    .if_eq_to_error(BOOL(-1), io::Error::last_os_error)?;
-            }
-            if msg.message == WM_QUIT {
-                Self::THREAD_LOOP_RUNNING.with(|running| running.set(false));
-                break;
-            }
-            unsafe {
-                TranslateMessage(&msg);
-                DispatchMessageW(&msg);
-            }
-            loop_callback()?;
-        }
-        Ok(())
-    }
-
-    /// Posts a 'quit' message in the thread message loop.
-    ///
-    /// This will cause [`Self::run_thread_message_loop`] to return. It is meant to be called
-    /// from [`WindowMessageListener`] methods.
-    ///
-    /// # Panics
-    ///
-    /// Will panic if the message loop is not running.
-    pub fn post_quit_message() {
-        if !ThreadMessageLoop::is_loop_running() {
-            panic!("Cannot post quit message because thread message loop is not running");
-        }
-        unsafe {
-            PostQuitMessage(0);
-        }
-    }
-
-    #[inline(always)]
-    fn is_loop_running() -> bool {
-        Self::THREAD_LOOP_RUNNING.with(|running| running.get())
     }
 }
 

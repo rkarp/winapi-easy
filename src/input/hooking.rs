@@ -51,7 +51,7 @@ use crate::internal::{
     catch_unwind_and_abort,
     ReturnValue,
 };
-use crate::ui::message::ThreadMessageLoop;
+use crate::messaging::ThreadMessageLoop;
 
 /// A global mouse or keyboard hook.
 ///

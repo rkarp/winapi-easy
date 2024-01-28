@@ -12,6 +12,7 @@ pub mod clipboard;
 pub mod com;
 pub mod fs;
 pub mod input;
+pub mod messaging;
 pub mod process;
 pub mod shell;
 pub mod ui;

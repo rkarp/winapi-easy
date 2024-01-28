@@ -1,14 +1,12 @@
 use std::io;
 
 use std::cell::Cell;
+use winapi_easy::messaging::ThreadMessageLoop;
 use winapi_easy::ui::menu::{
     MenuItem,
     PopupMenu,
 };
-use winapi_easy::ui::message::{
-    ThreadMessageLoop,
-    WindowMessageListener,
-};
+use winapi_easy::ui::messaging::WindowMessageListener;
 use winapi_easy::ui::resource::{
     BuiltinColor,
     BuiltinCursor,
