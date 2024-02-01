@@ -35,6 +35,7 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::System::Console::{
     AllocConsole,
+    FreeConsole,
     GetConsoleWindow,
 };
 use windows::Win32::System::Shutdown::LockWorkStation;
@@ -1134,6 +1135,16 @@ impl ComInterfaceExt for ITaskbarList3 {
 pub fn allocate_console() -> io::Result<()> {
     unsafe {
         AllocConsole().if_null_get_last_error()?;
+    }
+    Ok(())
+}
+
+/// Detaches the current process from its console.
+///
+/// If no other processes use the console, it will be destroyed.
+pub fn detach_console() -> io::Result<()> {
+    unsafe {
+        FreeConsole().if_null_get_last_error()?;
     }
     Ok(())
 }
