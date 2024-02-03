@@ -156,6 +156,7 @@ use crate::ui::resource::{
 };
 
 pub mod menu;
+pub mod message_box;
 pub mod messaging;
 pub mod resource;
 

@@ -1,10 +1,18 @@
+use std::cell::Cell;
 use std::io;
 
-use std::cell::Cell;
+use num_enum::{
+    FromPrimitive,
+    IntoPrimitive,
+};
 use winapi_easy::messaging::ThreadMessageLoop;
 use winapi_easy::ui::menu::{
     MenuItem,
     PopupMenu,
+};
+use winapi_easy::ui::message_box::{
+    show_message_box,
+    MessageBoxOptions,
 };
 use winapi_easy::ui::messaging::WindowMessageListener;
 use winapi_easy::ui::resource::{
@@ -26,13 +34,18 @@ use winapi_easy::ui::{
 enum MyMessage {
     IconLeftClicked(Point),
     IconRightClicked(Point),
-    MenuItem(u32),
+    MenuItem(MenuID),
 }
 
-impl MyMessage {
-    const HIDE_WINDOW: u32 = 1;
-    const SHOW_WINDOW: u32 = 2;
-    const SHOW_BALLOON_NOTIFICATION: u32 = 3;
+#[derive(FromPrimitive, IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[repr(u32)]
+enum MenuID {
+    HideWindow,
+    ShowWindow,
+    ShowBalloonNotification,
+    ShowMessageBox,
+    #[num_enum(catch_all)]
+    Other(u32),
 }
 
 struct MyListener {
@@ -42,7 +55,7 @@ struct MyListener {
 impl WindowMessageListener for MyListener {
     fn handle_menu_command(&self, _window: &WindowHandle, selected_item_id: u32) {
         self.message
-            .replace(Some(MyMessage::MenuItem(selected_item_id)));
+            .replace(Some(MyMessage::MenuItem(selected_item_id.into())));
     }
 
     fn handle_window_destroy(&self, _: &WindowHandle) {
@@ -87,11 +100,24 @@ fn main() -> io::Result<()> {
     window_handle.set_caption_text("My Window")?;
     window_handle.set_show_state(WindowShowState::Show)?;
     let popup = PopupMenu::new()?;
-    popup.insert_menu_item(MenuItem::Text("Show window"), MyMessage::SHOW_WINDOW, None)?;
-    popup.insert_menu_item(MenuItem::Text("Hide window"), MyMessage::HIDE_WINDOW, None)?;
+    popup.insert_menu_item(
+        MenuItem::Text("Show window"),
+        MenuID::ShowWindow.into(),
+        None,
+    )?;
+    popup.insert_menu_item(
+        MenuItem::Text("Hide window"),
+        MenuID::HideWindow.into(),
+        None,
+    )?;
     popup.insert_menu_item(
         MenuItem::Text("Show balloon notification"),
-        MyMessage::SHOW_BALLOON_NOTIFICATION,
+        MenuID::ShowBalloonNotification.into(),
+        None,
+    )?;
+    popup.insert_menu_item(
+        MenuItem::Text("Show message box"),
+        MenuID::ShowMessageBox.into(),
         None,
     )?;
     let loop_callback = || {
@@ -106,19 +132,31 @@ fn main() -> io::Result<()> {
                     window_handle.set_as_foreground()?;
                     popup.show_popup_menu(window_handle, coords)?;
                 }
-                MyMessage::MenuItem(MyMessage::SHOW_WINDOW) => {
+                MyMessage::MenuItem(MenuID::ShowWindow) => {
                     window_handle.set_show_state(WindowShowState::Show)?;
                 }
-                MyMessage::MenuItem(MyMessage::HIDE_WINDOW) => {
+                MyMessage::MenuItem(MenuID::HideWindow) => {
                     window_handle.set_show_state(WindowShowState::Hide)?;
                 }
-                MyMessage::MenuItem(MyMessage::SHOW_BALLOON_NOTIFICATION) => {
+                MyMessage::MenuItem(MenuID::ShowBalloonNotification) => {
                     let notification = BalloonNotification {
                         title: "A notification",
                         body: "Lorem ipsum",
                         ..Default::default()
                     };
                     notification_icon.set_balloon_notification(Some(notification))?;
+                }
+                MyMessage::MenuItem(MenuID::ShowMessageBox) => {
+                    show_message_box(
+                        window_handle,
+                        MessageBoxOptions {
+                            message: Some("Message"),
+                            caption: Some("Caption"),
+                            buttons: Default::default(),
+                            icon: Some(Default::default()),
+                            ..Default::default()
+                        },
+                    )?;
                 }
                 MyMessage::MenuItem(_) => panic!(),
             }
