@@ -15,6 +15,8 @@ use num_enum::{
 };
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState,
+    GetKeyState,
     RegisterHotKey,
     SendInput,
     UnregisterHotKey,
@@ -456,9 +458,31 @@ pub enum Key {
     Other(u16),
 }
 
+impl Key {
+    pub fn is_pressed(self) -> io::Result<bool> {
+        let result = unsafe {
+            GetAsyncKeyState(self.into())
+                .if_null_to_error(|| io::ErrorKind::PermissionDenied.into())? as u16
+        };
+        Ok(result >> (u16::BITS - 1) == 1)
+    }
+
+    /// Returns true if the key has lock functionality (e.g. Caps Lock) and the lock is toggled.
+    pub fn is_lock_toggled(self) -> bool {
+        let result = unsafe { GetKeyState(self.into()) as u16 };
+        result & 1 == 1
+    }
+}
+
 impl From<Key> for u32 {
     fn from(value: Key) -> Self {
         Self::from(u16::from(value))
+    }
+}
+
+impl From<Key> for i32 {
+    fn from(value: Key) -> Self {
+        u16::from(value) as Self
     }
 }
 

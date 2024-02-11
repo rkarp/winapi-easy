@@ -102,6 +102,10 @@ impl ReturnValue for u16 {
     const NULL_VALUE: Self = 0;
 }
 
+impl ReturnValue for i16 {
+    const NULL_VALUE: Self = 0;
+}
+
 impl ReturnValue for u32 {
     const NULL_VALUE: Self = 0;
 }
