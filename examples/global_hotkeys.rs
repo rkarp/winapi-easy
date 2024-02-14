@@ -1,9 +1,9 @@
 use std::io;
 
 use winapi_easy::input::{
-    send_key_combination,
+    GenericKey,
     GlobalHotkeySet,
-    Key,
+    KeyboardKey,
     Modifier,
 };
 use winapi_easy::ui::{
@@ -28,14 +28,14 @@ fn main() -> io::Result<()> {
     let hotkey_def = GlobalHotkeySet::new()
         .add_hotkey(
             Action::MonitorOff,
-            Modifier::Ctrl + Modifier::Shift + Key::Oem1,
+            Modifier::Ctrl + Modifier::Shift + KeyboardKey::Oem1,
         )
         .add_hotkey(
             Action::MonitorOffPlusLock,
-            Modifier::Ctrl + Modifier::Alt + Key::Oem1,
+            Modifier::Ctrl + Modifier::Alt + KeyboardKey::Oem1,
         )
-        .add_hotkey(Action::VolumeUp, Modifier::Win + Key::PgUp)
-        .add_hotkey(Action::VolumeDown, Modifier::Win + Key::PgDown);
+        .add_hotkey(Action::VolumeUp, Modifier::Win + KeyboardKey::PgUp)
+        .add_hotkey(Action::VolumeDown, Modifier::Win + KeyboardKey::PgDown);
     for event in hotkey_def.listen_for_hotkeys()? {
         let monitor_off = || -> io::Result<()> {
             let foreground_window = WindowHandle::get_foreground_window().unwrap();
@@ -50,10 +50,12 @@ fn main() -> io::Result<()> {
                 monitor_off()?;
             }
             Action::VolumeUp => {
-                send_key_combination(&[Key::VolumeUp])?;
+                KeyboardKey::VolumeUp.press()?;
+                KeyboardKey::VolumeUp.release()?;
             }
             Action::VolumeDown => {
-                send_key_combination(&[Key::VolumeDown])?;
+                KeyboardKey::VolumeDown.press()?;
+                KeyboardKey::VolumeDown.release()?;
             }
         }
     }

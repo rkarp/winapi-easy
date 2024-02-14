@@ -18,8 +18,7 @@ of the Windows API.
 
 ## Features
 
-* Add global hotkeys
-* Send keystroke combinations
+* Keyboard and mouse control & monitoring (send events, hotkeys, hooking)
 * List threads
 * Set CPU priority for any process / thread
 * Set IO priority for any process

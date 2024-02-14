@@ -24,6 +24,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     INPUT,
     INPUT_0,
     INPUT_KEYBOARD,
+    INPUT_MOUSE,
     KEYBDINPUT,
     KEYEVENTF_KEYUP,
     MOD_ALT,
@@ -31,6 +32,16 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     MOD_NOREPEAT,
     MOD_SHIFT,
     MOD_WIN,
+    MOUSEEVENTF_LEFTDOWN,
+    MOUSEEVENTF_LEFTUP,
+    MOUSEEVENTF_MIDDLEDOWN,
+    MOUSEEVENTF_MIDDLEUP,
+    MOUSEEVENTF_RIGHTDOWN,
+    MOUSEEVENTF_RIGHTUP,
+    MOUSEEVENTF_WHEEL,
+    MOUSEEVENTF_XDOWN,
+    MOUSEEVENTF_XUP,
+    MOUSEINPUT,
     VIRTUAL_KEY,
     VK_0,
     VK_1,
@@ -78,12 +89,14 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_J,
     VK_K,
     VK_L,
+    VK_LBUTTON,
     VK_LCONTROL,
     VK_LEFT,
     VK_LMENU,
     VK_LSHIFT,
     VK_LWIN,
     VK_M,
+    VK_MBUTTON,
     VK_MULTIPLY,
     VK_N,
     VK_NEXT,
@@ -117,6 +130,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_PRIOR,
     VK_Q,
     VK_R,
+    VK_RBUTTON,
     VK_RCONTROL,
     VK_RETURN,
     VK_RIGHT,
@@ -138,6 +152,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_VOLUME_UP,
     VK_W,
     VK_X,
+    VK_XBUTTON1,
+    VK_XBUTTON2,
     VK_Y,
     VK_Z,
 };
@@ -146,9 +162,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     MSG,
     WHEEL_DELTA,
     WM_HOTKEY,
+    XBUTTON1,
+    XBUTTON2,
 };
 
 use crate::internal::ReturnValue;
+use private::*;
 
 pub mod hooking;
 
@@ -163,7 +182,7 @@ struct HotkeyDef<ID> {
 /// # Examples
 ///
 /// ```no_run
-/// use winapi_easy::input::{GlobalHotkeySet, Modifier, Key};
+/// use winapi_easy::input::{GlobalHotkeySet, Modifier, KeyboardKey};
 ///
 /// #[derive(Copy, Clone)]
 /// enum MyAction {
@@ -172,8 +191,8 @@ struct HotkeyDef<ID> {
 /// }
 ///
 /// let hotkeys = GlobalHotkeySet::new()
-///     .add_hotkey(MyAction::One, Modifier::Ctrl + Modifier::Alt + Key::A)
-///     .add_hotkey(MyAction::Two, Modifier::Shift + Modifier::Alt + Key::B);
+///     .add_hotkey(MyAction::One, Modifier::Ctrl + Modifier::Alt + KeyboardKey::A)
+///     .add_hotkey(MyAction::Two, Modifier::Shift + Modifier::Alt + KeyboardKey::B);
 ///
 /// for action in hotkeys.listen_for_hotkeys()? {
 ///     match action? {
@@ -301,14 +320,125 @@ impl<ID> Drop for GlobalHotkeySet<ID> {
     }
 }
 
-/// Non-modifier key usable for hotkeys.
+/// A [`KeyboardKey`] or a [`MouseButton`].
+pub trait GenericKey: GenericKeyInternal {
+    fn is_pressed(self) -> io::Result<bool> {
+        let result = unsafe {
+            GetAsyncKeyState(self.into())
+                .if_null_to_error(|| io::ErrorKind::PermissionDenied.into())? as u16
+        };
+        Ok(result >> (u16::BITS - 1) == 1)
+    }
+
+    /// Globally sends a 'press' event (without a corresponding 'release').
+    ///
+    /// This can conflict with existing user key presses. Use [`Self::is_pressed`] to avoid this.
+    fn press(self) -> io::Result<()> {
+        self.send_input(false)
+    }
+
+    /// Globally sends a 'release' event.
+    fn release(self) -> io::Result<()> {
+        self.send_input(true)
+    }
+
+    /// Globally sends a key (or mouse button) combination as if the user had performed it.
+    ///
+    /// This will cause a 'press' event for each key in the list (in the given order),
+    /// followed by a sequence of 'release' events (in the inverse order).
+    fn send_combination(keys: &[Self]) -> io::Result<()> {
+        let raw_input_pairs: Vec<_> = keys
+            .iter()
+            .copied()
+            .map(|key: Self| {
+                let raw_input = key.get_press_raw_input(false);
+                let raw_input_release = key.get_press_raw_input(true);
+                (raw_input, raw_input_release)
+            })
+            .collect();
+        let raw_inputs: Vec<_> = raw_input_pairs
+            .iter()
+            .map(|x| x.0)
+            .chain(raw_input_pairs.iter().rev().map(|x| x.1))
+            .collect();
+        send_raw_inputs(raw_inputs.as_slice())
+    }
+}
+
+// No generic impl to generate better docs
+impl GenericKey for KeyboardKey {}
+impl GenericKey for MouseButton {}
+
+mod private {
+    use super::*;
+
+    pub trait GenericKeyInternal: Copy + Into<i32>
+    where
+        // Declared like this due to IntelliJ bug
+        Self: Into<u16>,
+    {
+        fn send_input(self, is_release: bool) -> io::Result<()> {
+            let raw_input = self.get_press_raw_input(is_release);
+            send_raw_inputs(&[raw_input])
+        }
+        fn get_press_raw_input(self, is_release: bool) -> INPUT;
+    }
+
+    impl GenericKeyInternal for KeyboardKey {
+        fn get_press_raw_input(self, is_release: bool) -> INPUT {
+            let raw_key: u16 = self.into();
+            let raw_keybdinput = KEYBDINPUT {
+                wVk: VIRTUAL_KEY(raw_key),
+                dwFlags: if is_release {
+                    KEYEVENTF_KEYUP
+                } else {
+                    Default::default()
+                },
+                ..Default::default()
+            };
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 { ki: raw_keybdinput },
+            }
+        }
+    }
+
+    impl GenericKeyInternal for MouseButton {
+        fn get_press_raw_input(self, is_release: bool) -> INPUT {
+            let (flags, mouse_data) = match (self, is_release) {
+                (MouseButton::Left, false) => (MOUSEEVENTF_LEFTDOWN, 0),
+                (MouseButton::Left, true) => (MOUSEEVENTF_LEFTUP, 0),
+                (MouseButton::Right, false) => (MOUSEEVENTF_RIGHTDOWN, 0),
+                (MouseButton::Right, true) => (MOUSEEVENTF_RIGHTUP, 0),
+                (MouseButton::Middle, false) => (MOUSEEVENTF_MIDDLEDOWN, 0),
+                (MouseButton::Middle, true) => (MOUSEEVENTF_MIDDLEUP, 0),
+                (MouseButton::X1, false) => (MOUSEEVENTF_XDOWN, XBUTTON1),
+                (MouseButton::X1, true) => (MOUSEEVENTF_XUP, XBUTTON1),
+                (MouseButton::X2, false) => (MOUSEEVENTF_XDOWN, XBUTTON2),
+                (MouseButton::X2, true) => (MOUSEEVENTF_XUP, XBUTTON2),
+            };
+            INPUT {
+                r#type: INPUT_MOUSE,
+                Anonymous: INPUT_0 {
+                    mi: MOUSEINPUT {
+                        mouseData: mouse_data.into(),
+                        dwFlags: flags,
+                        ..Default::default()
+                    },
+                },
+            }
+        }
+    }
+}
+
+/// Keyboard key with a virtual key code, usable for hotkeys.
 ///
 /// # Related docs
 ///
 /// [Microsoft docs for virtual key codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes)
 #[derive(FromPrimitive, IntoPrimitive, Copy, Clone, Eq, PartialEq, Hash, Debug)]
 #[repr(u16)]
-pub enum Key {
+pub enum KeyboardKey {
     Backspace = VK_BACK.0,
     Tab = VK_TAB.0,
     Return = VK_RETURN.0,
@@ -458,15 +588,7 @@ pub enum Key {
     Other(u16),
 }
 
-impl Key {
-    pub fn is_pressed(self) -> io::Result<bool> {
-        let result = unsafe {
-            GetAsyncKeyState(self.into())
-                .if_null_to_error(|| io::ErrorKind::PermissionDenied.into())? as u16
-        };
-        Ok(result >> (u16::BITS - 1) == 1)
-    }
-
+impl KeyboardKey {
     /// Returns true if the key has lock functionality (e.g. Caps Lock) and the lock is toggled.
     pub fn is_lock_toggled(self) -> bool {
         let result = unsafe { GetKeyState(self.into()) as u16 };
@@ -474,14 +596,14 @@ impl Key {
     }
 }
 
-impl From<Key> for u32 {
-    fn from(value: Key) -> Self {
+impl From<KeyboardKey> for u32 {
+    fn from(value: KeyboardKey) -> Self {
         Self::from(u16::from(value))
     }
 }
 
-impl From<Key> for i32 {
-    fn from(value: Key) -> Self {
+impl From<KeyboardKey> for i32 {
+    fn from(value: KeyboardKey) -> Self {
         u16::from(value) as Self
     }
 }
@@ -504,11 +626,11 @@ pub struct ModifierCombination(u32);
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct KeyCombination {
     modifiers: ModifierCombination,
-    key: Key,
+    key: KeyboardKey,
 }
 
 impl KeyCombination {
-    fn new_from(modifiers: ModifierCombination, key: Key) -> Self {
+    fn new_from(modifiers: ModifierCombination, key: KeyboardKey) -> Self {
         KeyCombination {
             /// Changes the hotkey behavior so that the keyboard auto-repeat does not yield multiple hotkey notifications.
             modifiers: ModifierCombination(modifiers.0 | MOD_NOREPEAT.0),
@@ -523,8 +645,8 @@ impl From<Modifier> for ModifierCombination {
     }
 }
 
-impl From<Key> for KeyCombination {
-    fn from(key: Key) -> Self {
+impl From<KeyboardKey> for KeyCombination {
+    fn from(key: KeyboardKey) -> Self {
         KeyCombination::new_from(ModifierCombination(0), key)
     }
 }
@@ -552,61 +674,23 @@ where
     }
 }
 
-impl Add<Key> for ModifierCombination {
+impl Add<KeyboardKey> for ModifierCombination {
     type Output = KeyCombination;
 
-    fn add(self, rhs: Key) -> Self::Output {
+    fn add(self, rhs: KeyboardKey) -> Self::Output {
         KeyCombination::new_from(self, rhs)
     }
 }
 
-impl Add<Key> for Modifier {
+impl Add<KeyboardKey> for Modifier {
     type Output = KeyCombination;
 
-    fn add(self, rhs: Key) -> Self::Output {
+    fn add(self, rhs: KeyboardKey) -> Self::Output {
         KeyCombination::new_from(self.into(), rhs)
     }
 }
 
-/// Globally sends a key combination as if the user had performed it.
-///
-/// This will cause a 'press' event for each key in the list (in the given order),
-/// followed by a sequence of 'release' events (in the inverse order of the list).
-pub fn send_key_combination(keys: &[Key]) -> io::Result<()> {
-    let raw_input_pairs: Vec<_> = keys
-        .iter()
-        .copied()
-        .map(|key: Key| {
-            let raw_key = u16::from(key);
-            let raw_keybdinput = KEYBDINPUT {
-                wVk: VIRTUAL_KEY(raw_key),
-                wScan: 0,
-                dwFlags: Default::default(),
-                time: 0,
-                dwExtraInfo: 0,
-            };
-            let raw_keybdinput_release = KEYBDINPUT {
-                dwFlags: raw_keybdinput.dwFlags | KEYEVENTF_KEYUP,
-                ..raw_keybdinput
-            };
-            let raw_input = INPUT {
-                r#type: INPUT_KEYBOARD,
-                Anonymous: INPUT_0 { ki: raw_keybdinput },
-            };
-            let raw_input_release = INPUT {
-                Anonymous: INPUT_0 {
-                    ki: raw_keybdinput_release,
-                },
-                ..raw_input
-            };
-            (raw_input, raw_input_release)
-        })
-        .collect();
-    let raw_inputs: Vec<_> = raw_input_pairs
-        .iter()
-        .map(|x| x.0)
-        .chain(raw_input_pairs.iter().rev().map(|x| x.1))
-        .collect();
+fn send_raw_inputs(raw_inputs: &[INPUT]) -> io::Result<()> {
     let raw_input_size = mem::size_of::<INPUT>()
         .try_into()
         .expect("Struct size conversion failed");
@@ -614,33 +698,82 @@ pub fn send_key_combination(keys: &[Key]) -> io::Result<()> {
     let expected_sent_size =
         u32::try_from(raw_inputs.len()).expect("Inputs length conversion failed");
     unsafe {
-        SendInput(raw_inputs.as_slice(), raw_input_size)
-            .if_not_eq_to_error(expected_sent_size, io::Error::last_os_error)?;
+        SendInput(raw_inputs, raw_input_size)
+            .if_null_get_last_error()?
+            .if_not_eq_to_error(expected_sent_size, || {
+                io::Error::from(io::ErrorKind::Interrupted)
+            })?;
     }
     Ok(())
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+/// Mouse button.
+///
+/// Note that X-Buttons above #2 are only handled by the mouse driver.
+#[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[repr(u16)]
 pub enum MouseButton {
-    Left,
-    Right,
-    Middle,
-    /// X-Button 1 or 2.
-    ///
-    /// Other X-Buttons are not handled by the Windows API.
-    XButton(u16),
+    Left = VK_LBUTTON.0,
+    Right = VK_RBUTTON.0,
+    Middle = VK_MBUTTON.0,
+    X1 = VK_XBUTTON1.0,
+    X2 = VK_XBUTTON2.0,
 }
 
+impl From<MouseButton> for i32 {
+    fn from(value: MouseButton) -> Self {
+        u16::from(value) as Self
+    }
+}
+
+/// Mouse scroll wheel 'up' or 'down' event, possibly continuous.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum MouseScrollEvent {
+    /// Single up-scroll event.
+    ///
+    /// Equivalent to [`Self::Continuous`] with a value of [`WHEEL_DELTA`].
     Up,
+    /// Single down-scroll event.
+    ///
+    /// Equivalent to [`Self::Continuous`] with a value of -[`WHEEL_DELTA`].
     Down,
+    /// Continuous 'up' (positive value) or 'down' (negative value) scroll event.
+    ///
     /// Values other than positive or negative [`WHEEL_DELTA`] are used for mouses
     /// with continuous scroll wheels.
     Continuous(i16),
 }
 
 impl MouseScrollEvent {
+    const WHEEL_DELTA_INT: i16 = WHEEL_DELTA as _;
+
+    /// Globally sends a single scroll event.
+    pub fn send(self) -> io::Result<()> {
+        self.send_amount(1)
+    }
+
+    /// Globally sends a certain amount of scroll events.
+    pub fn send_amount(self, amount: u8) -> io::Result<()> {
+        let single_delta = match self {
+            MouseScrollEvent::Up => Self::WHEEL_DELTA_INT,
+            MouseScrollEvent::Down => -Self::WHEEL_DELTA_INT,
+            MouseScrollEvent::Continuous(delta) => delta,
+        };
+        // Should never overflow due to data types
+        let mouse_data = i32::from(single_delta) * i32::from(amount);
+        let raw_input = INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    mouseData: mouse_data,
+                    dwFlags: MOUSEEVENTF_WHEEL,
+                    ..Default::default()
+                },
+            },
+        };
+        send_raw_inputs(&[raw_input])
+    }
+
     pub(crate) fn from_raw_movement(raw_movement: u16) -> Self {
         let raw_movement = raw_movement as i16;
         const WHEEL_DELTA_INT: i16 = WHEEL_DELTA as _;

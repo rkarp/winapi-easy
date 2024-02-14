@@ -42,7 +42,7 @@ use std::{
 };
 
 use crate::input::{
-    Key,
+    KeyboardKey,
     MouseButton,
     MouseScrollEvent,
 };
@@ -174,15 +174,13 @@ impl From<RawLowLevelMessage<LowLevelMouseHook>> for LowLevelMouseMessage {
             (WM_LBUTTONDOWN, _) => LowLevelMouseAction::ButtonDown(MouseButton::Left),
             (WM_RBUTTONDOWN, _) => LowLevelMouseAction::ButtonDown(MouseButton::Right),
             (WM_MBUTTONDOWN, _) => LowLevelMouseAction::ButtonDown(MouseButton::Middle),
-            (WM_XBUTTONDOWN, button_number) => {
-                LowLevelMouseAction::ButtonDown(MouseButton::XButton(button_number))
-            }
+            (WM_XBUTTONDOWN, 1) => LowLevelMouseAction::ButtonDown(MouseButton::X1),
+            (WM_XBUTTONDOWN, 2) => LowLevelMouseAction::ButtonDown(MouseButton::X2),
             (WM_LBUTTONUP, _) => LowLevelMouseAction::ButtonUp(MouseButton::Left),
             (WM_RBUTTONUP, _) => LowLevelMouseAction::ButtonUp(MouseButton::Right),
             (WM_MBUTTONUP, _) => LowLevelMouseAction::ButtonUp(MouseButton::Middle),
-            (WM_XBUTTONUP, button_number) => {
-                LowLevelMouseAction::ButtonUp(MouseButton::XButton(button_number))
-            }
+            (WM_XBUTTONUP, 1) => LowLevelMouseAction::ButtonUp(MouseButton::X1),
+            (WM_XBUTTONUP, 2) => LowLevelMouseAction::ButtonUp(MouseButton::X2),
             (WM_MOUSEWHEEL, raw_movement) => {
                 LowLevelMouseAction::WheelScroll(MouseScrollEvent::from_raw_movement(raw_movement))
             }
@@ -200,14 +198,14 @@ impl From<RawLowLevelMessage<LowLevelMouseHook>> for LowLevelMouseMessage {
 #[derive(Copy, Clone, Debug)]
 pub struct LowLevelKeyboardMessage {
     pub action: LowLevelKeyboardAction,
-    pub key: Key,
+    pub key: KeyboardKey,
     pub scan_code: u32,
     pub timestamp_ms: u32,
 }
 
 impl From<RawLowLevelMessage<LowLevelKeyboardHook>> for LowLevelKeyboardMessage {
     fn from(value: RawLowLevelMessage<LowLevelKeyboardHook>) -> Self {
-        let key = Key::from(value.message_data.vkCode as u16);
+        let key = KeyboardKey::from(value.message_data.vkCode as u16);
         let action = LowLevelKeyboardAction::from(value.w_param);
         LowLevelKeyboardMessage {
             action,

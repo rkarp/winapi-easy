@@ -3,7 +3,7 @@ use std::io;
 
 use winapi_easy::input::{
     GlobalHotkeySet,
-    Key,
+    KeyboardKey,
     Modifier,
 };
 use winapi_easy::process::{
@@ -21,11 +21,11 @@ fn main() -> io::Result<()> {
     let hotkey_events = GlobalHotkeySet::new()
         .add_hotkey(
             Action::VeryLowPrio,
-            Modifier::Ctrl + Modifier::Alt + Key::PgDown,
+            Modifier::Ctrl + Modifier::Alt + KeyboardKey::PgDown,
         )
         .add_hotkey(
             Action::NormalPrio,
-            Modifier::Ctrl + Modifier::Alt + Key::PgUp,
+            Modifier::Ctrl + Modifier::Alt + KeyboardKey::PgUp,
         )
         .listen_for_hotkeys()?;
     for event in hotkey_events {
