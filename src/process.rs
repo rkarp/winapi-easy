@@ -163,7 +163,7 @@ impl Process {
         ProcessId(id)
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     fn from_non_null(handle: HANDLE) -> Self {
         Self {
             handle: handle.into(),
@@ -268,7 +268,7 @@ impl Thread {
         ThreadId(id)
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     fn from_non_null(handle: HANDLE) -> Self {
         Self {
             handle: handle.into(),
@@ -448,7 +448,7 @@ impl From<ProcessInformationClass> for PROCESSINFOCLASS {
 
 /// A handle to a module (EXE or DLL).
 pub struct ModuleHandle {
-    #[allow(unused)]
+    #[allow(dead_code)]
     raw_handle: HMODULE,
 }
 

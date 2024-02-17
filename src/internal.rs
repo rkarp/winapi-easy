@@ -396,6 +396,7 @@ where
     )
 }
 
+#[allow(dead_code)]
 pub(crate) mod windows_missing {
     use windows::Win32::Foundation::LPARAM;
     use windows::Win32::UI::Shell::{

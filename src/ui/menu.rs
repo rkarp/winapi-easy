@@ -51,7 +51,7 @@ impl MenuHandle {
         Ok(result)
     }
 
-    #[allow(unused)]
+    #[allow(dead_code)]
     pub(crate) fn from_non_null(raw_handle: HMENU) -> Self {
         Self {
             raw_handle,
