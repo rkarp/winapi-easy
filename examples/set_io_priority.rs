@@ -1,11 +1,11 @@
 use std::convert::TryInto;
 use std::io;
 
-use winapi_easy::input::{
+use winapi_easy::input::hotkeys::{
     GlobalHotkeySet,
-    KeyboardKey,
     Modifier,
 };
+use winapi_easy::input::KeyboardKey;
 use winapi_easy::process::{
     IoPriority,
     Process,
