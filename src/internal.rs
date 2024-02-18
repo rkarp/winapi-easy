@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::fmt::Display;

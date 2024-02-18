@@ -1,6 +1,6 @@
 use std::io;
 
-use winapi_easy::audio::AudioOutputDevice;
+use winapi_easy::media::AudioOutputDevice;
 
 fn main() -> io::Result<()> {
     let devices = AudioOutputDevice::get_active_devices()?;

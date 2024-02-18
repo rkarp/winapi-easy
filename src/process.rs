@@ -14,11 +14,8 @@ use num_enum::{
     TryFromPrimitive,
 };
 use windows::Win32::Foundation::{
-    BOOL,
     HANDLE,
     HMODULE,
-    HWND,
-    LPARAM,
 };
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot,
@@ -51,15 +48,12 @@ use windows::Win32::System::Threading::{
     THREAD_MODE_BACKGROUND_END,
     THREAD_PRIORITY,
 };
-use windows::Win32::UI::WindowsAndMessaging::EnumThreadWindows;
 
 use crate::internal::{
     custom_err_with_code,
-    with_sync_closure_to_callback2,
     AutoClose,
     ReturnValue,
 };
-use crate::ui::WindowHandle;
 
 /// A Windows process.
 pub struct Process {
@@ -303,22 +297,6 @@ impl ThreadId {
     pub fn current() -> Self {
         Self(unsafe { GetCurrentThreadId() })
     }
-
-    /// Returns all top-level (non-child) windows created by the thread.
-    pub fn get_nonchild_windows(self) -> Vec<WindowHandle> {
-        let mut result: Vec<WindowHandle> = Vec::new();
-        let mut callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
-            let window_handle =
-                WindowHandle::from_maybe_null(handle).expect("Window handle should not be null");
-            result.push(window_handle);
-            true.into()
-        };
-        let acceptor = |raw_callback| {
-            let _ = unsafe { EnumThreadWindows(self.0, Some(raw_callback), LPARAM::default()) };
-        };
-        with_sync_closure_to_callback2(&mut callback, acceptor);
-        result
-    }
 }
 
 /// Infos about a [`Thread`].
@@ -468,6 +446,9 @@ impl ModuleHandle {
 mod tests {
     use more_asserts::*;
 
+    #[cfg(feature = "ui")]
+    use crate::ui::WindowHandle;
+
     use super::*;
 
     #[test]
@@ -484,12 +465,13 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "ui")]
     #[test]
     fn get_all_threads_and_windows() -> io::Result<()> {
         let all_threads = ThreadInfo::all_threads()?;
         let all_windows: Vec<WindowHandle> = all_threads
             .into_iter()
-            .flat_map(|thread_info| thread_info.get_thread_id().get_nonchild_windows())
+            .flat_map(|thread_info| WindowHandle::get_nonchild_windows(thread_info.get_thread_id()))
             .collect();
         assert_gt!(all_windows.len(), 0);
         Ok(())

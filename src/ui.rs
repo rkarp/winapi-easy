@@ -85,7 +85,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowPlacement,
     GetWindowTextLengthW,
     GetWindowTextW,
-    GetWindowThreadProcessId,
     IsWindow,
     IsWindowVisible,
     RegisterClassExW,
@@ -136,6 +135,7 @@ use crate::internal::{
     with_sync_closure_to_callback2,
     ReturnValue,
 };
+#[cfg(feature = "process")]
 use crate::process::{
     ProcessId,
     ThreadId,
@@ -404,21 +404,44 @@ impl WindowHandle {
     }
 
     /// Returns the thread ID that created this window.
+    #[cfg(feature = "process")]
     #[inline(always)]
     pub fn get_creator_thread_id(&self) -> ThreadId {
         self.get_creator_thread_process_ids().0
     }
 
     /// Returns the process ID that created this window.
+    #[cfg(feature = "process")]
     #[inline(always)]
     pub fn get_creator_process_id(&self) -> ProcessId {
         self.get_creator_thread_process_ids().1
     }
 
+    #[cfg(feature = "process")]
     fn get_creator_thread_process_ids(&self) -> (ThreadId, ProcessId) {
+        use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
         let mut process_id: u32 = 0;
         let thread_id = unsafe { GetWindowThreadProcessId(self.raw_handle, Some(&mut process_id)) };
         (ThreadId(thread_id), ProcessId(process_id))
+    }
+
+    /// Returns all top-level (non-child) windows created by the thread.
+    #[cfg(feature = "process")]
+    pub fn get_nonchild_windows(thread_id: ThreadId) -> Vec<Self> {
+        use windows::Win32::UI::WindowsAndMessaging::EnumThreadWindows;
+        let mut result: Vec<WindowHandle> = Vec::new();
+        let mut callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
+            let window_handle =
+                WindowHandle::from_maybe_null(handle).expect("Window handle should not be null");
+            result.push(window_handle);
+            true.into()
+        };
+        let acceptor = |raw_callback| {
+            let _ =
+                unsafe { EnumThreadWindows(thread_id.0, Some(raw_callback), LPARAM::default()) };
+        };
+        with_sync_closure_to_callback2(&mut callback, acceptor);
+        result
     }
 
     /// Turns the monitor on or off.
@@ -1166,7 +1189,6 @@ mod tests {
         BuiltinIcon,
     };
     use more_asserts::*;
-    use std::hint::black_box;
 
     use super::*;
 
@@ -1178,8 +1200,9 @@ mod tests {
             assert!(window.is_window());
             assert!(window.get_placement().is_ok());
             assert!(window.get_class_name().is_ok());
-            black_box(&window.get_caption_text());
-            black_box(&window.get_creator_thread_process_ids());
+            std::hint::black_box(&window.get_caption_text());
+            #[cfg(feature = "process")]
+            std::hint::black_box(&window.get_creator_thread_process_ids());
         }
         Ok(())
     }
