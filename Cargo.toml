@@ -17,6 +17,7 @@ targets = ["x86_64-pc-windows-msvc"]
 all-features = true
 
 [dependencies]
+base64 = { version = "0.21.2", optional = true}
 ntapi = "0.4.1"
 num_enum = "0.6.1"
 
@@ -45,6 +46,14 @@ features = [
     "Win32_UI_WindowsAndMessaging",
 ]
 
+[dependencies.uuid]
+version = "1.4.1"
+features = [
+    "v4",
+    "fast-rng",
+]
+optional = true
+
 [dev-dependencies]
 more-asserts = "0.3.1"
 
@@ -59,7 +68,7 @@ input = []
 media = []
 process = []
 shell = []
-ui = []
+ui = ["base64", "uuid"]
 
 [[example]]
 name = "flash_window"

@@ -532,12 +532,22 @@ impl<'res, WML: WindowMessageListener, I: Icon> WindowClass<'res, WML, I> {
     /// Registers a new class.
     ///
     /// This class can then be used to create instances of [`Window`].
+    ///
+    /// The class name will be generated from the given prefix by adding a random base64 encoded UUID
+    /// to ensure uniqueness. This means that the maximum length of the class name prefix is a little less
+    /// than the standard 256 characters for class names.
     pub fn register_new(
-        class_name: &str,
+        class_name_prefix: &str,
         background_brush: &'res impl Brush,
         icon: I,
         cursor: &'res impl Cursor,
     ) -> io::Result<Self> {
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        use base64::Engine;
+
+        let base64_uuid = URL_SAFE_NO_PAD.encode(uuid::Uuid::new_v4().as_bytes());
+        let class_name = class_name_prefix.to_string() + "_" + &base64_uuid;
+
         let class_name_wide = class_name.to_wide_string();
 
         // No need to reserve extra window memory if we only need a single pointer
@@ -1211,7 +1221,7 @@ mod tests {
     fn new_window_with_class() -> io::Result<()> {
         struct MyListener;
         impl WindowMessageListener for MyListener {}
-        const CLASS_NAME: &str = "myclass1";
+        const CLASS_NAME_PREFIX: &str = "myclass1";
         const WINDOW_NAME: &str = "mywindow1";
         const CAPTION_TEXT: &str = "Testwindow";
 
@@ -1220,7 +1230,7 @@ mod tests {
         let icon: BuiltinIcon = Default::default();
         let cursor: BuiltinCursor = Default::default();
         let class: WindowClass<MyListener, _> =
-            WindowClass::register_new(CLASS_NAME, &background, icon, &cursor)?;
+            WindowClass::register_new(CLASS_NAME_PREFIX, &background, icon, &cursor)?;
         let window = Window::create_new(&class, &listener, WINDOW_NAME)?;
         let notification_icon_options = NotificationIconOptions {
             icon: Some(icon),
@@ -1235,7 +1245,10 @@ mod tests {
         assert_eq!(window.as_ref().get_caption_text(), WINDOW_NAME);
         window.as_ref().set_caption_text(CAPTION_TEXT)?;
         assert_eq!(window.as_ref().get_caption_text(), CAPTION_TEXT);
-        assert_eq!(window.as_ref().get_class_name()?, CLASS_NAME);
+        assert!(window
+            .as_ref()
+            .get_class_name()?
+            .starts_with(CLASS_NAME_PREFIX));
 
         Ok(())
     }
