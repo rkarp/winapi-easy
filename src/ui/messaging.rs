@@ -95,7 +95,14 @@ pub trait WindowMessageListener {
     /// A custom user message was sent.
     #[allow(unused_variables)]
     #[inline(always)]
-    fn handle_custom_user_message(&self, window: &WindowHandle, message_id: u8) {}
+    fn handle_custom_user_message(
+        &self,
+        window: &WindowHandle,
+        message_id: u8,
+        w_param: WPARAM,
+        l_param: LPARAM,
+    ) {
+    }
 }
 
 /// A [`WindowMessageListener`] that leaves all handlers to their default empty impls.
@@ -134,6 +141,8 @@ impl RawMessage {
                 listener.handle_custom_user_message(
                     &window,
                     (self.message - WM_APP).try_into().unwrap(),
+                    self.w_param,
+                    self.l_param,
                 );
                 None
             }
