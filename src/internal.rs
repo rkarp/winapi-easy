@@ -297,6 +297,19 @@ impl Drop for GlobalLockedData {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct CustomAutoDrop<T> {
+    pub value: T,
+    // Intentionally only a fn to make capturing variables compile errors
+    pub drop_fn: fn(&mut T),
+}
+
+impl<T> Drop for CustomAutoDrop<T> {
+    fn drop(&mut self) {
+        (self.drop_fn)(&mut self.value)
+    }
+}
+
 #[allow(dead_code)]
 pub(crate) fn unpack_closure<F, IN, OUT>(
     closure: &mut F,

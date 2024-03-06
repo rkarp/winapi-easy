@@ -1,7 +1,6 @@
 //! Multimedia.
 
 use std::ffi::{
-    c_void,
     OsStr,
     OsString,
 };
@@ -26,12 +25,12 @@ use windows::Win32::Media::Audio::{
     DEVICE_STATE_ACTIVE,
 };
 use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
-use windows::Win32::System::Com::{
-    CoTaskMemFree,
-    STGM_READ,
-};
+use windows::Win32::System::Com::STGM_READ;
 
-use crate::com::ComInterfaceExt;
+use crate::com::{
+    ComInterfaceExt,
+    ComTaskMemory,
+};
 
 impl ComInterfaceExt for IMMDeviceEnumerator {
     const CLASS_GUID: GUID = MMDeviceEnumerator;
@@ -89,6 +88,7 @@ impl TryFrom<IMMDevice> for AudioOutputDevice {
 
     fn try_from(item: IMMDevice) -> Result<Self, Self::Error> {
         let raw_id = unsafe { item.GetId()? };
+        let _raw_id_memory = ComTaskMemory(raw_id.as_ptr());
         let property_store = unsafe { item.OpenPropertyStore(STGM_READ) }?;
         let friendly_name_prop: PROPVARIANT =
             unsafe { property_store.GetValue(&PKEY_Device_FriendlyName)? };
@@ -106,9 +106,6 @@ impl TryFrom<IMMDevice> for AudioOutputDevice {
             id: OsString::from_wide(unsafe { raw_id.as_wide() }),
             friendly_name,
         };
-        unsafe {
-            CoTaskMemFree(Some(raw_id.as_ptr() as *mut c_void));
-        }
         Ok(copy)
     }
 }

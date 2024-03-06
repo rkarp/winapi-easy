@@ -1,11 +1,7 @@
 //! Filesystem functionality.
 
 use num_enum::IntoPrimitive;
-use std::borrow::Cow;
-use std::ffi::{
-    c_void,
-    OsStr,
-};
+use std::ffi::c_void;
 use std::io;
 use std::path::Path;
 use windows::Win32::Foundation::HANDLE;
@@ -30,7 +26,10 @@ use crate::internal::{
     catch_unwind_and_abort,
     ReturnValue,
 };
-use crate::string::ZeroTerminatedWideString;
+use crate::string::{
+    max_path_extend,
+    ZeroTerminatedWideString,
+};
 
 /// Optional function called by Windows for every transferred chunk of a file.
 ///
@@ -172,17 +171,6 @@ pub trait PathExt: AsRef<Path> {
 }
 
 impl<T: AsRef<Path>> PathExt for T {}
-
-fn max_path_extend(path: &OsStr) -> Cow<OsStr> {
-    let special_prefix: &OsStr = OsStr::new(r"\\?\");
-    if Path::new(path).starts_with(special_prefix) {
-        Cow::Borrowed(path)
-    } else {
-        let mut combined_path = special_prefix.to_os_string();
-        combined_path.push(path);
-        Cow::Owned(combined_path)
-    }
-}
 
 unsafe extern "system" fn transfer_internal_callback<F>(
     totalfilesize: i64,

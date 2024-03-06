@@ -12,6 +12,7 @@ use windows::core::{
 use windows::Win32::System::Com::{
     CoCreateInstance,
     CoInitializeEx,
+    CoTaskMemFree,
     CLSCTX_INPROC_SERVER,
     COINIT_APARTMENTTHREADED,
 };
@@ -44,5 +45,21 @@ pub(crate) trait ComInterfaceExt: ComInterface {
         initialize_com()?;
         let result = unsafe { CoCreateInstance(&Self::CLASS_GUID, None, CLSCTX_INPROC_SERVER) };
         result.map_err(Into::into)
+    }
+}
+
+/// COM task memory location to be automatically freed.
+#[derive(Debug)]
+pub(crate) struct ComTaskMemory<T>(pub *mut T);
+
+impl<T> From<*mut T> for ComTaskMemory<T> {
+    fn from(value: *mut T) -> Self {
+        ComTaskMemory(value)
+    }
+}
+
+impl<T> Drop for ComTaskMemory<T> {
+    fn drop(&mut self) {
+        unsafe { CoTaskMemFree(Some(self.0 as *mut _)) }
     }
 }

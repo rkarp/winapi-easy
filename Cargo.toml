@@ -67,7 +67,7 @@ fs = []
 input = []
 media = []
 process = []
-shell = []
+shell = ["ui", "windows/Win32_UI_Shell_Common"]
 ui = ["base64", "uuid"]
 
 [[example]]

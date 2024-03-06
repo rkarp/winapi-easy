@@ -29,6 +29,7 @@ use crate::internal::{
     catch_unwind_and_abort,
     ReturnValue,
 };
+use crate::messaging::ThreadMessageLoop;
 use crate::ui::menu::MenuHandle;
 use crate::ui::{
     Point,
@@ -136,7 +137,8 @@ impl RawMessage {
         // Many messages won't go through the thread message loop, so we need to notify it.
         // No chance of an infinite loop here since the window procedure won't be called for messages with no associated windows.
         Self::post_loop_wakeup_message().unwrap();
-        match self.message {
+        let mut call_message_loop_callback = true;
+        let result = match self.message {
             value if value >= WM_APP && value <= WM_APP + (u32::from(u8::MAX)) => {
                 listener.handle_custom_user_message(
                     &window,
@@ -194,8 +196,15 @@ impl RawMessage {
                 listener.handle_window_destroy(&window);
                 None
             }
-            _ => None,
+            _ => {
+                call_message_loop_callback = false;
+                None
+            }
+        };
+        if call_message_loop_callback {
+            ThreadMessageLoop::ENABLE_CALLBACK_ONCE.with(|x| x.set(true));
         }
+        result
     }
 
     /// Posts a message to the thread message queue and returns immediately.

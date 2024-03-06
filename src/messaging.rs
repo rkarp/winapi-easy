@@ -23,11 +23,12 @@ pub enum ThreadMessageLoop {}
 impl ThreadMessageLoop {
     thread_local! {
         static RUNNING: Cell<bool> = Cell::new(false);
+        pub(crate) static ENABLE_CALLBACK_ONCE: Cell<bool> = Cell::new(false);
     }
 
     /// Runs the Windows thread message loop.
     ///
-    /// The user defined callback that will be called after every handled message.
+    /// The user defined callback that will only be called after every user handled message.
     /// This allows using local variables and `Result` propagation.
     ///
     /// Only a single message loop may be running per thread.
@@ -59,7 +60,9 @@ impl ThreadMessageLoop {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
-            loop_callback()?;
+            if Self::ENABLE_CALLBACK_ONCE.with(|x| x.take()) {
+                loop_callback()?;
+            }
         }
         Ok(())
     }
