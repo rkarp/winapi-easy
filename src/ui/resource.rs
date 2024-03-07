@@ -70,7 +70,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use windows_missing::*;
 
-pub trait Icon: Copy {
+pub trait Icon {
     fn as_handle(&self) -> io::Result<HICON>;
 }
 

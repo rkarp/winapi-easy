@@ -151,6 +151,9 @@ use crate::ui::messaging::{
 };
 use crate::ui::resource::{
     Brush,
+    BuiltinColor,
+    BuiltinCursor,
+    BuiltinIcon,
     Cursor,
     Icon,
 };
@@ -518,17 +521,18 @@ impl Display for TryFromHWNDError {
 impl Error for TryFromHWNDError {}
 
 /// Window class serving as a base for [`Window`].
-pub struct WindowClass<'res, WML, I: 'res> {
+#[derive(Debug)]
+pub struct WindowClass<'res, WML> {
     atom: u16,
-    icon: I,
+    icon_handle: HICON,
     phantom: PhantomData<(WML, &'res ())>,
 }
 
-impl WindowClass<'_, (), ()> {
+impl WindowClass<'_, ()> {
     const MAX_WINDOW_CLASS_NAME_CHARS: usize = 256;
 }
 
-impl<'res, WML: WindowMessageListener, I: Icon> WindowClass<'res, WML, I> {
+impl<'res, WML: WindowMessageListener> WindowClass<'res, WML> {
     /// Registers a new class.
     ///
     /// This class can then be used to create instances of [`Window`].
@@ -536,12 +540,15 @@ impl<'res, WML: WindowMessageListener, I: Icon> WindowClass<'res, WML, I> {
     /// The class name will be generated from the given prefix by adding a random base64 encoded UUID
     /// to ensure uniqueness. This means that the maximum length of the class name prefix is a little less
     /// than the standard 256 characters for class names.
-    pub fn register_new(
+    pub fn register_new<B, I, C>(
         class_name_prefix: &str,
-        background_brush: &'res impl Brush,
-        icon: I,
-        cursor: &'res impl Cursor,
-    ) -> io::Result<Self> {
+        appearance: WindowClassAppearance<B, I, C>,
+    ) -> io::Result<Self>
+    where
+        B: Brush + 'res,
+        I: Icon + 'res,
+        C: Cursor + 'res,
+    {
         use base64::engine::general_purpose::URL_SAFE_NO_PAD;
         use base64::Engine;
 
@@ -550,26 +557,36 @@ impl<'res, WML: WindowMessageListener, I: Icon> WindowClass<'res, WML, I> {
 
         let class_name_wide = class_name.to_wide_string();
 
+        let icon_handle = appearance
+            .icon
+            .map(|x| x.as_handle())
+            .unwrap_or(Ok(Default::default()))?;
         // No need to reserve extra window memory if we only need a single pointer
         let class_def = WNDCLASSEXW {
             cbSize: mem::size_of::<WNDCLASSEXW>().try_into().unwrap(),
             lpfnWndProc: Some(generic_window_proc::<WML>),
-            hIcon: icon.as_handle()?,
-            hCursor: cursor.as_handle()?,
-            hbrBackground: background_brush.as_handle()?,
+            hIcon: icon_handle,
+            hCursor: appearance
+                .cursor
+                .map(|x| x.as_handle())
+                .unwrap_or(Ok(Default::default()))?,
+            hbrBackground: appearance
+                .background_brush
+                .map(|x| x.as_handle())
+                .unwrap_or(Ok(Default::default()))?,
             lpszClassName: PCWSTR::from_raw(class_name_wide.as_ptr()),
             ..Default::default()
         };
         let atom = unsafe { RegisterClassExW(&class_def).if_null_get_last_error()? };
         Ok(WindowClass {
             atom,
-            icon,
+            icon_handle,
             phantom: PhantomData,
         })
     }
 }
 
-impl<WML, I> Drop for WindowClass<'_, WML, I> {
+impl<WML> Drop for WindowClass<'_, WML> {
     /// Unregisters the class on drop.
     fn drop(&mut self) {
         unsafe {
@@ -580,19 +597,47 @@ impl<WML, I> Drop for WindowClass<'_, WML, I> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct WindowClassAppearance<B, I, C> {
+    pub background_brush: Option<B>,
+    pub icon: Option<I>,
+    pub cursor: Option<C>,
+}
+
+impl WindowClassAppearance<BuiltinColor, BuiltinIcon, BuiltinCursor> {
+    pub fn empty() -> Self {
+        Self {
+            background_brush: None,
+            icon: None,
+            cursor: None,
+        }
+    }
+}
+
+impl Default for WindowClassAppearance<BuiltinColor, BuiltinIcon, BuiltinCursor> {
+    fn default() -> Self {
+        Self {
+            background_brush: Some(Default::default()),
+            icon: Some(Default::default()),
+            cursor: Some(Default::default()),
+        }
+    }
+}
+
 /// A window based on a [`WindowClass`].
-pub struct Window<'class, 'listener, WML, I> {
-    class: &'class WindowClass<'class, WML, I>,
+#[derive(Debug)]
+pub struct Window<'class, 'listener, WML> {
+    class: &'class WindowClass<'class, WML>,
     handle: WindowHandle,
     phantom: PhantomData<&'listener mut WML>,
 }
 
-impl<'class, 'listener, WML: WindowMessageListener, I: Icon> Window<'class, 'listener, WML, I> {
+impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WML> {
     /// Creates a new window.
     ///
     /// User interaction with the window will result in messages sent to the [`WindowMessageListener`] provided here.
     pub fn create_new(
-        class: &'class WindowClass<WML, I>,
+        class: &'class WindowClass<WML>,
         listener: &'listener WML,
         window_name: &str,
     ) -> io::Result<Self> {
@@ -639,13 +684,13 @@ impl<'class, 'listener, WML: WindowMessageListener, I: Icon> Window<'class, 'lis
     pub fn add_notification_icon<'a, NI: Icon + 'a>(
         &'a self,
         options: NotificationIconOptions<NI, &'a str>,
-    ) -> io::Result<NotificationIcon<'a, WML, I>> {
+    ) -> io::Result<NotificationIcon<'a, WML>> {
         // For GUID handling maybe look at generating it from the executable path:
         // https://stackoverflow.com/questions/7432319/notifyicondata-guid-problem
         let chosen_icon_handle = if let Some(icon) = options.icon {
             icon.as_handle()?
         } else {
-            self.class.icon.as_handle()?
+            self.class.icon_handle
         };
         let call_data = get_notification_call_data(
             &self.handle,
@@ -671,7 +716,7 @@ impl<'class, 'listener, WML: WindowMessageListener, I: Icon> Window<'class, 'lis
     }
 }
 
-impl<WML, I> Drop for Window<'_, '_, WML, I> {
+impl<WML> Drop for Window<'_, '_, WML> {
     fn drop(&mut self) {
         unsafe {
             if self.handle.is_window() {
@@ -683,13 +728,13 @@ impl<WML, I> Drop for Window<'_, '_, WML, I> {
     }
 }
 
-impl<WML, I> AsRef<WindowHandle> for Window<'_, '_, WML, I> {
+impl<WML> AsRef<WindowHandle> for Window<'_, '_, WML> {
     fn as_ref(&self) -> &WindowHandle {
         &self.handle
     }
 }
 
-impl<WML, I> AsMut<WindowHandle> for Window<'_, '_, WML, I> {
+impl<WML> AsMut<WindowHandle> for Window<'_, '_, WML> {
     fn as_mut(&mut self) -> &mut WindowHandle {
         &mut self.handle
     }
@@ -838,12 +883,12 @@ pub enum MonitorPower {
 /// An icon in the Windows notification area.
 ///
 /// This icon is always associated with a window and can be used in conjunction with [`menu::PopupMenu`].
-pub struct NotificationIcon<'a, WML, I> {
+pub struct NotificationIcon<'a, WML> {
     id: NotificationIconId,
-    window: &'a Window<'a, 'a, WML, I>,
+    window: &'a Window<'a, 'a, WML>,
 }
 
-impl<'a, WML, I> NotificationIcon<'a, WML, I> {
+impl<'a, WML> NotificationIcon<'a, WML> {
     /// Sets the icon graphics.
     pub fn set_icon(&mut self, icon: &'a impl Icon) -> io::Result<()> {
         let call_data = get_notification_call_data(
@@ -933,7 +978,7 @@ impl<'a, WML, I> NotificationIcon<'a, WML, I> {
     }
 }
 
-impl<WML, I> Drop for NotificationIcon<'_, WML, I> {
+impl<WML> Drop for NotificationIcon<'_, WML> {
     fn drop(&mut self) {
         let call_data =
             get_notification_call_data(&self.window.handle, self.id, false, None, None, None, None);
@@ -1193,11 +1238,7 @@ pub fn lock_workstation() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ui::resource::{
-        BuiltinColor,
-        BuiltinCursor,
-        BuiltinIcon,
-    };
+    use crate::ui::resource::BuiltinIcon;
     use more_asserts::*;
 
     use super::*;
@@ -1226,11 +1267,14 @@ mod tests {
         const CAPTION_TEXT: &str = "Testwindow";
 
         let listener = MyListener;
-        let background: BuiltinColor = Default::default();
         let icon: BuiltinIcon = Default::default();
-        let cursor: BuiltinCursor = Default::default();
-        let class: WindowClass<MyListener, _> =
-            WindowClass::register_new(CLASS_NAME_PREFIX, &background, icon, &cursor)?;
+        let class: WindowClass<MyListener> = WindowClass::register_new(
+            CLASS_NAME_PREFIX,
+            WindowClassAppearance {
+                icon: Some(icon),
+                ..Default::default()
+            },
+        )?;
         let window = Window::create_new(&class, &listener, WINDOW_NAME)?;
         let notification_icon_options = NotificationIconOptions {
             icon: Some(icon),

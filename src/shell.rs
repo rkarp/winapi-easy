@@ -63,14 +63,10 @@ use crate::string::{
     ZeroTerminatedWideString,
 };
 use crate::ui::messaging::WindowMessageListener;
-use crate::ui::resource::{
-    BuiltinColor,
-    BuiltinCursor,
-    BuiltinIcon,
-};
 use crate::ui::{
     Window,
     WindowClass,
+    WindowClassAppearance,
     WindowHandle,
 };
 
@@ -226,11 +222,10 @@ where
 
     let listener = Listener::default();
 
-    let background: BuiltinColor = Default::default();
-    let icon: BuiltinIcon = Default::default();
-    let cursor: BuiltinCursor = Default::default();
-    let window_class =
-        WindowClass::register_new("Shell Change Listener Class", &background, icon, &cursor)?;
+    let window_class = WindowClass::register_new(
+        "Shell Change Listener Class",
+        WindowClassAppearance::empty(),
+    )?;
     let window = Window::create_new(&window_class, &listener, "Shell Change Listener")?;
     let reg_id = unsafe {
         SHChangeNotifyRegister(

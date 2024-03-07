@@ -17,7 +17,6 @@ use winapi_easy::ui::message_box::{
 use winapi_easy::ui::messaging::WindowMessageListener;
 use winapi_easy::ui::resource::{
     BuiltinColor,
-    BuiltinCursor,
     BuiltinIcon,
 };
 use winapi_easy::ui::{
@@ -26,6 +25,7 @@ use winapi_easy::ui::{
     Point,
     Window,
     WindowClass,
+    WindowClassAppearance,
     WindowHandle,
     WindowShowState,
 };
@@ -83,11 +83,13 @@ fn main() -> io::Result<()> {
     let listener = MyListener {
         message: None.into(),
     };
-    let background: BuiltinColor = BuiltinColor::AppWorkspace;
     let icon: BuiltinIcon = Default::default();
-    let cursor: BuiltinCursor = Default::default();
-    let class: WindowClass<MyListener, _> =
-        WindowClass::register_new("myclass1", &background, icon, &cursor)?;
+    let appearance = WindowClassAppearance {
+        background_brush: Some(BuiltinColor::AppWorkspace),
+        icon: Some(icon),
+        ..Default::default()
+    };
+    let class: WindowClass<MyListener> = WindowClass::register_new("myclass1", appearance)?;
     let window = Window::create_new(&class, &listener, "mywindow1")?;
     let notification_icon_options = NotificationIconOptions {
         icon: Some(icon),
