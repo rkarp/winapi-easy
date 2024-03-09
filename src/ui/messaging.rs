@@ -1,6 +1,5 @@
 //! Window and thread message handling.
 
-use std::convert::TryInto;
 use std::io;
 
 use windows::Win32::Foundation::{

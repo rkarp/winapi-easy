@@ -1,6 +1,5 @@
 //! Menus and menu items.
 
-use std::convert::TryInto;
 use std::io;
 use std::io::ErrorKind;
 use std::marker::PhantomData;

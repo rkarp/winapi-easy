@@ -69,7 +69,7 @@ pub trait LowLevelInputHook: Copy {
         // This should be safe since for the low level mouse and keyboard hooks windows will only use
         // the same thread as the one registering the hook to send messages to the internal callback.
         thread_local! {
-            static RAW_CLOSURE: Cell<*mut ()> = Cell::new(ptr::null_mut());
+            static RAW_CLOSURE: Cell<*mut ()> = const { Cell::new(ptr::null_mut()) };
         }
         unsafe extern "system" fn internal_callback<HT, F>(
             code: i32,

@@ -338,7 +338,7 @@ where
     F: FnMut(IN1, IN2) -> OUT,
 {
     thread_local! {
-        static RAW_CLOSURE: Cell<*mut c_void> = Cell::new(ptr::null_mut());
+        static RAW_CLOSURE: Cell<*mut c_void> = const { Cell::new(ptr::null_mut()) };
     }
 
     unsafe extern "system" fn trampoline<F, IN1, IN2, OUT>(input1: IN1, input2: IN2) -> OUT
@@ -371,7 +371,7 @@ where
     A: FnOnce(unsafe extern "system" fn(IN1, IN2) -> OUT) -> O,
 {
     thread_local! {
-        static RAW_CLOSURE: Cell<*mut c_void> = Cell::new(ptr::null_mut());
+        static RAW_CLOSURE: Cell<*mut c_void> = const { Cell::new(ptr::null_mut()) };
     }
 
     unsafe extern "system" fn trampoline<F, IN1, IN2, OUT>(input1: IN1, input2: IN2) -> OUT

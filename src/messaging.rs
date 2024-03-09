@@ -22,8 +22,8 @@ pub enum ThreadMessageLoop {}
 
 impl ThreadMessageLoop {
     thread_local! {
-        static RUNNING: Cell<bool> = Cell::new(false);
-        pub(crate) static ENABLE_CALLBACK_ONCE: Cell<bool> = Cell::new(false);
+        static RUNNING: Cell<bool> = const { Cell::new(false) };
+        pub(crate) static ENABLE_CALLBACK_ONCE: Cell<bool> = const { Cell::new(false) };
     }
 
     /// Runs the Windows thread message loop.

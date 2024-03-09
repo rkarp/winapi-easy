@@ -111,7 +111,7 @@ pub fn show_message_box(
                 | options
                     .icon
                     .map(MESSAGEBOX_STYLE::from)
-                    .unwrap_or(Default::default()),
+                    .unwrap_or_default(),
             0,
         )
     };

@@ -2,6 +2,8 @@
 Component Object Model (COM) initialization.
 */
 
+#![allow(dead_code)]
+
 use std::cell::Cell;
 use std::io;
 
@@ -20,7 +22,7 @@ use windows::Win32::System::Com::{
 /// Initializes the COM library for the current thread. Will do nothing on further calls from the same thread.
 pub fn initialize_com() -> io::Result<()> {
     thread_local! {
-        static COM_INITIALIZED: Cell<bool> = Cell::new(false);
+        static COM_INITIALIZED: Cell<bool> = const { Cell::new(false) };
     }
     COM_INITIALIZED.with(|initialized| {
         if !initialized.get() {

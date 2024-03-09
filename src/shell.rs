@@ -197,9 +197,9 @@ where
     }
 
     // Unclear if it works if only some items are recursive
-    let recursive = monitored_paths.into_iter().any(|x| x.recursive);
+    let recursive = monitored_paths.iter().any(|x| x.recursive);
     let path_id_lists: Vec<(SHChangeNotifyEntry, ComTaskMemory<_>)> = monitored_paths
-        .into_iter()
+        .iter()
         .map(|monitored_path| {
             let path_as_id_list: ComTaskMemory<_> = unsafe {
                 // MAX_PATH extension seems possible: https://stackoverflow.com/questions/9980943/bypassing-max-path-limitation-for-itemidlist#comment12771197_9980943

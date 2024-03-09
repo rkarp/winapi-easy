@@ -1,6 +1,5 @@
 //! UI components: Windows, taskbar.
 
-use std::convert::TryInto;
 use std::error::Error;
 use std::fmt::{
     Display,
@@ -1238,7 +1237,6 @@ pub fn lock_workstation() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ui::resource::BuiltinIcon;
     use more_asserts::*;
 
     use super::*;
