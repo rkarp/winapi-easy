@@ -6,6 +6,7 @@ use std::ffi::{
 };
 use std::io;
 use std::iter::once;
+use std::marker::PhantomData;
 use std::os::windows::ffi::{
     OsStrExt,
     OsStringExt,
@@ -16,6 +17,12 @@ use windows::core::{
     PCWSTR,
 };
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
+use windows::Win32::Foundation::HWND;
+use windows::Win32::Graphics::Gdi::{
+    GetDC,
+    ReleaseDC,
+    HDC,
+};
 use windows::Win32::Media::Audio::{
     eConsole,
     eRender,
@@ -26,11 +33,66 @@ use windows::Win32::Media::Audio::{
 };
 use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
 use windows::Win32::System::Com::STGM_READ;
+use windows::Win32::UI::ColorSystem::{
+    GetDeviceGammaRamp,
+    SetDeviceGammaRamp,
+};
 
 use crate::com::{
     ComInterfaceExt,
     ComTaskMemory,
 };
+use crate::internal::ReturnValue;
+
+#[derive(Debug)]
+pub(crate) struct ScreenDeviceContext {
+    raw_context: HDC,
+    phantom: PhantomData<*mut ()>,
+}
+
+impl ScreenDeviceContext {
+    #[allow(dead_code)]
+    pub(crate) fn get() -> io::Result<Self> {
+        let result =
+            unsafe { GetDC(HWND::default()).if_null_to_error(|| io::ErrorKind::Other.into())? };
+        Ok(Self {
+            raw_context: result,
+            phantom: PhantomData,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn get_raw_gamma_ramp(&self) -> io::Result<[[u16; 256]; 3]> {
+        let mut rgbs: [[u16; 256]; 3] = [[0; 256]; 3];
+        let _ = unsafe {
+            GetDeviceGammaRamp(self.raw_context, rgbs.as_mut_ptr() as *mut _)
+                .if_null_to_error(|| io::ErrorKind::Other.into())?
+        };
+        Ok(rgbs)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_raw_gamma_ramp(&self, values: &[[u16; 256]; 3]) -> io::Result<()> {
+        let _ = unsafe {
+            SetDeviceGammaRamp(self.raw_context, values as *const _ as *const _)
+                .if_null_to_error(|| io::ErrorKind::Other.into())?
+        };
+        Ok(())
+    }
+}
+
+impl Drop for ScreenDeviceContext {
+    fn drop(&mut self) {
+        unsafe {
+            // Ignore possible errors here
+            let _ = ReleaseDC(HWND::default(), self.raw_context);
+        }
+    }
+}
+
+impl ReturnValue for HDC {
+    const NULL_VALUE: Self = HDC(0);
+}
 
 impl ComInterfaceExt for IMMDeviceEnumerator {
     const CLASS_GUID: GUID = MMDeviceEnumerator;
