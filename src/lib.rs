@@ -31,3 +31,9 @@ pub mod ui;
 
 mod internal;
 mod string;
+
+// Workaround for the `windows::core::imp::interface_hierarchy` macro
+#[cfg(feature = "media")]
+extern crate self as windows_core;
+#[cfg(feature = "media")]
+use windows::core::CanInto;

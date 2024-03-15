@@ -214,7 +214,7 @@ impl WindowHandle {
             true.into()
         };
         let acceptor = |raw_callback| unsafe { EnumWindows(Some(raw_callback), LPARAM::default()) };
-        with_sync_closure_to_callback2(&mut callback, acceptor).if_null_get_last_error()?;
+        with_sync_closure_to_callback2(&mut callback, acceptor)?;
         Ok(result)
     }
 
@@ -274,7 +274,7 @@ impl WindowHandle {
                 PCWSTR::from_raw(text.to_wide_string().as_ptr()),
             )
         };
-        ret_val.if_null_get_last_error()?;
+        ret_val?;
         Ok(())
     }
 
@@ -321,7 +321,7 @@ impl WindowHandle {
             ..Default::default()
         };
         unsafe {
-            GetWindowPlacement(self.raw_handle, &mut raw_placement).if_null_get_last_error()?
+            GetWindowPlacement(self.raw_handle, &mut raw_placement)?
         };
         Ok(WindowPlacement { raw_placement })
     }
@@ -329,8 +329,7 @@ impl WindowHandle {
     /// Sets the window's show state and positions.
     pub fn set_placement(&self, placement: &WindowPlacement) -> io::Result<()> {
         unsafe {
-            SetWindowPlacement(self.raw_handle, &placement.raw_placement)
-                .if_null_get_last_error()?
+            SetWindowPlacement(self.raw_handle, &placement.raw_placement)?
         };
         Ok(())
     }
@@ -590,7 +589,6 @@ impl<WML> Drop for WindowClass<'_, WML> {
     fn drop(&mut self) {
         unsafe {
             UnregisterClassW(PCWSTR(self.atom as *const u16), None)
-                .if_null_get_last_error()
                 .unwrap();
         }
     }
@@ -720,7 +718,6 @@ impl<WML> Drop for Window<'_, '_, WML> {
         unsafe {
             if self.handle.is_window() {
                 DestroyWindow(self.handle.raw_handle)
-                    .if_null_get_last_error()
                     .unwrap();
             }
         }
@@ -745,7 +742,7 @@ impl<WML> AsMut<WindowHandle> for Window<'_, '_, WML> {
 ///
 /// [`WindowHandle::get_placement`] and [`WindowPlacement::get_show_state`] can be used to read the state.
 #[derive(IntoPrimitive, TryFromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u32)]
+#[repr(i32)]
 pub enum WindowShowState {
     Hide = SW_HIDE.0,
     Maximize = SW_MAXIMIZE.0,
@@ -778,11 +775,11 @@ pub struct WindowPlacement {
 
 impl WindowPlacement {
     pub fn get_show_state(&self) -> Option<WindowShowState> {
-        self.raw_placement.showCmd.0.try_into().ok()
+        i32::try_from(self.raw_placement.showCmd).ok()?.try_into().ok()
     }
 
     pub fn set_show_state(&mut self, state: WindowShowState) {
-        self.raw_placement.showCmd = state.into();
+        self.raw_placement.showCmd = i32::from(state).try_into().unwrap();
     }
 
     pub fn get_minimized_position(&self) -> Point {
@@ -1038,7 +1035,7 @@ fn get_notification_call_data(
     if let Some(hidden_state) = icon_hidden_state {
         if hidden_state {
             icon_data.dwState = NOTIFY_ICON_STATE(icon_data.dwState.0 | NIS_HIDDEN.0);
-            icon_data.dwStateMask |= NIS_HIDDEN.0;
+            icon_data.dwStateMask |= NIS_HIDDEN;
         }
         icon_data.uFlags |= NIF_STATE;
     }
@@ -1212,7 +1209,7 @@ impl ComInterfaceExt for ITaskbarList3 {
 /// Creates a console window for the current process if there is none.
 pub fn allocate_console() -> io::Result<()> {
     unsafe {
-        AllocConsole().if_null_get_last_error()?;
+        AllocConsole()?;
     }
     Ok(())
 }
@@ -1222,7 +1219,7 @@ pub fn allocate_console() -> io::Result<()> {
 /// If no other processes use the console, it will be destroyed.
 pub fn detach_console() -> io::Result<()> {
     unsafe {
-        FreeConsole().if_null_get_last_error()?;
+        FreeConsole()?;
     }
     Ok(())
 }
@@ -1231,7 +1228,7 @@ pub fn detach_console() -> io::Result<()> {
 pub fn lock_workstation() -> io::Result<()> {
     // Because the function executes asynchronously, a nonzero return value indicates that the operation has been initiated.
     // It does not indicate whether the workstation has been successfully locked.
-    let _ = unsafe { LockWorkStation().if_null_get_last_error()? };
+    let _ = unsafe { LockWorkStation()? };
     Ok(())
 }
 

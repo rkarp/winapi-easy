@@ -17,42 +17,20 @@ targets = ["x86_64-pc-windows-msvc"]
 all-features = true
 
 [dependencies]
-base64 = { version = "0.21.2", optional = true}
+base64 = { version = "0.22.0", optional = true}
 ntapi = "0.4.1"
-num_enum = "0.6.1"
+num_enum = "0.7.2"
+uuid = { version = "1.7.0", features = ["v4", "fast-rng"], optional = true }
 
 [dependencies.windows]
-version = "0.48.0"
+version = "0.54.0"
 features = [
-    "Win32_Devices_FunctionDiscovery",
     "Win32_Foundation",
-    "Win32_Graphics_Gdi",
-    "Win32_Media_Audio",
-    "Win32_Storage_FileSystem",
     "Win32_System_Com",
-    "Win32_System_Com_StructuredStorage",
-    "Win32_System_Console",
-    "Win32_System_DataExchange",
-    "Win32_System_Diagnostics_ToolHelp",
-    "Win32_System_LibraryLoader",
     "Win32_System_Memory",
-    "Win32_System_Ole",
-    "Win32_System_Shutdown",
-    "Win32_System_Threading",
-    "Win32_System_WindowsProgramming",
-    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
-    "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
 ]
-
-[dependencies.uuid]
-version = "1.4.1"
-features = [
-    "v4",
-    "fast-rng",
-]
-optional = true
 
 [dev-dependencies]
 more-asserts = "0.3.1"
@@ -62,13 +40,44 @@ rustc_version = "0.4.0"
 
 [features]
 default = ["clipboard", "fs", "input", "media", "process", "shell", "ui"]
-clipboard = []
-fs = []
-input = []
-media = ["windows/Win32_UI_ColorSystem"]
-process = []
-shell = ["ui", "windows/Win32_UI_Shell_Common"]
-ui = ["base64", "uuid"]
+clipboard = [
+    "windows/Win32_System_DataExchange",
+    "windows/Win32_System_Ole",
+]
+fs = [
+    "windows/Win32_Storage_FileSystem",
+    "windows/Win32_System_WindowsProgramming",
+]
+input = [
+    "windows/Win32_System_Threading",
+    "windows/Win32_UI_Input_KeyboardAndMouse",
+]
+media = [
+    "windows/Win32_Devices_FunctionDiscovery",
+    "windows/Win32_Graphics_Gdi",
+    "windows/Win32_Media_Audio",
+    "windows/Win32_UI_ColorSystem",
+    "windows/Win32_UI_Shell_PropertiesSystem",
+    "windows/Win32_System_Variant",
+]
+process = [
+    "windows/Wdk_System_Threading",
+    "windows/Win32_System_Diagnostics_ToolHelp",
+    "windows/Win32_System_LibraryLoader",
+    "windows/Win32_System_Threading",
+]
+shell = [
+    "ui",
+    "windows/Win32_UI_Shell_Common",
+]
+ui = [
+    "base64",
+    "uuid",
+    "windows/Win32_Graphics_Gdi",
+    "windows/Win32_System_Console",
+    "windows/Win32_System_Shutdown",
+    "windows/Win32_UI_Input_KeyboardAndMouse",
+]
 
 [[example]]
 name = "flash_window"

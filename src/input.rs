@@ -519,7 +519,8 @@ impl MouseScrollEvent {
             r#type: INPUT_MOUSE,
             Anonymous: INPUT_0 {
                 mi: MOUSEINPUT {
-                    mouseData: mouse_data,
+                    // bit-cast semantics necessary here because negative values should be allowed
+                    mouseData: mouse_data as u32,
                     dwFlags: MOUSEEVENTF_WHEEL,
                     ..Default::default()
                 },

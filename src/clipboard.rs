@@ -29,7 +29,7 @@ pub fn get_file_list() -> io::Result<Vec<PathBuf>> {
     let f = || {
         let mut clipboard_data = {
             let clipboard_data = unsafe { GetClipboardData(CF_HDROP.0.into()) }?;
-            GlobalLockedData::lock(HGLOBAL(clipboard_data.0))?
+            GlobalLockedData::lock(HGLOBAL(clipboard_data.0 as *mut _))?
         };
 
         let num_files =
@@ -68,11 +68,11 @@ where
     F: FnOnce() -> io::Result<R>,
 {
     unsafe {
-        OpenClipboard(None).if_null_get_last_error()?;
+        OpenClipboard(None)?;
     }
     let result = f();
     unsafe {
-        CloseClipboard().if_null_get_last_error()?;
+        CloseClipboard()?;
     }
     result
 }

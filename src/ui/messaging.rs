@@ -24,10 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::internal::windows_missing::*;
-use crate::internal::{
-    catch_unwind_and_abort,
-    ReturnValue,
-};
+use crate::internal::catch_unwind_and_abort;
 use crate::messaging::ThreadMessageLoop;
 use crate::ui::menu::MenuHandle;
 use crate::ui::{
@@ -216,8 +213,7 @@ impl RawMessage {
                 self.message,
                 self.w_param,
                 self.l_param,
-            )
-            .if_null_get_last_error()?;
+            )?;
         }
         Ok(())
     }

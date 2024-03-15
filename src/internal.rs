@@ -244,7 +244,7 @@ pub(crate) trait CloseableHandle {
 impl CloseableHandle for HANDLE {
     fn close(&self) {
         unsafe {
-            CloseHandle(*self);
+            CloseHandle(*self).unwrap();
         }
     }
 }
@@ -292,7 +292,7 @@ impl GlobalLockedData {
 impl Drop for GlobalLockedData {
     fn drop(&mut self) {
         unsafe {
-            GlobalUnlock(self.handle);
+            GlobalUnlock(self.handle).unwrap();
         }
     }
 }

@@ -12,6 +12,10 @@ use num_enum::{
     IntoPrimitive,
     TryFromPrimitive,
 };
+use windows::Wdk::System::Threading::{
+    NtQueryInformationProcess,
+    PROCESSINFOCLASS,
+};
 use windows::Win32::Foundation::{
     HANDLE,
     HMODULE,
@@ -32,12 +36,10 @@ use windows::Win32::System::Threading::{
     GetCurrentThreadId,
     GetProcessId,
     GetThreadId,
-    NtQueryInformationProcess,
     OpenProcess,
     OpenThread,
     SetPriorityClass,
     SetThreadPriority,
-    PROCESSINFOCLASS,
     PROCESS_ALL_ACCESS,
     PROCESS_CREATION_FLAGS,
     PROCESS_MODE_BACKGROUND_BEGIN,
@@ -86,8 +88,7 @@ impl Process {
     /// This will also lower the I/O priority of the process, which will lower the impact of heavy disk I/O on other processes.
     pub fn begin_background_mode() -> io::Result<()> {
         unsafe {
-            SetPriorityClass(Self::current().handle.entity, PROCESS_MODE_BACKGROUND_BEGIN)
-                .if_null_get_last_error()?
+            SetPriorityClass(Self::current().handle.entity, PROCESS_MODE_BACKGROUND_BEGIN)?
         };
         Ok(())
     }
@@ -95,8 +96,7 @@ impl Process {
     /// Ends background processing mode for the current process.
     pub fn end_background_mode() -> io::Result<()> {
         unsafe {
-            SetPriorityClass(Self::current().handle.entity, PROCESS_MODE_BACKGROUND_END)
-                .if_null_get_last_error()?
+            SetPriorityClass(Self::current().handle.entity, PROCESS_MODE_BACKGROUND_END)?
         };
         Ok(())
     }
@@ -113,7 +113,7 @@ impl Process {
     /// # Result::<(), std::io::Error>::Ok(())
     /// ```
     pub fn set_priority(&mut self, priority: ProcessPriority) -> io::Result<()> {
-        unsafe { SetPriorityClass(self.handle.entity, priority.into()).if_null_get_last_error()? };
+        unsafe { SetPriorityClass(self.handle.entity, priority.into())? };
         Ok(())
     }
 
@@ -123,7 +123,7 @@ impl Process {
     pub fn get_io_priority(&self) -> io::Result<Option<IoPriority>> {
         let mut raw_io_priority: i32 = 0;
         let mut return_length: u32 = 0;
-        unsafe {
+        let ret_val = unsafe {
             NtQueryInformationProcess(
                 self.handle.entity,
                 ProcessInformationClass::ProcessIoPriority.into(),
@@ -131,7 +131,10 @@ impl Process {
                 mem::size_of::<i32>() as u32,
                 &mut return_length,
             )
-        }?;
+        };
+        ret_val
+            .0
+            .if_non_null_to_error(|| custom_err_with_code("Getting IO priority failed", ret_val.0))?;
         Ok(IoPriority::try_from(raw_io_priority as u32).ok())
     }
 
@@ -225,8 +228,7 @@ impl Thread {
     /// This will also lower the I/O priority of the thread, which will lower the impact of heavy disk I/O on other threads and processes.
     pub fn begin_background_mode() -> io::Result<()> {
         unsafe {
-            SetThreadPriority(Self::current().handle.entity, THREAD_MODE_BACKGROUND_BEGIN)
-                .if_null_get_last_error()?
+            SetThreadPriority(Self::current().handle.entity, THREAD_MODE_BACKGROUND_BEGIN)?
         };
         Ok(())
     }
@@ -234,8 +236,7 @@ impl Thread {
     /// Ends background processing mode for the current thread.
     pub fn end_background_mode() -> io::Result<()> {
         unsafe {
-            SetThreadPriority(Self::current().handle.entity, THREAD_MODE_BACKGROUND_END)
-                .if_null_get_last_error()?
+            SetThreadPriority(Self::current().handle.entity, THREAD_MODE_BACKGROUND_END)?
         };
         Ok(())
     }
@@ -252,7 +253,7 @@ impl Thread {
     /// # Result::<(), std::io::Error>::Ok(())
     /// ```
     pub fn set_priority(&mut self, priority: ThreadPriority) -> Result<(), io::Error> {
-        unsafe { SetThreadPriority(self.handle.entity, priority.into()).if_null_get_last_error()? };
+        unsafe { SetThreadPriority(self.handle.entity, priority.into())? };
         Ok(())
     }
 
@@ -320,13 +321,13 @@ impl ThreadInfo {
 
         let mut thread_entry = get_empty_thread_entry();
         unsafe {
-            Thread32First(snapshot.entity, &mut thread_entry).if_null_get_last_error()?;
+            Thread32First(snapshot.entity, &mut thread_entry)?;
         }
         result.push(Self::from_raw(thread_entry));
         loop {
             let mut thread_entry = get_empty_thread_entry();
             let next_ret_val = unsafe { Thread32Next(snapshot.entity, &mut thread_entry) };
-            if next_ret_val.as_bool() {
+            if next_ret_val.is_ok() {
                 result.push(Self::from_raw(thread_entry));
             } else {
                 break;
@@ -434,7 +435,7 @@ impl ModuleHandle {
     pub fn get_current() -> io::Result<Self> {
         let raw_handle = unsafe {
             let mut h_module: HMODULE = Default::default();
-            GetModuleHandleExW(0, None, &mut h_module);
+            GetModuleHandleExW(0, None, &mut h_module)?;
             h_module.if_null_get_last_error()?
         };
         Ok(ModuleHandle { raw_handle })

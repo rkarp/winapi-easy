@@ -27,7 +27,6 @@ use std::{
 };
 
 use crate::input::KeyboardKey;
-use crate::internal::ReturnValue;
 
 /// A group of global hotkeys that can be listened for.
 ///
@@ -47,7 +46,7 @@ use crate::internal::ReturnValue;
 ///     .add_hotkey(MyAction::One, Modifier::Ctrl + Modifier::Alt + KeyboardKey::A)
 ///     .add_hotkey(MyAction::Two, Modifier::Shift + Modifier::Alt + KeyboardKey::B);
 ///
-/// for action in hotkeys.listen_for_hotkeys()? {
+/// for action in hotkeys.listen_for_hotkeys() {
 ///     match action? {
 ///         MyAction::One => println!("One!"),
 ///         MyAction::Two => println!("Two!"),
@@ -92,7 +91,7 @@ where
     }
 
     /// Registers the hotkeys with the system and then reacts to hotkey events.
-    pub fn listen_for_hotkeys(mut self) -> io::Result<impl IntoIterator<Item = io::Result<ID>>> {
+    pub fn listen_for_hotkeys(mut self) -> impl IntoIterator<Item = io::Result<ID>> {
         let (tx_hotkey, rx_hotkey) = mpsc::channel();
         thread::spawn(move || {
             let ids = || Self::MIN_ID..;
@@ -100,24 +99,21 @@ where
                 ids()
                     .zip(&self.hotkey_defs)
                     .try_for_each(|(curr_id, hotkey_def)| {
-                        let result: io::Result<BOOL> = unsafe {
+                        let result: io::Result<()> = unsafe {
                             RegisterHotKey(
                                 None,
                                 curr_id,
                                 HOT_KEY_MODIFIERS(hotkey_def.key_combination.modifiers.0),
                                 hotkey_def.key_combination.key.into(),
-                            )
-                            .if_null_get_last_error()
+                            ).map_err(From::from)
                         };
-                        if result.is_ok() {
-                            Ok(())
-                        } else {
+                        if result.is_err() {
                             (Self::MIN_ID..=curr_id - 1).rev().for_each(|id| unsafe {
                                 UnregisterHotKey(None, id)
-                                    .if_null_panic("Cannot unregister hotkey");
+                                    .expect("Cannot unregister hotkey");
                             });
-                            result.map(|_| ())
                         }
+                        result
                     });
             if let Err(err) = register_result {
                 tx_hotkey.send(Err(err)).unwrap_or(());
@@ -131,7 +127,7 @@ where
                     let getmsg_result =
                         unsafe { GetMessageW(&mut message, None, WM_HOTKEY, WM_HOTKEY) };
                     let to_send = match getmsg_result {
-                        BOOL(-1) => Some(Err(io::Error::last_os_error())),
+                        BOOL(-1) => Some(Err(io::Error::from(windows::core::Error::from_win32()))),
                         BOOL(0) => break, // WM_QUIT
                         _ => id_assocs
                             .get(&message.wParam.0.try_into().expect(
@@ -148,7 +144,7 @@ where
                 }
             }
         });
-        Ok(rx_hotkey)
+        rx_hotkey
     }
 }
 
@@ -166,7 +162,7 @@ impl<ID> Drop for GlobalHotkeySet<ID> {
         if self.hotkeys_active {
             for id in (Self::MIN_ID..).take(self.hotkey_defs.len()) {
                 unsafe {
-                    UnregisterHotKey(None, id).if_null_panic("Cannot unregister hotkey");
+                    UnregisterHotKey(None, id).expect("Cannot unregister hotkey");
                 }
             }
         }

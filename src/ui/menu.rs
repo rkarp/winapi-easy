@@ -82,7 +82,7 @@ impl MenuHandle {
             dwMenuData: 0,
         };
         unsafe {
-            SetMenuInfo(self.raw_handle, &raw_menu_info).if_null_get_last_error()?;
+            SetMenuInfo(self.raw_handle, &raw_menu_info)?;
         }
         Ok(())
     }
@@ -94,8 +94,7 @@ impl MenuHandle {
                 idx,
                 true,
                 &MenuItemCallData::new(Some(&mut item.into()), Some(id)).item_info_struct,
-            )
-            .if_null_get_last_error()?;
+            )?;
         }
         Ok(())
     }
@@ -124,7 +123,7 @@ impl MenuHandle {
 
     fn destroy(&self) -> io::Result<()> {
         unsafe {
-            DestroyMenu(self.raw_handle).if_null_get_last_error()?;
+            DestroyMenu(self.raw_handle)?;
         }
         Ok(())
     }

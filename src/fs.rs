@@ -22,10 +22,7 @@ use windows::Win32::System::WindowsProgramming::{
     PROGRESS_STOP,
 };
 
-use crate::internal::{
-    catch_unwind_and_abort,
-    ReturnValue,
-};
+use crate::internal::catch_unwind_and_abort;
 use crate::string::{
     max_path_extend,
     ZeroTerminatedWideString,
@@ -120,9 +117,7 @@ pub trait PathExt: AsRef<Path> {
                     .map(|callback| callback as *mut F as *const _),
                 None,
                 COPY_FILE_COPY_SYMLINK | COPY_FILE_FAIL_IF_EXISTS,
-            )
-            .0
-            .if_null_get_last_error()?;
+            )?;
         }
         Ok(())
     }
@@ -162,9 +157,7 @@ pub trait PathExt: AsRef<Path> {
                     .as_mut()
                     .map(|callback| callback as *mut F as *const _),
                 MOVEFILE_COPY_ALLOWED | MOVEFILE_WRITE_THROUGH,
-            )
-            .0
-            .if_null_get_last_error()?;
+            )?;
         }
         Ok(())
     }

@@ -47,10 +47,7 @@ use crate::input::{
     MouseScrollEvent,
 };
 use crate::internal::windows_missing::HIWORD;
-use crate::internal::{
-    catch_unwind_and_abort,
-    ReturnValue,
-};
+use crate::internal::catch_unwind_and_abort;
 use crate::messaging::ThreadMessageLoop;
 
 /// A global mouse or keyboard hook.
@@ -111,7 +108,7 @@ pub trait LowLevelInputHook: Copy {
             )?
         };
         ThreadMessageLoop::run_thread_message_loop(|| Ok(()))?;
-        let _ = unsafe { UnhookWindowsHookEx(handle).if_null_get_last_error()? };
+        let _ = unsafe { UnhookWindowsHookEx(handle)? };
         Ok(())
     }
 }
@@ -263,7 +260,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ll_hook_and_unhook() -> io::Result<()> {
+    fn ll_hook_and_unhook() -> windows::core::Result<()> {
         let mut callback = |_message: LowLevelMouseMessage, _| -> HookReturnValue {
             HookReturnValue::CallNextHook
         };
@@ -273,8 +270,7 @@ mod tests {
                 WM_QUIT,
                 WPARAM::default(),
                 LPARAM::default(),
-            )
-            .if_null_get_last_error()?
+            )?
         };
         LowLevelMouseHook::run_hook(&mut callback)?;
         Ok(())

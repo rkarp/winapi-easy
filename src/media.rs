@@ -15,6 +15,7 @@ use std::os::windows::ffi::{
 use windows::core::{
     GUID,
     PCWSTR,
+    PROPVARIANT,
 };
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Foundation::HWND;
@@ -31,7 +32,6 @@ use windows::Win32::Media::Audio::{
     MMDeviceEnumerator,
     DEVICE_STATE_ACTIVE,
 };
-use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
 use windows::Win32::System::Com::STGM_READ;
 use windows::Win32::UI::ColorSystem::{
     GetDeviceGammaRamp,
@@ -154,16 +154,7 @@ impl TryFrom<IMMDevice> for AudioOutputDevice {
         let property_store = unsafe { item.OpenPropertyStore(STGM_READ) }?;
         let friendly_name_prop: PROPVARIANT =
             unsafe { property_store.GetValue(&PKEY_Device_FriendlyName)? };
-        let friendly_name = OsString::from_wide(unsafe {
-            friendly_name_prop
-                .Anonymous
-                .Anonymous
-                .Anonymous
-                .pwszVal
-                .as_wide()
-        })
-        .to_string_lossy()
-        .to_string();
+        let friendly_name = friendly_name_prop.to_string();
         let copy = AudioOutputDevice {
             id: OsString::from_wide(unsafe { raw_id.as_wide() }),
             friendly_name,
@@ -184,7 +175,6 @@ mod policy_config {
     use std::ffi::c_void;
 
     use windows::core::{
-        ComInterface,
         Interface,
         GUID,
         PCWSTR,
@@ -215,7 +205,7 @@ mod policy_config {
         }
     }
 
-    windows::imp::interface_hierarchy!(IPolicyConfig, windows::core::IUnknown);
+    windows::core::imp::interface_hierarchy!(IPolicyConfig, windows::core::IUnknown);
 
     impl Clone for IPolicyConfig {
         fn clone(&self) -> Self {
@@ -236,8 +226,6 @@ mod policy_config {
 
     unsafe impl Interface for IPolicyConfig {
         type Vtable = IPolicyConfig_Vtbl;
-    }
-    unsafe impl ComInterface for IPolicyConfig {
         const IID: GUID = GUID::from_u128(0xf8679f50_850a_41cf_9c72_430f290290c8);
     }
 
