@@ -1,6 +1,6 @@
 use std::io;
 
-use winapi_easy::input::hooking::{
+use winapi_easy::hooking::{
     HookReturnValue,
     LowLevelInputHook,
     LowLevelKeyboardHook,
@@ -12,7 +12,7 @@ use winapi_easy::input::hooking::{
 
 fn main() -> io::Result<()> {
     let mouse_thread = std::thread::spawn(|| {
-        let mut callback = |message: LowLevelMouseMessage, _| -> HookReturnValue {
+        let mut callback = |message: LowLevelMouseMessage| -> HookReturnValue {
             match message.action {
                 LowLevelMouseAction::Move => {}
                 _ => {
@@ -24,7 +24,7 @@ fn main() -> io::Result<()> {
         LowLevelMouseHook::run_hook(&mut callback)
     });
     let keyboard_thread = std::thread::spawn(|| {
-        let mut callback = |message: LowLevelKeyboardMessage, _| -> HookReturnValue {
+        let mut callback = |message: LowLevelKeyboardMessage| -> HookReturnValue {
             dbg!(message);
             HookReturnValue::CallNextHook
         };

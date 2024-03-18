@@ -153,7 +153,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::internal::ReturnValue;
 use private::*;
 
-pub mod hooking;
 pub mod hotkeys;
 
 /// A [`KeyboardKey`] or a [`MouseButton`].
@@ -529,6 +528,7 @@ impl MouseScrollEvent {
         send_raw_inputs(&[raw_input])
     }
 
+    #[allow(dead_code)]
     pub(crate) fn from_raw_movement(raw_movement: u16) -> Self {
         let raw_movement = raw_movement as i16;
         const WHEEL_DELTA_INT: i16 = WHEEL_DELTA as _;

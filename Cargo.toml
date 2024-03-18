@@ -39,7 +39,16 @@ more-asserts = "0.3.1"
 rustc_version = "0.4.0"
 
 [features]
-default = ["clipboard", "fs", "input", "media", "process", "shell", "ui"]
+default = [
+    "clipboard",
+    "fs",
+    "hooking",
+    "input",
+    "media",
+    "process",
+    "shell",
+    "ui",
+]
 clipboard = [
     "windows/Win32_System_DataExchange",
     "windows/Win32_System_Ole",
@@ -47,6 +56,9 @@ clipboard = [
 fs = [
     "windows/Win32_Storage_FileSystem",
     "windows/Win32_System_WindowsProgramming",
+]
+hooking = [
+    "input",
 ]
 input = [
     "windows/Win32_System_Threading",
@@ -97,7 +109,7 @@ required-features = ["input", "ui"]
 
 [[example]]
 name = "input_log"
-required-features = ["input"]
+required-features = ["hooking"]
 
 [[example]]
 name = "list_audio_devices"

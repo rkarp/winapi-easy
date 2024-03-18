@@ -17,6 +17,8 @@ pub mod clipboard;
 pub mod com;
 #[cfg(feature = "fs")]
 pub mod fs;
+#[cfg(feature = "hooking")]
+pub mod hooking;
 #[cfg(feature = "input")]
 pub mod input;
 #[cfg(feature = "media")]
