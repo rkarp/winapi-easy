@@ -164,7 +164,7 @@ where
             let _unlock_guard = CustomAutoDrop {
                 value: lock,
                 drop_fn: |x| unsafe {
-                    SHChangeNotification_Unlock(HANDLE(x.0)).if_null_panic("Improper lock usage");
+                    SHChangeNotification_Unlock(HANDLE(x.0)).if_null_panic_else_drop("Improper lock usage");
                 },
             };
 
@@ -181,7 +181,7 @@ where
                         raw_path_buffer.0.as_mut_slice(),
                         Default::default(),
                     )
-                    .if_null_panic("Cannot get path from ID list");
+                    .if_null_panic_else_drop("Cannot get path from ID list");
                 }
                 raw_path_buffer.to_os_string().into()
             }
@@ -249,7 +249,7 @@ where
         value: reg_id,
         drop_fn: |x| unsafe {
             SHChangeNotifyDeregister(*x)
-                .if_null_panic("Notification listener not registered properly");
+                .if_null_panic_else_drop("Notification listener not registered properly");
         },
     };
 

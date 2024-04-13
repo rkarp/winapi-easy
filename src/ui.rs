@@ -281,7 +281,7 @@ impl WindowHandle {
     /// Brings the window to the foreground.
     pub fn set_as_foreground(&self) -> io::Result<()> {
         unsafe {
-            SetForegroundWindow(self.raw_handle).if_null_to_error(|| {
+            SetForegroundWindow(self.raw_handle).if_null_to_error_else_drop(|| {
                 io::Error::new(
                     io::ErrorKind::PermissionDenied,
                     "Cannot bring window to foreground",
@@ -303,7 +303,7 @@ impl WindowHandle {
     pub fn set_show_state(&self, state: WindowShowState) -> io::Result<()> {
         if self.is_window() {
             unsafe {
-                ShowWindow(self.raw_handle, state.into());
+                let _ = ShowWindow(self.raw_handle, state.into());
             }
             Ok(())
         } else {
@@ -320,17 +320,13 @@ impl WindowHandle {
             length: mem::size_of::<WINDOWPLACEMENT>().try_into().unwrap(),
             ..Default::default()
         };
-        unsafe {
-            GetWindowPlacement(self.raw_handle, &mut raw_placement)?
-        };
+        unsafe { GetWindowPlacement(self.raw_handle, &mut raw_placement)? };
         Ok(WindowPlacement { raw_placement })
     }
 
     /// Sets the window's show state and positions.
     pub fn set_placement(&self, placement: &WindowPlacement) -> io::Result<()> {
-        unsafe {
-            SetWindowPlacement(self.raw_handle, &placement.raw_placement)?
-        };
+        unsafe { SetWindowPlacement(self.raw_handle, &placement.raw_placement)? };
         Ok(())
     }
 
@@ -390,7 +386,9 @@ impl WindowHandle {
                 FlashInterval::Milliseconds(ms) => ms,
             },
         };
-        unsafe { FlashWindowEx(&raw_config) };
+        unsafe {
+            let _ = FlashWindowEx(&raw_config);
+        };
     }
 
     /// Stops the window from flashing.
@@ -401,7 +399,9 @@ impl WindowHandle {
             dwFlags: FLASHW_STOP,
             ..Default::default()
         };
-        unsafe { FlashWindowEx(&raw_config) };
+        unsafe {
+            let _ = FlashWindowEx(&raw_config);
+        };
     }
 
     /// Returns the thread ID that created this window.
@@ -588,8 +588,7 @@ impl<WML> Drop for WindowClass<'_, WML> {
     /// Unregisters the class on drop.
     fn drop(&mut self) {
         unsafe {
-            UnregisterClassW(PCWSTR(self.atom as *const u16), None)
-                .unwrap();
+            UnregisterClassW(PCWSTR(self.atom as *const u16), None).unwrap();
         }
     }
 }
@@ -699,10 +698,10 @@ impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WM
             None,
         );
         unsafe {
-            Shell_NotifyIconW(NIM_ADD, &call_data).if_null_to_error(|| {
+            Shell_NotifyIconW(NIM_ADD, &call_data).if_null_to_error_else_drop(|| {
                 io::Error::new(io::ErrorKind::Other, "Cannot add notification icon")
             })?;
-            Shell_NotifyIconW(NIM_SETVERSION, &call_data).if_null_to_error(|| {
+            Shell_NotifyIconW(NIM_SETVERSION, &call_data).if_null_to_error_else_drop(|| {
                 io::Error::new(io::ErrorKind::Other, "Cannot set notification version")
             })?;
         };
@@ -717,8 +716,7 @@ impl<WML> Drop for Window<'_, '_, WML> {
     fn drop(&mut self) {
         unsafe {
             if self.handle.is_window() {
-                DestroyWindow(self.handle.raw_handle)
-                    .unwrap();
+                DestroyWindow(self.handle.raw_handle).unwrap();
             }
         }
     }
@@ -775,7 +773,10 @@ pub struct WindowPlacement {
 
 impl WindowPlacement {
     pub fn get_show_state(&self) -> Option<WindowShowState> {
-        i32::try_from(self.raw_placement.showCmd).ok()?.try_into().ok()
+        i32::try_from(self.raw_placement.showCmd)
+            .ok()?
+            .try_into()
+            .ok()
     }
 
     pub fn set_show_state(&mut self, state: WindowShowState) {
@@ -897,7 +898,7 @@ impl<'a, WML> NotificationIcon<'a, WML> {
             None,
         );
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error(|| {
+            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
                 io::Error::new(io::ErrorKind::Other, "Cannot set notification icon")
             })?;
         };
@@ -916,7 +917,7 @@ impl<'a, WML> NotificationIcon<'a, WML> {
             None,
         );
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error(|| {
+            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
                 io::Error::new(
                     io::ErrorKind::Other,
                     "Cannot set notification icon hidden state",
@@ -938,7 +939,7 @@ impl<'a, WML> NotificationIcon<'a, WML> {
             None,
         );
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error(|| {
+            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
                 io::Error::new(
                     io::ErrorKind::Other,
                     "Cannot set notification icon tooltip text",
@@ -963,7 +964,7 @@ impl<'a, WML> NotificationIcon<'a, WML> {
             Some(notification),
         );
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error(|| {
+            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
                 io::Error::new(
                     io::ErrorKind::Other,
                     "Cannot set notification icon balloon text",
@@ -980,7 +981,7 @@ impl<WML> Drop for NotificationIcon<'_, WML> {
             get_notification_call_data(&self.window.handle, self.id, false, None, None, None, None);
         unsafe {
             Shell_NotifyIconW(NIM_DELETE, &call_data)
-                .if_null_to_error(|| {
+                .if_null_to_error_else_drop(|| {
                     io::Error::new(io::ErrorKind::Other, "Cannot remove notification icon")
                 })
                 .unwrap();

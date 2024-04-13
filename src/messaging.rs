@@ -57,7 +57,7 @@ impl ThreadMessageLoop {
                 break;
             }
             unsafe {
-                TranslateMessage(&msg);
+                let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
             if Self::ENABLE_CALLBACK_ONCE.with(|x| x.take()) {

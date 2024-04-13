@@ -32,6 +32,10 @@ use windows::Win32::UI::WindowsAndMessaging::HMENU;
 pub(crate) trait ReturnValue: PartialEq + Sized + Copy {
     const NULL_VALUE: Self;
 
+    fn if_null_to_error_else_drop(self, error_gen: impl FnOnce() -> io::Error) -> io::Result<()> {
+        self.if_null_to_error(error_gen).map(|_| ())
+    }
+
     fn if_null_to_error(self, error_gen: impl FnOnce() -> io::Error) -> io::Result<Self> {
         if !self.is_null() {
             Ok(self)
@@ -41,8 +45,18 @@ pub(crate) trait ReturnValue: PartialEq + Sized + Copy {
     }
 
     #[inline]
+    fn if_null_get_last_error_else_drop(self) -> io::Result<()> {
+        self.if_null_to_error_else_drop(io::Error::last_os_error)
+    }
+
+    #[inline]
     fn if_null_get_last_error(self) -> io::Result<Self> {
         self.if_null_to_error(io::Error::last_os_error)
+    }
+
+    #[inline]
+    fn if_null_panic_else_drop(self, msg: &'static str) {
+        self.if_null_panic(msg);
     }
 
     #[inline]

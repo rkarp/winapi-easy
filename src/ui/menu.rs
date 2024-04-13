@@ -181,7 +181,7 @@ impl PopupMenu {
                 window.raw_handle,
                 None,
             )
-            .if_null_get_last_error()?;
+            .if_null_get_last_error_else_drop()?;
         }
         Ok(())
     }
