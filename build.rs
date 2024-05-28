@@ -1,16 +1,12 @@
-// Used only until `doc_auto_cfg` is stable, see also: https://stackoverflow.com/a/70914430
-use rustc_version::{
-    version_meta,
-    Channel,
-};
-
 fn main() {
-    // Set cfg flags depending on release channel
-    let channel = match version_meta().unwrap().channel {
-        Channel::Stable => "CHANNEL_STABLE",
-        Channel::Beta => "CHANNEL_BETA",
-        Channel::Nightly => "CHANNEL_NIGHTLY",
-        Channel::Dev => "CHANNEL_DEV",
-    };
-    println!("cargo:rustc-cfg={}", channel)
+    // Used only until `doc_auto_cfg` is stable, see also: https://stackoverflow.com/a/70914430
+    #[rustversion::nightly]
+    fn set_nightly_cfg() {
+        println!("cargo:rustc-cfg=nightly")
+    }
+    #[rustversion::not(nightly)]
+    fn set_nightly_cfg() {}
+
+    set_nightly_cfg();
+    println!("cargo::rustc-check-cfg=cfg(nightly)");
 }

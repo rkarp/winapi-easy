@@ -2,7 +2,7 @@
 A small collection of various abstractions over the Windows API.
 */
 
-#![cfg_attr(all(doc, CHANNEL_NIGHTLY), feature(doc_auto_cfg))]
+#![cfg_attr(all(doc, nightly), feature(doc_auto_cfg))]
 #![allow(clippy::uninlined_format_args)]
 
 #[cfg(not(windows))]
