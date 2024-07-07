@@ -180,9 +180,7 @@ pub enum BuiltinColor {
 
 impl Brush for BuiltinColor {
     fn as_handle(&self) -> io::Result<HBRUSH> {
-        Ok(HBRUSH(i32::from(*self).try_into().expect(
-            "Conversion of built in color IDs to isize should never fail",
-        )))
+        Ok(HBRUSH(i32::from(*self) as *mut std::ffi::c_void))
     }
 }
 

@@ -226,7 +226,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn from_maybe_null(handle: HWND) -> Option<Self> {
-        if handle.0 != 0 {
+        if !handle.is_null() {
             Some(Self {
                 raw_handle: handle,
                 marker: PhantomData,
@@ -294,7 +294,7 @@ impl WindowHandle {
     /// Sets the window as the currently active (selected) window.
     pub fn set_as_active(&self) -> io::Result<()> {
         unsafe {
-            SetActiveWindow(self.raw_handle).if_null_get_last_error()?;
+            SetActiveWindow(self.raw_handle)?;
         }
         Ok(())
     }
@@ -651,8 +651,7 @@ impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WM
                 None,
                 None,
                 None,
-            )
-            .if_null_get_last_error()?
+            )?
         };
         let handle = WindowHandle::from_non_null(h_wnd);
         unsafe {

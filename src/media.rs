@@ -91,7 +91,7 @@ impl Drop for ScreenDeviceContext {
 }
 
 impl ReturnValue for HDC {
-    const NULL_VALUE: Self = HDC(0);
+    const NULL_VALUE: Self = HDC(std::ptr::null_mut());
 }
 
 impl ComInterfaceExt for IMMDeviceEnumerator {

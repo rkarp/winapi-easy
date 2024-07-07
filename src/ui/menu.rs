@@ -59,7 +59,7 @@ impl MenuHandle {
     }
 
     pub(crate) fn from_maybe_null(handle: HMENU) -> Option<Self> {
-        if handle.0 != 0 {
+        if !handle.is_null() {
             Some(Self {
                 raw_handle: handle,
                 marker: PhantomData,

@@ -155,7 +155,7 @@ where
             let mut raw_event = 0;
             let lock = unsafe {
                 SHChangeNotification_Lock(
-                    HANDLE(w_param.0 as isize),
+                    HANDLE(w_param.0 as *mut std::ffi::c_void),
                     l_param.0 as u32,
                     Some(&mut raw_ppp_idl),
                     Some(&mut raw_event),

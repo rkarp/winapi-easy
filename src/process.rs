@@ -167,7 +167,7 @@ impl Process {
     }
 
     fn from_maybe_null(handle: HANDLE) -> Option<Self> {
-        if handle.0 != 0 {
+        if !handle.is_null() {
             Some(Self {
                 handle: handle.into(),
             })
@@ -270,7 +270,7 @@ impl Thread {
     }
 
     fn from_maybe_null(handle: HANDLE) -> Option<Self> {
-        if handle.0 != 0 {
+        if !handle.is_null() {
             Some(Self {
                 handle: handle.into(),
             })

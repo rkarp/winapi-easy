@@ -33,18 +33,18 @@ pub fn get_file_list() -> io::Result<Vec<PathBuf>> {
         };
 
         let num_files =
-            unsafe { DragQueryFileW(HDROP(clipboard_data.ptr() as isize), u32::MAX, None) };
+            unsafe { DragQueryFileW(HDROP(clipboard_data.ptr()), u32::MAX, None) };
         let file_names: io::Result<Vec<PathBuf>> = (0..num_files)
             .map(|file_index| {
                 let required_size = unsafe {
-                    1 + DragQueryFileW(HDROP(clipboard_data.ptr() as isize), file_index, None)
+                    1 + DragQueryFileW(HDROP(clipboard_data.ptr()), file_index, None)
                 }
                 .if_null_to_error(|| io::ErrorKind::Other.into())?;
                 let file_str_buf = {
                     let mut buffer = vec![0; required_size as usize];
                     unsafe {
                         DragQueryFileW(
-                            HDROP(clipboard_data.ptr() as isize),
+                            HDROP(clipboard_data.ptr()),
                             file_index,
                             Some(buffer.as_mut_slice()),
                         )

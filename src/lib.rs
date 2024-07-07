@@ -38,4 +38,6 @@ mod string;
 #[cfg(feature = "media")]
 extern crate self as windows_core;
 #[cfg(feature = "media")]
-use windows::core::CanInto;
+mod imp {
+    pub(crate) use windows::core::imp::CanInto;
+}

@@ -173,7 +173,7 @@ impl RawMessage {
                 None
             }
             WM_MENUCOMMAND => {
-                let menu_handle = MenuHandle::from_maybe_null(HMENU(self.l_param.0))
+                let menu_handle = MenuHandle::from_maybe_null(HMENU(self.l_param.0 as *mut std::ffi::c_void))
                     .expect("Menu handle should not be null here");
                 let item_id = menu_handle
                     .get_item_id(self.w_param.0.try_into().unwrap())

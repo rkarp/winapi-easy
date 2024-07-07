@@ -148,19 +148,19 @@ impl ReturnValue for BOOL {
 }
 
 impl ReturnValue for HANDLE {
-    const NULL_VALUE: Self = HANDLE(0);
+    const NULL_VALUE: Self = HANDLE(ptr::null_mut());
 }
 
 impl ReturnValue for HWND {
-    const NULL_VALUE: Self = HWND(0);
+    const NULL_VALUE: Self = HWND(ptr::null_mut());
 }
 
 impl ReturnValue for HMENU {
-    const NULL_VALUE: Self = HMENU(0);
+    const NULL_VALUE: Self = HMENU(ptr::null_mut());
 }
 
 impl ReturnValue for HMODULE {
-    const NULL_VALUE: Self = HMODULE(0);
+    const NULL_VALUE: Self = HMODULE(ptr::null_mut());
 }
 
 impl ReturnValue for LRESULT {
@@ -220,7 +220,7 @@ impl RawHandle for *mut c_void {
     /// `-1` as a special handle representing the current process.
     #[inline]
     fn is_invalid(self) -> bool {
-        HANDLE(self as isize) == INVALID_HANDLE_VALUE
+        HANDLE(self) == INVALID_HANDLE_VALUE
     }
 }
 
