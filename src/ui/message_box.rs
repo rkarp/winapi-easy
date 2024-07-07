@@ -108,10 +108,7 @@ pub fn show_message_box(
                 .map(|x| PCWSTR::from_raw(x.to_wide_string().as_ptr()))
                 .as_ref(),
             MESSAGEBOX_STYLE::from(options.buttons)
-                | options
-                    .icon
-                    .map(MESSAGEBOX_STYLE::from)
-                    .unwrap_or_default(),
+                | options.icon.map(MESSAGEBOX_STYLE::from).unwrap_or_default(),
             0,
         )
     };

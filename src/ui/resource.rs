@@ -184,10 +184,7 @@ impl Brush for BuiltinColor {
     }
 }
 
-fn get_shared_image_handle(
-    resource_id: u32,
-    resource_type: GDI_IMAGE_TYPE,
-) -> io::Result<HANDLE> {
+fn get_shared_image_handle(resource_id: u32, resource_type: GDI_IMAGE_TYPE) -> io::Result<HANDLE> {
     let handle = unsafe {
         LoadImageW(
             None,

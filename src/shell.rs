@@ -164,7 +164,8 @@ where
             let _unlock_guard = CustomAutoDrop {
                 value: lock,
                 drop_fn: |x| unsafe {
-                    SHChangeNotification_Unlock(HANDLE(x.0)).if_null_panic_else_drop("Improper lock usage");
+                    SHChangeNotification_Unlock(HANDLE(x.0))
+                        .if_null_panic_else_drop("Improper lock usage");
                 },
             };
 

@@ -87,17 +87,13 @@ impl Process {
     ///
     /// This will also lower the I/O priority of the process, which will lower the impact of heavy disk I/O on other processes.
     pub fn begin_background_mode() -> io::Result<()> {
-        unsafe {
-            SetPriorityClass(Self::current().handle.entity, PROCESS_MODE_BACKGROUND_BEGIN)?
-        };
+        unsafe { SetPriorityClass(Self::current().handle.entity, PROCESS_MODE_BACKGROUND_BEGIN)? };
         Ok(())
     }
 
     /// Ends background processing mode for the current process.
     pub fn end_background_mode() -> io::Result<()> {
-        unsafe {
-            SetPriorityClass(Self::current().handle.entity, PROCESS_MODE_BACKGROUND_END)?
-        };
+        unsafe { SetPriorityClass(Self::current().handle.entity, PROCESS_MODE_BACKGROUND_END)? };
         Ok(())
     }
 
@@ -132,9 +128,9 @@ impl Process {
                 &mut return_length,
             )
         };
-        ret_val
-            .0
-            .if_non_null_to_error(|| custom_err_with_code("Getting IO priority failed", ret_val.0))?;
+        ret_val.0.if_non_null_to_error(|| {
+            custom_err_with_code("Getting IO priority failed", ret_val.0)
+        })?;
         Ok(IoPriority::try_from(raw_io_priority as u32).ok())
     }
 
@@ -227,17 +223,13 @@ impl Thread {
     ///
     /// This will also lower the I/O priority of the thread, which will lower the impact of heavy disk I/O on other threads and processes.
     pub fn begin_background_mode() -> io::Result<()> {
-        unsafe {
-            SetThreadPriority(Self::current().handle.entity, THREAD_MODE_BACKGROUND_BEGIN)?
-        };
+        unsafe { SetThreadPriority(Self::current().handle.entity, THREAD_MODE_BACKGROUND_BEGIN)? };
         Ok(())
     }
 
     /// Ends background processing mode for the current thread.
     pub fn end_background_mode() -> io::Result<()> {
-        unsafe {
-            SetThreadPriority(Self::current().handle.entity, THREAD_MODE_BACKGROUND_END)?
-        };
+        unsafe { SetThreadPriority(Self::current().handle.entity, THREAD_MODE_BACKGROUND_END)? };
         Ok(())
     }
 

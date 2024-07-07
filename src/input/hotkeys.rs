@@ -105,12 +105,12 @@ where
                                 curr_id,
                                 HOT_KEY_MODIFIERS(hotkey_def.key_combination.modifiers.0),
                                 hotkey_def.key_combination.key.into(),
-                            ).map_err(From::from)
+                            )
+                            .map_err(From::from)
                         };
                         if result.is_err() {
                             (Self::MIN_ID..=curr_id - 1).rev().for_each(|id| unsafe {
-                                UnregisterHotKey(None, id)
-                                    .expect("Cannot unregister hotkey");
+                                UnregisterHotKey(None, id).expect("Cannot unregister hotkey");
                             });
                         }
                         result

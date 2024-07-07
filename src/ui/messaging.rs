@@ -23,8 +23,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_SIZE,
 };
 
-use crate::internal::windows_missing::*;
 use crate::internal::catch_unwind_and_abort;
+use crate::internal::windows_missing::*;
 use crate::messaging::ThreadMessageLoop;
 use crate::ui::menu::MenuHandle;
 use crate::ui::{
@@ -173,8 +173,9 @@ impl RawMessage {
                 None
             }
             WM_MENUCOMMAND => {
-                let menu_handle = MenuHandle::from_maybe_null(HMENU(self.l_param.0 as *mut std::ffi::c_void))
-                    .expect("Menu handle should not be null here");
+                let menu_handle =
+                    MenuHandle::from_maybe_null(HMENU(self.l_param.0 as *mut std::ffi::c_void))
+                        .expect("Menu handle should not be null here");
                 let item_id = menu_handle
                     .get_item_id(self.w_param.0.try_into().unwrap())
                     .unwrap();

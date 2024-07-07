@@ -32,14 +32,12 @@ pub fn get_file_list() -> io::Result<Vec<PathBuf>> {
             GlobalLockedData::lock(HGLOBAL(clipboard_data.0 as *mut _))?
         };
 
-        let num_files =
-            unsafe { DragQueryFileW(HDROP(clipboard_data.ptr()), u32::MAX, None) };
+        let num_files = unsafe { DragQueryFileW(HDROP(clipboard_data.ptr()), u32::MAX, None) };
         let file_names: io::Result<Vec<PathBuf>> = (0..num_files)
             .map(|file_index| {
-                let required_size = unsafe {
-                    1 + DragQueryFileW(HDROP(clipboard_data.ptr()), file_index, None)
-                }
-                .if_null_to_error(|| io::ErrorKind::Other.into())?;
+                let required_size =
+                    unsafe { 1 + DragQueryFileW(HDROP(clipboard_data.ptr()), file_index, None) }
+                        .if_null_to_error(|| io::ErrorKind::Other.into())?;
                 let file_str_buf = {
                     let mut buffer = vec![0; required_size as usize];
                     unsafe {
