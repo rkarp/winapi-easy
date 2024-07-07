@@ -200,12 +200,12 @@ mod private {
     pub trait RawClosureStore {
         fn get_raw_closure<'a, HT, F>(id: IdType) -> Option<&'a mut F>
         where
-            HT: HookType + ?Sized,
+            HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send;
 
         fn set_raw_closure<HT, F>(id: IdType, user_callback: Option<&mut F>)
         where
-            HT: HookType + ?Sized,
+            HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send;
     }
 
@@ -222,7 +222,7 @@ mod private {
     impl RawClosureStore for ThreadLocalRawClosureStore {
         fn get_raw_closure<'a, HT, F>(id: IdType) -> Option<&'a mut F>
         where
-            HT: HookType + ?Sized,
+            HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue,
         {
             let unwrapped_closure: Option<StoredFunction> =
@@ -233,7 +233,7 @@ mod private {
 
         fn set_raw_closure<HT, F>(id: IdType, maybe_user_callback: Option<&mut F>)
         where
-            HT: HookType + ?Sized,
+            HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue,
         {
             Self::RAW_CLOSURE.with(|cell| {
@@ -260,7 +260,7 @@ mod private {
 
         fn get_raw_closure_with_id<'a, HT, F>(id: IdType) -> Option<&'a mut F>
         where
-            HT: HookType + ?Sized,
+            HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send,
         {
             let raw_hooks = Self::closures().lock().unwrap();
@@ -272,7 +272,7 @@ mod private {
 
         fn set_raw_closure_with_id<HT, F>(id: IdType, user_callback: Option<&mut F>)
         where
-            HT: HookType + ?Sized,
+            HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send,
         {
             let mut hooks = Self::closures().lock().unwrap();
@@ -292,7 +292,7 @@ mod private {
     impl RawClosureStore for GlobalRawClosureStore {
         fn get_raw_closure<'a, HT, F>(id: IdType) -> Option<&'a mut F>
         where
-            HT: HookType + ?Sized,
+            HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send,
         {
             Self::get_raw_closure_with_id::<HT, _>(id)
@@ -300,7 +300,7 @@ mod private {
 
         fn set_raw_closure<HT, F>(id: IdType, user_callback: Option<&mut F>)
         where
-            HT: HookType + ?Sized,
+            HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send,
         {
             Self::set_raw_closure_with_id::<HT, _>(id, user_callback)
@@ -329,7 +329,7 @@ mod private {
                 l_param: LPARAM,
             ) -> LRESULT
             where
-                HT: HookType + ?Sized,
+                HT: HookType,
                 F: FnMut(HT::Message) -> HookReturnValue + Send,
             {
                 if code < 0 {
@@ -394,7 +394,7 @@ mod private {
         fn remove(&mut self) -> io::Result<()> {
             if !self.remove_initiated {
                 self.remove_initiated = true;
-                let _ = unsafe { UnhookWindowsHookEx(self.handle)? };
+                unsafe { UnhookWindowsHookEx(self.handle)? };
                 HT::ClosureStore::set_raw_closure::<HT, fn(_) -> _>(self.id, None);
             }
             Ok(())
@@ -422,7 +422,7 @@ mod tests {
     fn ll_hook_and_unhook() -> windows::core::Result<()> {
         let mut callback =
             |_message: LowLevelMouseMessage| -> HookReturnValue { HookReturnValue::CallNextHook };
-        let _ = unsafe {
+        unsafe {
             PostThreadMessageW(
                 GetCurrentThreadId(),
                 WM_QUIT,

@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn check_audio_device_list() -> io::Result<()> {
         let devices = AudioOutputDevice::get_active_devices()?;
-        if let Some(device) = devices.get(0) {
+        if let Some(device) = devices.first() {
             assert!(!device.id.is_empty());
         }
         Ok(())

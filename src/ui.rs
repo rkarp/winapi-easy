@@ -1228,7 +1228,7 @@ pub fn detach_console() -> io::Result<()> {
 pub fn lock_workstation() -> io::Result<()> {
     // Because the function executes asynchronously, a nonzero return value indicates that the operation has been initiated.
     // It does not indicate whether the workstation has been successfully locked.
-    let _ = unsafe { LockWorkStation()? };
+    unsafe { LockWorkStation()? };
     Ok(())
 }
 
