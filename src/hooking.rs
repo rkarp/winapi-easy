@@ -2,7 +2,6 @@
 
 use num_enum::FromPrimitive;
 use windows::Win32::Foundation::{
-    HMODULE,
     LPARAM,
     LRESULT,
     POINT,
@@ -333,7 +332,7 @@ mod private {
                 F: FnMut(HT::Message) -> HookReturnValue + Send,
             {
                 if code < 0 {
-                    unsafe { return CallNextHookEx(HHOOK::default(), code, w_param, l_param) }
+                    unsafe { return CallNextHookEx(None, code, w_param, l_param) }
                 }
                 let call = move || {
                     let raw_message = RawLowLevelMessage {
@@ -353,7 +352,7 @@ mod private {
                 let result = catch_unwind_and_abort(call);
                 match result {
                     HookReturnValue::CallNextHook => unsafe {
-                        CallNextHookEx(HHOOK::default(), code, w_param, l_param)
+                        CallNextHookEx(None, code, w_param, l_param)
                     },
                     HookReturnValue::BlockMessage => LRESULT(1),
                     HookReturnValue::PassToWindowProcOnly => LRESULT(0),
@@ -365,7 +364,7 @@ mod private {
                 SetWindowsHookExW(
                     Self::TYPE_ID,
                     Some(internal_callback::<ID, Self, F>),
-                    HMODULE::default(),
+                    None,
                     0,
                 )?
             };

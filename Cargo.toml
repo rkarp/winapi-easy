@@ -23,7 +23,7 @@ num_enum = "0.7.2"
 uuid = { version = "1.9.1", features = ["v4", "fast-rng"], optional = true }
 
 [dependencies.windows]
-version = "0.58.0"
+version = "0.59.0"
 features = [
     "Win32_Foundation",
     "Win32_System_Com",
@@ -55,7 +55,6 @@ clipboard = [
 ]
 fs = [
     "windows/Win32_Storage_FileSystem",
-    "windows/Win32_System_WindowsProgramming",
 ]
 hooking = [
     "input",
@@ -70,6 +69,7 @@ media = [
     "windows/Win32_Media_Audio",
     "windows/Win32_UI_ColorSystem",
     "windows/Win32_UI_Shell_PropertiesSystem",
+    "windows/Win32_System_Com_StructuredStorage",
     "windows/Win32_System_Variant",
 ]
 process = [

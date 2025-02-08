@@ -116,7 +116,7 @@ impl MenuHandle {
     }
 
     fn get_item_count(&self) -> io::Result<i32> {
-        let count = unsafe { GetMenuItemCount(self.raw_handle) };
+        let count = unsafe { GetMenuItemCount(Some(self.raw_handle)) };
         count.if_eq_to_error(-1, io::Error::last_os_error)?;
         Ok(count)
     }
@@ -177,7 +177,7 @@ impl PopupMenu {
                 Default::default(),
                 coords.x,
                 coords.y,
-                0,
+                None,
                 window.raw_handle,
                 None,
             )

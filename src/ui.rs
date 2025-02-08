@@ -238,7 +238,7 @@ impl WindowHandle {
 
     /// Checks if the handle points to an existing window.
     pub fn is_window(&self) -> bool {
-        let result = unsafe { IsWindow(self.raw_handle) };
+        let result = unsafe { IsWindow(Some(self.raw_handle)) };
         result.as_bool()
     }
 
@@ -346,8 +346,8 @@ impl WindowHandle {
             SendMessageW(
                 self.raw_handle,
                 WM_SYSCOMMAND,
-                WPARAM(action.to_usize()),
-                LPARAM::default(),
+                Some(WPARAM(action.to_usize())),
+                None,
             )
         };
         result
@@ -454,8 +454,8 @@ impl WindowHandle {
             SendMessageW(
                 self.raw_handle,
                 WM_SYSCOMMAND,
-                WPARAM(SC_MONITORPOWER.try_into().unwrap()),
-                LPARAM(level.into()),
+                Some(WPARAM(SC_MONITORPOWER.try_into().unwrap())),
+                Some(LPARAM(level.into())),
             )
         };
         result.if_non_null_to_error(|| {

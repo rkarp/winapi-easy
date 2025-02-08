@@ -8,14 +8,13 @@ use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::{
     CopyFileExW,
     MoveFileWithProgressW,
+    COPYPROGRESSROUTINE_PROGRESS,
+    COPY_FILE_COPY_SYMLINK,
+    COPY_FILE_FAIL_IF_EXISTS,
     LPPROGRESS_ROUTINE,
     LPPROGRESS_ROUTINE_CALLBACK_REASON,
     MOVEFILE_COPY_ALLOWED,
     MOVEFILE_WRITE_THROUGH,
-};
-use windows::Win32::System::WindowsProgramming::{
-    COPY_FILE_COPY_SYMLINK,
-    COPY_FILE_FAIL_IF_EXISTS,
     PROGRESS_CANCEL,
     PROGRESS_CONTINUE,
     PROGRESS_QUIET,
@@ -69,13 +68,19 @@ pub struct ProgressStatus {
 pub enum ProgressRetVal {
     /// Continue the operation.
     #[default]
-    Continue = PROGRESS_CONTINUE,
+    Continue = PROGRESS_CONTINUE.0,
     /// Stop the operation with the option of continuing later.
-    Stop = PROGRESS_STOP,
+    Stop = PROGRESS_STOP.0,
     /// Cancel the operation.
-    Cancel = PROGRESS_CANCEL,
+    Cancel = PROGRESS_CANCEL.0,
     /// Continue but stop calling the user callback.
-    Quiet = PROGRESS_QUIET,
+    Quiet = PROGRESS_QUIET.0,
+}
+
+impl From<ProgressRetVal> for COPYPROGRESSROUTINE_PROGRESS {
+    fn from(value: ProgressRetVal) -> Self {
+        COPYPROGRESSROUTINE_PROGRESS(u32::from(value))
+    }
 }
 
 /// Additional methods on [`Path`] using Windows-specific functionality.
@@ -111,7 +116,7 @@ pub trait PathExt: AsRef<Path> {
             CopyFileExW(
                 source.as_raw_pcwstr(),
                 target.as_raw_pcwstr(),
-                raw_progress_callback,
+                Some(raw_progress_callback),
                 callback
                     .as_mut()
                     .map(|callback| callback as *mut F as *const _),
@@ -152,7 +157,7 @@ pub trait PathExt: AsRef<Path> {
             MoveFileWithProgressW(
                 source.as_raw_pcwstr(),
                 target.as_raw_pcwstr(),
-                raw_progress_callback,
+                Some(raw_progress_callback),
                 callback
                     .as_mut()
                     .map(|callback| callback as *mut F as *const _),
@@ -175,7 +180,7 @@ unsafe extern "system" fn transfer_internal_callback<F>(
     _hsourcefile: HANDLE,
     _hdestinationfile: HANDLE,
     lpdata: *const c_void,
-) -> u32
+) -> COPYPROGRESSROUTINE_PROGRESS
 where
     F: FnMut(ProgressStatus) -> ProgressRetVal,
 {

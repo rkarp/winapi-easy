@@ -15,10 +15,8 @@ use std::os::windows::ffi::{
 use windows::core::{
     GUID,
     PCWSTR,
-    PROPVARIANT,
 };
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
-use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{
     GetDC,
     ReleaseDC,
@@ -32,6 +30,7 @@ use windows::Win32::Media::Audio::{
     MMDeviceEnumerator,
     DEVICE_STATE_ACTIVE,
 };
+use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
 use windows::Win32::System::Com::STGM_READ;
 use windows::Win32::UI::ColorSystem::{
     GetDeviceGammaRamp,
@@ -53,8 +52,7 @@ pub(crate) struct ScreenDeviceContext {
 impl ScreenDeviceContext {
     #[allow(dead_code)]
     pub(crate) fn get() -> io::Result<Self> {
-        let result =
-            unsafe { GetDC(HWND::default()).if_null_to_error(|| io::ErrorKind::Other.into())? };
+        let result = unsafe { GetDC(None).if_null_to_error(|| io::ErrorKind::Other.into())? };
         Ok(Self {
             raw_context: result,
             phantom: PhantomData,
@@ -85,7 +83,7 @@ impl Drop for ScreenDeviceContext {
     fn drop(&mut self) {
         unsafe {
             // Ignore possible errors here
-            let _ = ReleaseDC(HWND::default(), self.raw_context);
+            let _ = ReleaseDC(None, self.raw_context);
         }
     }
 }
