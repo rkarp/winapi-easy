@@ -1,8 +1,10 @@
 //! Processes, threads.
 
 use std::ffi::c_void;
-use std::io;
-use std::mem;
+use std::{
+    io,
+    mem,
+};
 
 use ntapi::ntpsapi::{
     NtSetInformationProcess,
@@ -22,10 +24,10 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot,
-    Thread32First,
-    Thread32Next,
     TH32CS_SNAPTHREAD,
     THREADENTRY32,
+    Thread32First,
+    Thread32Next,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleExW;
 use windows::Win32::System::Threading;
@@ -38,12 +40,12 @@ use windows::Win32::System::Threading::{
     GetThreadId,
     OpenProcess,
     OpenThread,
-    SetPriorityClass,
-    SetThreadPriority,
     PROCESS_ALL_ACCESS,
     PROCESS_CREATION_FLAGS,
     PROCESS_MODE_BACKGROUND_BEGIN,
     PROCESS_MODE_BACKGROUND_END,
+    SetPriorityClass,
+    SetThreadPriority,
     THREAD_ALL_ACCESS,
     THREAD_MODE_BACKGROUND_BEGIN,
     THREAD_MODE_BACKGROUND_END,
@@ -51,9 +53,9 @@ use windows::Win32::System::Threading::{
 };
 
 use crate::internal::{
-    custom_err_with_code,
     AutoClose,
     ReturnValue,
+    custom_err_with_code,
 };
 
 /// A Windows process.
@@ -440,7 +442,6 @@ mod tests {
 
     #[cfg(feature = "ui")]
     use crate::ui::WindowHandle;
-
     use super::*;
 
     #[test]

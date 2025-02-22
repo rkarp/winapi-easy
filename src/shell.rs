@@ -1,23 +1,32 @@
 //! Windows Shell functionality.
 
+use std::cell::Cell;
+use std::{
+    io,
+    ptr,
+};
+use std::ops::{
+    BitOr,
+    BitOrAssign,
+};
+use std::path::{
+    Path,
+    PathBuf,
+};
+
 use num_enum::{
     FromPrimitive,
     IntoPrimitive,
 };
+use windows::Win32::Foundation::{
+    HANDLE,
+    HWND,
+    LPARAM,
+    WPARAM,
+};
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
     ILCreateFromPathW,
-    SHCNRF_InterruptLevel,
-    SHCNRF_NewDelivery,
-    SHCNRF_RecursiveInterrupt,
-    SHCNRF_ShellLevel,
-    SHChangeNotification_Lock,
-    SHChangeNotification_Unlock,
-    SHChangeNotify,
-    SHChangeNotifyDeregister,
-    SHChangeNotifyEntry,
-    SHChangeNotifyRegister,
-    SHGetPathFromIDListEx,
     SHCNE_ASSOCCHANGED,
     SHCNE_CREATE,
     SHCNE_DELETE,
@@ -29,28 +38,19 @@ use windows::Win32::UI::Shell::{
     SHCNE_UPDATEDIR,
     SHCNE_UPDATEITEM,
     SHCNF_IDLIST,
+    SHCNRF_InterruptLevel,
+    SHCNRF_NewDelivery,
+    SHCNRF_RecursiveInterrupt,
+    SHCNRF_ShellLevel,
+    SHChangeNotification_Lock,
+    SHChangeNotification_Unlock,
+    SHChangeNotify,
+    SHChangeNotifyDeregister,
+    SHChangeNotifyEntry,
+    SHChangeNotifyRegister,
+    SHGetPathFromIDListEx,
 };
 use windows::Win32::UI::WindowsAndMessaging::WM_APP;
-
-use std::cell::Cell;
-use std::ops::{
-    BitOr,
-    BitOrAssign,
-};
-use std::path::{
-    Path,
-    PathBuf,
-};
-use std::{
-    io,
-    ptr,
-};
-use windows::Win32::Foundation::{
-    HANDLE,
-    HWND,
-    LPARAM,
-    WPARAM,
-};
 
 use crate::com::ComTaskMemory;
 use crate::internal::{
@@ -59,16 +59,16 @@ use crate::internal::{
 };
 use crate::messaging::ThreadMessageLoop;
 use crate::string::{
-    max_path_extend,
     ZeroTerminatedWideString,
+    max_path_extend,
 };
-use crate::ui::messaging::WindowMessageListener;
 use crate::ui::{
     Window,
     WindowClass,
     WindowClassAppearance,
     WindowHandle,
 };
+use crate::ui::messaging::WindowMessageListener;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]

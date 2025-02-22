@@ -1,12 +1,10 @@
-use crate::internal::ReturnValue;
+use std::io;
+
 use num_enum::{
     FromPrimitive,
     IntoPrimitive,
 };
-use std::io;
-use windows::core::PCWSTR;
 use windows::Win32::UI::WindowsAndMessaging::{
-    MessageBoxExW,
     IDABORT,
     IDCANCEL,
     IDCONTINUE,
@@ -28,8 +26,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     MB_YESNO,
     MB_YESNOCANCEL,
     MESSAGEBOX_STYLE,
+    MessageBoxExW,
 };
+use windows::core::PCWSTR;
 
+use crate::internal::ReturnValue;
 use crate::string::ToWideString;
 use crate::ui::WindowHandle;
 

@@ -3,18 +3,20 @@
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::fmt::Display;
-use std::io;
+use std::{
+    io,
+    ptr,
+};
 use std::io::ErrorKind;
 use std::panic::{
-    catch_unwind,
     AssertUnwindSafe,
+    catch_unwind,
 };
-use std::ptr;
 use std::ptr::NonNull;
 
 use windows::Win32::Foundation::{
-    CloseHandle,
     BOOL,
+    CloseHandle,
     HANDLE,
     HGLOBAL,
     HMODULE,
@@ -429,8 +431,8 @@ where
 pub(crate) mod windows_missing {
     use windows::Win32::Foundation::LPARAM;
     use windows::Win32::UI::Shell::{
-        NINF_KEY,
         NIN_SELECT,
+        NINF_KEY,
     };
 
     pub const NIN_KEYSELECT: u32 = NIN_SELECT | NINF_KEY;

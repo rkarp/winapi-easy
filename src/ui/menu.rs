@@ -1,20 +1,19 @@
 //! Menus and menu items.
 
-use std::io;
+use std::{
+    io,
+    mem,
+};
 use std::io::ErrorKind;
 use std::marker::PhantomData;
-use std::mem;
 
-use windows::core::PWSTR;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreatePopupMenu,
     DestroyMenu,
     GetMenuItemCount,
     GetMenuItemID,
-    InsertMenuItemW,
-    SetMenuInfo,
-    TrackPopupMenu,
     HMENU,
+    InsertMenuItemW,
     MENUINFO,
     MENUITEMINFOW,
     MFT_SEPARATOR,
@@ -24,7 +23,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     MIM_APPLYTOSUBMENUS,
     MIM_STYLE,
     MNS_NOTIFYBYPOS,
+    SetMenuInfo,
+    TrackPopupMenu,
 };
+use windows::core::PWSTR;
 
 use crate::internal::ReturnValue;
 use crate::string::ToWideString;

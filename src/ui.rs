@@ -5,31 +5,27 @@ use std::fmt::{
     Display,
     Formatter,
 };
-use std::marker::PhantomData;
-use std::mem;
-use std::ptr::NonNull;
 use std::{
     io,
+    mem,
     vec,
 };
+use std::marker::PhantomData;
+use std::ptr::NonNull;
 
 use num_enum::{
     IntoPrimitive,
     TryFromPrimitive,
 };
-use windows::core::{
-    GUID,
-    PCWSTR,
-};
 use windows::Win32::Foundation::{
-    GetLastError,
-    SetLastError,
     BOOL,
+    GetLastError,
     HWND,
     LPARAM,
     NO_ERROR,
     POINT,
     RECT,
+    SetLastError,
     WPARAM,
 };
 use windows::Win32::System::Console::{
@@ -41,8 +37,6 @@ use windows::Win32::System::Shutdown::LockWorkStation;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetActiveWindow;
 use windows::Win32::UI::Shell::{
     ITaskbarList3,
-    Shell_NotifyIconW,
-    TaskbarList,
     NIF_GUID,
     NIF_ICON,
     NIF_INFO,
@@ -50,33 +44,43 @@ use windows::Win32::UI::Shell::{
     NIF_SHOWTIP,
     NIF_STATE,
     NIF_TIP,
+    NIIF_ERROR,
+    NIIF_INFO,
+    NIIF_NONE,
+    NIIF_WARNING,
     NIM_ADD,
     NIM_DELETE,
     NIM_MODIFY,
     NIM_SETVERSION,
     NIS_HIDDEN,
-    NOTIFYICONDATAW,
-    NOTIFYICON_VERSION_4,
     NOTIFY_ICON_INFOTIP_FLAGS,
     NOTIFY_ICON_STATE,
-    TBPFLAG,
-};
-use windows::Win32::UI::Shell::{
-    NIIF_ERROR,
-    NIIF_INFO,
-    NIIF_NONE,
-    NIIF_WARNING,
+    NOTIFYICON_VERSION_4,
+    NOTIFYICONDATAW,
+    Shell_NotifyIconW,
     TBPF_ERROR,
     TBPF_INDETERMINATE,
     TBPF_NOPROGRESS,
     TBPF_NORMAL,
     TBPF_PAUSED,
+    TBPFLAG,
+    TaskbarList,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
+    CW_USEDEFAULT,
     CreateWindowExW,
     DestroyWindow,
     EnumWindows,
+    FLASHW_ALL,
+    FLASHW_CAPTION,
+    FLASHW_STOP,
+    FLASHW_TIMER,
+    FLASHW_TIMERNOFG,
+    FLASHW_TRAY,
+    FLASHWINFO,
+    FLASHWINFO_FLAGS,
     FlashWindowEx,
+    GWLP_USERDATA,
     GetClassNameW,
     GetDesktopWindow,
     GetForegroundWindow,
@@ -84,27 +88,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowPlacement,
     GetWindowTextLengthW,
     GetWindowTextW,
+    HICON,
     IsWindow,
     IsWindowVisible,
     RegisterClassExW,
-    SendMessageW,
-    SetForegroundWindow,
-    SetWindowLongPtrW,
-    SetWindowPlacement,
-    SetWindowTextW,
-    ShowWindow,
-    UnregisterClassW,
-    CW_USEDEFAULT,
-    FLASHWINFO,
-    FLASHWINFO_FLAGS,
-    FLASHW_ALL,
-    FLASHW_CAPTION,
-    FLASHW_STOP,
-    FLASHW_TIMER,
-    FLASHW_TIMERNOFG,
-    FLASHW_TRAY,
-    GWLP_USERDATA,
-    HICON,
     SC_CLOSE,
     SC_MAXIMIZE,
     SC_MINIMIZE,
@@ -121,32 +108,38 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SW_SHOWNA,
     SW_SHOWNOACTIVATE,
     SW_SHOWNORMAL,
+    SendMessageW,
+    SetForegroundWindow,
+    SetWindowLongPtrW,
+    SetWindowPlacement,
+    SetWindowTextW,
+    ShowWindow,
+    UnregisterClassW,
     WINDOWPLACEMENT,
     WM_SYSCOMMAND,
     WNDCLASSEXW,
     WPF_SETMINPOSITION,
     WS_OVERLAPPEDWINDOW,
 };
+use windows::core::{
+    GUID,
+    PCWSTR,
+};
 
 use crate::com::ComInterfaceExt;
 use crate::internal::{
+    ReturnValue,
     custom_err_with_code,
     with_sync_closure_to_callback2,
-    ReturnValue,
-};
-#[cfg(feature = "process")]
-use crate::process::{
-    ProcessId,
-    ThreadId,
 };
 use crate::string::{
-    to_wide_chars_iter,
     FromWideString,
     ToWideString,
+    to_wide_chars_iter,
 };
 use crate::ui::messaging::{
-    generic_window_proc,
     WindowMessageListener,
+    generic_window_proc,
 };
 use crate::ui::resource::{
     Brush,
@@ -155,6 +148,11 @@ use crate::ui::resource::{
     BuiltinIcon,
     Cursor,
     Icon,
+};
+#[cfg(feature = "process")]
+use crate::process::{
+    ProcessId,
+    ThreadId,
 };
 
 pub mod menu;
@@ -547,8 +545,8 @@ impl<'res, WML: WindowMessageListener> WindowClass<'res, WML> {
         I: Icon + 'res,
         C: Cursor + 'res,
     {
-        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
         use base64::Engine;
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
         let base64_uuid = URL_SAFE_NO_PAD.encode(uuid::Uuid::new_v4().as_bytes());
         let class_name = class_name_prefix.to_string() + "_" + &base64_uuid;
@@ -1284,10 +1282,12 @@ mod tests {
         assert_eq!(window.as_ref().get_caption_text(), WINDOW_NAME);
         window.as_ref().set_caption_text(CAPTION_TEXT)?;
         assert_eq!(window.as_ref().get_caption_text(), CAPTION_TEXT);
-        assert!(window
-            .as_ref()
-            .get_class_name()?
-            .starts_with(CLASS_NAME_PREFIX));
+        assert!(
+            window
+                .as_ref()
+                .get_class_name()?
+                .starts_with(CLASS_NAME_PREFIX)
+        );
 
         Ok(())
     }

@@ -38,7 +38,6 @@ use windows::Win32::Graphics::Gdi::{
     HBRUSH,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    LoadImageW,
     GDI_IMAGE_TYPE,
     HCURSOR,
     HICON,
@@ -46,6 +45,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IMAGE_ICON,
     LR_DEFAULTSIZE,
     LR_SHARED,
+    LoadImageW,
     OCR_APPSTARTING,
     OCR_CROSS,
     OCR_HAND,
@@ -67,7 +67,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     OIC_SHIELD,
     OIC_WARNING,
 };
-
 use windows_missing::*;
 
 pub trait Icon {

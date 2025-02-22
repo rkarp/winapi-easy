@@ -12,29 +12,29 @@ use std::os::windows::ffi::{
     OsStringExt,
 };
 
-use windows::core::{
-    GUID,
-    PCWSTR,
-};
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Graphics::Gdi::{
     GetDC,
-    ReleaseDC,
     HDC,
+    ReleaseDC,
 };
 use windows::Win32::Media::Audio::{
-    eConsole,
-    eRender,
+    DEVICE_STATE_ACTIVE,
     IMMDevice,
     IMMDeviceEnumerator,
     MMDeviceEnumerator,
-    DEVICE_STATE_ACTIVE,
+    eConsole,
+    eRender,
 };
-use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
 use windows::Win32::System::Com::STGM_READ;
+use windows::Win32::System::Com::StructuredStorage::PROPVARIANT;
 use windows::Win32::UI::ColorSystem::{
     GetDeviceGammaRamp,
     SetDeviceGammaRamp,
+};
+use windows::core::{
+    GUID,
+    PCWSTR,
 };
 
 use crate::com::{
@@ -172,12 +172,12 @@ mod policy_config {
 
     use std::ffi::c_void;
 
+    use windows::Win32::Media::Audio::ERole;
     use windows::core::{
-        Interface,
         GUID,
+        Interface,
         PCWSTR,
     };
-    use windows::Win32::Media::Audio::ERole;
 
     use crate::com::ComInterfaceExt;
 

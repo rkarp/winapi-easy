@@ -13,11 +13,11 @@ use std::os::windows::ffi::{
 };
 use std::path::Path;
 
+use windows::Win32::Foundation::UNICODE_STRING;
 use windows::core::{
     PCWSTR,
     PWSTR,
 };
-use windows::Win32::Foundation::UNICODE_STRING;
 
 pub(crate) trait ToWideString: AsRef<OsStr> + Sized {
     fn to_wide_string(&self) -> Vec<u16> {

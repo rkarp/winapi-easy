@@ -7,16 +7,16 @@ Component Object Model (COM) initialization.
 use std::cell::Cell;
 use std::io;
 
-use windows::core::{
-    Interface,
-    GUID,
-};
 use windows::Win32::System::Com::{
+    CLSCTX_INPROC_SERVER,
+    COINIT_APARTMENTTHREADED,
     CoCreateInstance,
     CoInitializeEx,
     CoTaskMemFree,
-    CLSCTX_INPROC_SERVER,
-    COINIT_APARTMENTTHREADED,
+};
+use windows::core::{
+    GUID,
+    Interface,
 };
 
 /// Initializes the COM library for the current thread. Will do nothing on further calls from the same thread.

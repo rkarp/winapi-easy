@@ -12,7 +12,6 @@ use num_enum::{
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState,
     GetKeyState,
-    SendInput,
     INPUT,
     INPUT_0,
     INPUT_KEYBOARD,
@@ -29,6 +28,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     MOUSEEVENTF_XDOWN,
     MOUSEEVENTF_XUP,
     MOUSEINPUT,
+    SendInput,
     VIRTUAL_KEY,
     VK_0,
     VK_1,
@@ -57,9 +57,6 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_ESCAPE,
     VK_F,
     VK_F1,
-    VK_F10,
-    VK_F11,
-    VK_F12,
     VK_F2,
     VK_F3,
     VK_F4,
@@ -68,6 +65,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_F7,
     VK_F8,
     VK_F9,
+    VK_F10,
+    VK_F11,
+    VK_F12,
     VK_G,
     VK_H,
     VK_HOME,
@@ -100,7 +100,6 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_NUMPAD9,
     VK_O,
     VK_OEM_1,
-    VK_OEM_102,
     VK_OEM_2,
     VK_OEM_3,
     VK_OEM_4,
@@ -108,6 +107,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_OEM_6,
     VK_OEM_7,
     VK_OEM_8,
+    VK_OEM_102,
     VK_OEM_COMMA,
     VK_OEM_MINUS,
     VK_OEM_PERIOD,
@@ -149,9 +149,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     XBUTTON1,
     XBUTTON2,
 };
+use private::*;
 
 use crate::internal::ReturnValue;
-use private::*;
 
 pub mod hotkeys;
 

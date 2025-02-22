@@ -1,5 +1,15 @@
 //! Various hooking functionality.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::fmt::Debug;
+use std::io;
+use std::marker::PhantomData;
+use std::sync::{
+    Mutex,
+    OnceLock,
+};
+
 use num_enum::FromPrimitive;
 use windows::Win32::Foundation::{
     LPARAM,
@@ -9,11 +19,11 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx,
-    SetWindowsHookExW,
-    UnhookWindowsHookEx,
     HHOOK,
     KBDLLHOOKSTRUCT,
     MSLLHOOKSTRUCT,
+    SetWindowsHookExW,
+    UnhookWindowsHookEx,
     WH_KEYBOARD_LL,
     WH_MOUSE_LL,
     WINDOWS_HOOK_ID,
@@ -32,16 +42,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_XBUTTONDOWN,
     WM_XBUTTONUP,
 };
-
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::io;
-use std::marker::PhantomData;
-use std::sync::{
-    Mutex,
-    OnceLock,
-};
+use private::*;
 
 use crate::input::{
     KeyboardKey,
@@ -51,8 +52,6 @@ use crate::input::{
 use crate::internal::catch_unwind_and_abort;
 use crate::internal::windows_missing::HIWORD;
 use crate::messaging::ThreadMessageLoop;
-
-use private::*;
 
 /// A global mouse or keyboard hook.
 ///

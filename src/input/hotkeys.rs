@@ -1,29 +1,29 @@
 //! Global hotkeys.
 
+use std::collections::HashMap;
+use std::{
+    io,
+    thread,
+};
+use std::ops::Add;
+use std::sync::mpsc;
+
 use num_enum::IntoPrimitive;
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    RegisterHotKey,
-    UnregisterHotKey,
     HOT_KEY_MODIFIERS,
     MOD_ALT,
     MOD_CONTROL,
     MOD_NOREPEAT,
     MOD_SHIFT,
     MOD_WIN,
+    RegisterHotKey,
+    UnregisterHotKey,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetMessageW,
     MSG,
     WM_HOTKEY,
-};
-
-use std::collections::HashMap;
-use std::ops::Add;
-use std::sync::mpsc;
-use std::{
-    io,
-    thread,
 };
 
 use crate::input::KeyboardKey;

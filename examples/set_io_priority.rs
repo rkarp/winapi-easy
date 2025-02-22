@@ -1,10 +1,10 @@
 use std::io;
 
+use winapi_easy::input::KeyboardKey;
 use winapi_easy::input::hotkeys::{
     GlobalHotkeySet,
     Modifier,
 };
-use winapi_easy::input::KeyboardKey;
 use winapi_easy::process::{
     IoPriority,
     Process,

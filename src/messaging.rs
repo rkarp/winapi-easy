@@ -1,17 +1,17 @@
 //! Messaging and message loops.
 
 use std::cell::Cell;
+use std::io;
+
 use windows::Win32::Foundation::BOOL;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW,
     GetMessageW,
+    MSG,
     PostQuitMessage,
     TranslateMessage,
-    MSG,
     WM_QUIT,
 };
-
-use std::io;
 
 use crate::internal::ReturnValue;
 

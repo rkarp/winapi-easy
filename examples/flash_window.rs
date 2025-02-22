@@ -1,5 +1,7 @@
-use std::io;
-use std::thread;
+use std::{
+    io,
+    thread,
+};
 use std::time::Duration;
 
 use winapi_easy::ui::{

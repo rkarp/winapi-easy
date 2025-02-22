@@ -6,19 +6,6 @@ use num_enum::{
     IntoPrimitive,
 };
 use winapi_easy::messaging::ThreadMessageLoop;
-use winapi_easy::ui::menu::{
-    MenuItem,
-    PopupMenu,
-};
-use winapi_easy::ui::message_box::{
-    show_message_box,
-    MessageBoxOptions,
-};
-use winapi_easy::ui::messaging::WindowMessageListener;
-use winapi_easy::ui::resource::{
-    BuiltinColor,
-    BuiltinIcon,
-};
 use winapi_easy::ui::{
     BalloonNotification,
     NotificationIconOptions,
@@ -28,6 +15,19 @@ use winapi_easy::ui::{
     WindowClassAppearance,
     WindowHandle,
     WindowShowState,
+};
+use winapi_easy::ui::menu::{
+    MenuItem,
+    PopupMenu,
+};
+use winapi_easy::ui::message_box::{
+    MessageBoxOptions,
+    show_message_box,
+};
+use winapi_easy::ui::messaging::WindowMessageListener;
+use winapi_easy::ui::resource::{
+    BuiltinColor,
+    BuiltinIcon,
 };
 
 #[derive(Copy, Clone, Debug)]

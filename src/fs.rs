@@ -1,20 +1,21 @@
 //! Filesystem functionality.
 
-use num_enum::IntoPrimitive;
 use std::ffi::c_void;
 use std::io;
 use std::path::Path;
+
+use num_enum::IntoPrimitive;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::{
-    CopyFileExW,
-    MoveFileWithProgressW,
-    COPYPROGRESSROUTINE_PROGRESS,
     COPY_FILE_COPY_SYMLINK,
     COPY_FILE_FAIL_IF_EXISTS,
+    COPYPROGRESSROUTINE_PROGRESS,
+    CopyFileExW,
     LPPROGRESS_ROUTINE,
     LPPROGRESS_ROUTINE_CALLBACK_REASON,
     MOVEFILE_COPY_ALLOWED,
     MOVEFILE_WRITE_THROUGH,
+    MoveFileWithProgressW,
     PROGRESS_CANCEL,
     PROGRESS_CONTINUE,
     PROGRESS_QUIET,
@@ -23,8 +24,8 @@ use windows::Win32::Storage::FileSystem::{
 
 use crate::internal::catch_unwind_and_abort;
 use crate::string::{
-    max_path_extend,
     ZeroTerminatedWideString,
+    max_path_extend,
 };
 
 /// Optional function called by Windows for every transferred chunk of a file.
