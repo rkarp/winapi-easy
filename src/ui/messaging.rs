@@ -250,14 +250,15 @@ where
 
         // When creating a window, the custom data for the loop is not set yet
         // before the first call to this function
-        let listener_result = window.get_user_data_ptr::<WML>().and_then(|listener_ptr| {
-            raw_message.dispatch_to_message_listener(window, listener_ptr.as_ref())
-        });
+        let listener_result =
+            unsafe { window.get_user_data_ptr::<WML>() }.and_then(|listener_ptr| {
+                raw_message.dispatch_to_message_listener(window, unsafe { listener_ptr.as_ref() })
+            });
 
         if let Some(l_result) = listener_result {
             l_result
         } else {
-            DefWindowProcW(h_wnd, message, w_param, l_param)
+            unsafe { DefWindowProcW(h_wnd, message, w_param, l_param) }
         }
     };
     catch_unwind_and_abort(call)

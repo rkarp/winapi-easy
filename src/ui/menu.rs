@@ -230,7 +230,7 @@ impl<'a> MenuItemCallData<'a> {
             ..Default::default()
         };
         match &mut menu_item {
-            Some(MenuItemRaw::WideText(ref mut wide_string)) => {
+            Some(MenuItemRaw::WideText(wide_string)) => {
                 item_info.fMask |= MIIM_STRING;
                 item_info.cch = wide_string.len().try_into().unwrap();
                 item_info.dwTypeData = PWSTR::from_raw(wide_string.as_mut_ptr());

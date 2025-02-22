@@ -464,15 +464,15 @@ impl WindowHandle {
     }
 
     pub(crate) unsafe fn get_user_data_ptr<T>(&self) -> Option<NonNull<T>> {
-        let ptr_value = GetWindowLongPtrW(self.raw_handle, GWLP_USERDATA);
+        let ptr_value = unsafe { GetWindowLongPtrW(self.raw_handle, GWLP_USERDATA) };
         NonNull::new(ptr_value as *mut T)
     }
 
     pub(crate) unsafe fn set_user_data_ptr<T>(&self, ptr: *const T) -> io::Result<()> {
-        SetLastError(NO_ERROR);
-        let ret_val = SetWindowLongPtrW(self.raw_handle, GWLP_USERDATA, ptr as isize);
+        unsafe { SetLastError(NO_ERROR) };
+        let ret_val = unsafe { SetWindowLongPtrW(self.raw_handle, GWLP_USERDATA, ptr as isize) };
         if ret_val == 0 {
-            let err_val = GetLastError();
+            let err_val = unsafe { GetLastError() };
             if err_val != NO_ERROR {
                 return Err(custom_err_with_code(
                     "Cannot set window procedure",

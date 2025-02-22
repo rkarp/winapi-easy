@@ -361,7 +361,7 @@ where
     {
         let call = move || {
             let unwrapped_closure: *mut c_void = RAW_CLOSURE.with(|raw_closure| raw_closure.get());
-            let closure: &mut F = &mut *(unwrapped_closure as *mut F);
+            let closure: &mut F = unsafe { &mut *(unwrapped_closure as *mut F) };
             closure(input1, input2)
         };
         catch_unwind_and_abort(call)
@@ -394,7 +394,7 @@ where
     {
         let call = move || {
             let unwrapped_closure: *mut c_void = RAW_CLOSURE.with(|raw_closure| raw_closure.get());
-            let closure: &mut F = &mut *(unwrapped_closure as *mut F);
+            let closure: &mut F = unsafe { &mut *(unwrapped_closure as *mut F) };
             closure(input1, input2)
         };
         catch_unwind_and_abort(call)

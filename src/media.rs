@@ -194,12 +194,14 @@ mod policy_config {
             P0: Into<PCWSTR>,
             P1: Into<ERole>,
         {
-            (Interface::vtable(self).SetDefaultEndpoint)(
-                Interface::as_raw(self),
-                deviceId.into(),
-                eRole.into(),
-            )
-            .ok()
+            unsafe {
+                (Interface::vtable(self).SetDefaultEndpoint)(
+                    Interface::as_raw(self),
+                    deviceId.into(),
+                    eRole.into(),
+                )
+                .ok()
+            }
         }
     }
 
