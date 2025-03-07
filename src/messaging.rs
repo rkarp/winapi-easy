@@ -3,7 +3,7 @@
 use std::cell::Cell;
 use std::io;
 
-use windows::Win32::Foundation::BOOL;
+use windows::core::BOOL;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW,
     GetMessageW,

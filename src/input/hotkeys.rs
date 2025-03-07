@@ -9,7 +9,7 @@ use std::ops::Add;
 use std::sync::mpsc;
 
 use num_enum::IntoPrimitive;
-use windows::Win32::Foundation::BOOL;
+use windows::core::BOOL;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     HOT_KEY_MODIFIERS,
     MOD_ALT,

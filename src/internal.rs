@@ -14,8 +14,8 @@ use std::panic::{
 };
 use std::ptr::NonNull;
 
+use windows::core::BOOL;
 use windows::Win32::Foundation::{
-    BOOL,
     CloseHandle,
     HANDLE,
     HGLOBAL,

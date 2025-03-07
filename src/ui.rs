@@ -18,7 +18,6 @@ use num_enum::{
     TryFromPrimitive,
 };
 use windows::Win32::Foundation::{
-    BOOL,
     GetLastError,
     HWND,
     LPARAM,
@@ -122,6 +121,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_OVERLAPPEDWINDOW,
 };
 use windows::core::{
+    BOOL,
     GUID,
     PCWSTR,
 };

@@ -117,7 +117,7 @@ pub trait PathExt: AsRef<Path> {
             CopyFileExW(
                 source.as_raw_pcwstr(),
                 target.as_raw_pcwstr(),
-                Some(raw_progress_callback),
+                raw_progress_callback,
                 callback
                     .as_mut()
                     .map(|callback| callback as *mut F as *const _),
@@ -158,7 +158,7 @@ pub trait PathExt: AsRef<Path> {
             MoveFileWithProgressW(
                 source.as_raw_pcwstr(),
                 target.as_raw_pcwstr(),
-                Some(raw_progress_callback),
+                raw_progress_callback,
                 callback
                     .as_mut()
                     .map(|callback| callback as *mut F as *const _),
