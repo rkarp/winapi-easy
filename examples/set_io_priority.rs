@@ -26,7 +26,7 @@ fn main() -> io::Result<()> {
             Action::NormalPrio,
             Modifier::Ctrl + Modifier::Alt + KeyboardKey::PgUp,
         )
-        .listen_for_hotkeys();
+        .listen_for_hotkeys()?;
     for event in hotkey_events {
         let prio_target: IoPriority = match event? {
             Action::VeryLowPrio => IoPriority::VeryLow,
