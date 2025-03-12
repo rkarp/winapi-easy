@@ -1,12 +1,8 @@
 //! Global hotkeys.
 
 use std::collections::HashMap;
-use std::{
-    io,
-    thread,
-};
+use std::io;
 use std::ops::Add;
-use std::sync::mpsc;
 
 use num_enum::IntoPrimitive;
 use windows::core::BOOL;
@@ -33,7 +29,7 @@ use crate::input::KeyboardKey;
 /// # Examples
 ///
 /// ```no_run
-/// use winapi_easy::input::hotkeys::{GlobalHotkeySet, Modifier};
+/// use winapi_easy::input::hotkeys::{GlobalHotkeyIter, GlobalHotkeySet, Modifier};
 /// use winapi_easy::input::KeyboardKey;
 ///
 /// #[derive(Copy, Clone)]
@@ -46,7 +42,7 @@ use crate::input::KeyboardKey;
 ///     .add_hotkey(MyAction::One, Modifier::Ctrl + Modifier::Alt + KeyboardKey::A)
 ///     .add_hotkey(MyAction::Two, Modifier::Shift + Modifier::Alt + KeyboardKey::B);
 ///
-/// for action in hotkeys.listen_for_hotkeys() {
+/// for action in GlobalHotkeyIter::new(hotkeys)? {
 ///     match action? {
 ///         MyAction::One => println!("One!"),
 ///         MyAction::Two => println!("Two!"),
@@ -58,7 +54,6 @@ use crate::input::KeyboardKey;
 #[derive(Clone, Debug)]
 pub struct GlobalHotkeySet<ID> {
     hotkey_defs: Vec<HotkeyDef<ID>>,
-    hotkeys_active: bool,
 }
 
 impl<ID> GlobalHotkeySet<ID> {
@@ -90,61 +85,8 @@ where
         self
     }
 
-    /// Registers the hotkeys with the system and then reacts to hotkey events.
-    pub fn listen_for_hotkeys(mut self) -> impl IntoIterator<Item = io::Result<ID>> {
-        let (tx_hotkey, rx_hotkey) = mpsc::channel();
-        thread::spawn(move || {
-            let ids = || Self::MIN_ID..;
-            let register_result: io::Result<()> =
-                ids()
-                    .zip(&self.hotkey_defs)
-                    .try_for_each(|(curr_id, hotkey_def)| {
-                        let result: io::Result<()> = unsafe {
-                            RegisterHotKey(
-                                None,
-                                curr_id,
-                                HOT_KEY_MODIFIERS(hotkey_def.key_combination.modifiers.0),
-                                hotkey_def.key_combination.key.into(),
-                            )
-                            .map_err(From::from)
-                        };
-                        if result.is_err() {
-                            (Self::MIN_ID..=curr_id - 1).rev().for_each(|id| unsafe {
-                                UnregisterHotKey(None, id).expect("Cannot unregister hotkey");
-                            });
-                        }
-                        result
-                    });
-            if let Err(err) = register_result {
-                tx_hotkey.send(Err(err)).unwrap_or(());
-            } else {
-                self.hotkeys_active = true;
-                let id_assocs: HashMap<i32, ID> = ids()
-                    .zip(self.hotkey_defs.iter().map(|def| def.user_id))
-                    .collect();
-                loop {
-                    let mut message: MSG = Default::default();
-                    let getmsg_result =
-                        unsafe { GetMessageW(&mut message, None, WM_HOTKEY, WM_HOTKEY) };
-                    let to_send = match getmsg_result {
-                        BOOL(-1) => Some(Err(io::Error::from(windows::core::Error::from_win32()))),
-                        BOOL(0) => break, // WM_QUIT
-                        _ => id_assocs
-                            .get(&message.wParam.0.try_into().expect(
-                                "ID from GetMessageW should be in range for ID map integer type",
-                            ))
-                            .map(|user_id| Ok(*user_id)),
-                    };
-                    if let Some(to_send) = to_send {
-                        let send_result = tx_hotkey.send(to_send);
-                        if send_result.is_err() {
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-        rx_hotkey
+    pub fn listen_for_hotkeys(self) -> io::Result<impl IntoIterator<Item = io::Result<ID>>> {
+        GlobalHotkeyIter::new(self)
     }
 }
 
@@ -152,20 +94,95 @@ impl<ID> Default for GlobalHotkeySet<ID> {
     fn default() -> Self {
         Self {
             hotkey_defs: Vec::new(),
-            hotkeys_active: false,
         }
     }
 }
 
-impl<ID> Drop for GlobalHotkeySet<ID> {
-    fn drop(&mut self) {
-        if self.hotkeys_active {
-            for id in (Self::MIN_ID..).take(self.hotkey_defs.len()) {
-                unsafe {
-                    UnregisterHotKey(None, id).expect("Cannot unregister hotkey");
+/// Registers global hotkeys and then yields hotkey events.
+#[derive(Clone, Debug)]
+pub struct GlobalHotkeyIter<ID> {
+    hotkeys: GlobalHotkeySet<ID>,
+    id_assocs: HashMap<i32, ID>,
+}
+
+impl<ID> GlobalHotkeyIter<ID>
+where
+    ID: 'static + Copy + Send + Sync,
+{
+    /// Registers the given [`GlobalHotkeySet`] with the system.
+    pub fn new(hotkeys: GlobalHotkeySet<ID>) -> io::Result<Self> {
+        let ids = || GlobalHotkeySet::<ID>::MIN_ID..;
+        ids()
+            .zip(&hotkeys.hotkey_defs)
+            .try_for_each(|(curr_id, hotkey_def)| {
+                let result: io::Result<()> = unsafe {
+                    RegisterHotKey(
+                        None,
+                        curr_id,
+                        HOT_KEY_MODIFIERS(hotkey_def.key_combination.modifiers.0),
+                        hotkey_def.key_combination.key.into(),
+                    )
+                    .map_err(From::from)
+                };
+                if result.is_err() {
+                    for id in (GlobalHotkeySet::<ID>::MIN_ID..=curr_id - 1).rev() {
+                        unsafe {
+                            let _ = UnregisterHotKey(None, id);
+                        }
+                    }
                 }
+                result
+            })?;
+        let id_assocs: HashMap<i32, ID> = ids()
+            .zip(hotkeys.hotkey_defs.iter().map(|def| def.user_id))
+            .collect();
+        Ok(Self { hotkeys, id_assocs })
+    }
+}
+
+impl<ID> Iterator for GlobalHotkeyIter<ID>
+where
+    ID: 'static + Copy + Send + Sync,
+{
+    type Item = io::Result<ID>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut message: MSG = Default::default();
+        let getmsg_result = unsafe { GetMessageW(&mut message, None, WM_HOTKEY, WM_HOTKEY) };
+        match getmsg_result {
+            BOOL(-1) => Some(Err(io::Error::from(windows::core::Error::from_win32()))),
+            BOOL(0) => None, // WM_QUIT
+            _ => {
+                self.id_assocs
+                    .get(
+                        &message.wParam.0.try_into().expect(
+                            "ID from GetMessageW should be in range for ID map integer type",
+                        ),
+                    )
+                    .map(|user_id| Ok(*user_id))
             }
         }
+    }
+}
+
+impl<ID> Drop for GlobalHotkeyIter<ID> {
+    fn drop(&mut self) {
+        for id in (GlobalHotkeySet::<ID>::MIN_ID..).take(self.hotkeys.hotkey_defs.len()) {
+            unsafe {
+                UnregisterHotKey(None, id).expect("Cannot unregister hotkey");
+            }
+        }
+    }
+}
+
+impl<ID> TryFrom<GlobalHotkeySet<ID>> for GlobalHotkeyIter<ID>
+where
+    ID: 'static + Copy + Send + Sync,
+{
+    type Error = io::Error;
+
+    fn try_from(value: GlobalHotkeySet<ID>) -> Result<Self, Self::Error> {
+        Self::new(value)
     }
 }
 
@@ -254,5 +271,21 @@ impl Add<KeyboardKey> for Modifier {
 
     fn add(self, rhs: KeyboardKey) -> Self::Output {
         KeyCombination::new_from(self.into(), rhs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_hotkey_listener() -> io::Result<()> {
+        let hotkeys = GlobalHotkeySet::new().add_hotkey(
+            0,
+            Modifier::Ctrl + Modifier::Alt + Modifier::Shift + KeyboardKey::Oem1,
+        );
+
+        let _ = GlobalHotkeyIter::new(hotkeys)?;
+        Ok(())
     }
 }

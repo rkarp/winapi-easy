@@ -38,7 +38,7 @@ fn main() -> io::Result<()> {
         )
         .add_hotkey(Action::VolumeUp, Modifier::Win + KeyboardKey::PgUp)
         .add_hotkey(Action::VolumeDown, Modifier::Win + KeyboardKey::PgDown);
-    for event in hotkey_def.listen_for_hotkeys() {
+    for event in hotkey_def.listen_for_hotkeys()? {
         let monitor_off = || -> io::Result<()> {
             let foreground_window = WindowHandle::get_foreground_window().unwrap();
             foreground_window.set_monitor_power(MonitorPower::Off)
