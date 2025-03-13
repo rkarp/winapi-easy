@@ -195,6 +195,8 @@ mod private {
 
     type StoredFunction = usize;
 
+    pub type IdType = u32;
+
     pub trait RawClosureStore {
         fn get_raw_closure<'a, HT, F>(id: IdType) -> Option<&'a mut F>
         where
@@ -245,8 +247,6 @@ mod private {
             });
         }
     }
-
-    type IdType = u128;
 
     pub enum GlobalRawClosureStore {}
 
@@ -418,8 +418,22 @@ mod tests {
 
     #[test]
     fn ll_hook_and_unhook() -> windows::core::Result<()> {
-        let mut callback =
+        ll_hook_and_unhook_with_ids::<0, 1>()
+    }
+
+    #[test]
+    #[should_panic]
+    fn ll_hook_and_unhook_duplicate() {
+        let _ = ll_hook_and_unhook_with_ids::<0, 0>();
+    }
+
+    fn ll_hook_and_unhook_with_ids<const ID1: IdType, const ID2: IdType>()
+    -> windows::core::Result<()> {
+        let mut mouse_callback =
             |_message: LowLevelMouseMessage| -> HookReturnValue { HookReturnValue::CallNextHook };
+        let mut keyboard_callback = |_message: LowLevelKeyboardMessage| -> HookReturnValue {
+            HookReturnValue::CallNextHook
+        };
         unsafe {
             PostThreadMessageW(
                 GetCurrentThreadId(),
@@ -428,7 +442,9 @@ mod tests {
                 LPARAM::default(),
             )?
         };
-        LowLevelMouseHook::run_hook(&mut callback)?;
+        let _mouse_handle = LowLevelMouseHook::add_hook::<ID1, _>(&mut mouse_callback)?;
+        let _keyboard_handle = LowLevelKeyboardHook::add_hook::<ID2, _>(&mut keyboard_callback)?;
+        ThreadMessageLoop::run_thread_message_loop(|| Ok(()))?;
         Ok(())
     }
 }

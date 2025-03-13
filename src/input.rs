@@ -528,7 +528,7 @@ impl MouseScrollEvent {
         send_raw_inputs(&[raw_input])
     }
 
-    #[allow(dead_code)]
+    #[cfg(feature = "hooking")]
     pub(crate) fn from_raw_movement(raw_movement: u16) -> Self {
         let raw_movement = raw_movement as i16;
         const WHEEL_DELTA_INT: i16 = WHEEL_DELTA as _;

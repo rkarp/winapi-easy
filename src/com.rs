@@ -62,3 +62,14 @@ impl<T> Drop for ComTaskMemory<T> {
         unsafe { CoTaskMemFree(Some(self.0 as *mut _)) }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_initialize_com() -> io::Result<()> {
+        initialize_com()?;
+        Ok(())
+    }
+}

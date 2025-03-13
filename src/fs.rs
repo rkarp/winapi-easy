@@ -46,6 +46,20 @@ where
         // No `From` impl since that has problems with type inference when declaring the closure
         ProgressCallback(Some(value))
     }
+
+    fn typed_raw_progress_callback(&self) -> LPPROGRESS_ROUTINE {
+        if self.0.is_some() {
+            Some(transfer_internal_callback::<F> as _)
+        } else {
+            None
+        }
+    }
+
+    fn as_raw_lpdata(&mut self) -> Option<*const c_void> {
+        self.0
+            .as_mut()
+            .map(|callback| callback as *mut F as *const _)
+    }
 }
 
 impl Default for ProgressCallback<fn(ProgressStatus) -> ProgressRetVal> {
@@ -55,7 +69,7 @@ impl Default for ProgressCallback<fn(ProgressStatus) -> ProgressRetVal> {
 }
 
 /// Progress status used in [`ProgressCallback`].
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct ProgressStatus {
     /// Total size in bytes of the file being transferred.
     pub total_file_bytes: u64,
@@ -98,7 +112,7 @@ pub trait PathExt: AsRef<Path> {
     fn copy_file_to<Q, F>(
         &self,
         new_path: Q,
-        progress_callback: ProgressCallback<F>,
+        mut progress_callback: ProgressCallback<F>,
     ) -> io::Result<()>
     where
         Q: AsRef<Path>,
@@ -108,19 +122,12 @@ pub trait PathExt: AsRef<Path> {
             ZeroTerminatedWideString::from_os_str(max_path_extend(self.as_ref().as_os_str()));
         let target =
             ZeroTerminatedWideString::from_os_str(max_path_extend(new_path.as_ref().as_os_str()));
-        let raw_progress_callback: LPPROGRESS_ROUTINE = progress_callback
-            .0
-            .as_ref()
-            .map(|_| transfer_internal_callback::<F> as _);
-        let mut callback = progress_callback.0;
         unsafe {
             CopyFileExW(
                 source.as_raw_pcwstr(),
                 target.as_raw_pcwstr(),
-                raw_progress_callback,
-                callback
-                    .as_mut()
-                    .map(|callback| callback as *mut F as *const _),
+                progress_callback.typed_raw_progress_callback(),
+                progress_callback.as_raw_lpdata(),
                 None,
                 COPY_FILE_COPY_SYMLINK | COPY_FILE_FAIL_IF_EXISTS,
             )?;
@@ -140,7 +147,11 @@ pub trait PathExt: AsRef<Path> {
     ///
     /// Progress notifications can be enabled using a [`ProgressCallback`].
     /// Use [`Default::default`] to disable.
-    fn move_to<Q, F>(&self, new_path: Q, progress_callback: ProgressCallback<F>) -> io::Result<()>
+    fn move_to<Q, F>(
+        &self,
+        new_path: Q,
+        mut progress_callback: ProgressCallback<F>,
+    ) -> io::Result<()>
     where
         Q: AsRef<Path>,
         F: FnMut(ProgressStatus) -> ProgressRetVal,
@@ -149,19 +160,12 @@ pub trait PathExt: AsRef<Path> {
             ZeroTerminatedWideString::from_os_str(max_path_extend(self.as_ref().as_os_str()));
         let target =
             ZeroTerminatedWideString::from_os_str(max_path_extend(new_path.as_ref().as_os_str()));
-        let raw_progress_callback: LPPROGRESS_ROUTINE = progress_callback
-            .0
-            .as_ref()
-            .map(|_| transfer_internal_callback::<F> as _);
-        let mut callback = progress_callback.0;
         unsafe {
             MoveFileWithProgressW(
                 source.as_raw_pcwstr(),
                 target.as_raw_pcwstr(),
-                raw_progress_callback,
-                callback
-                    .as_mut()
-                    .map(|callback| callback as *mut F as *const _),
+                progress_callback.typed_raw_progress_callback(),
+                progress_callback.as_raw_lpdata(),
                 MOVEFILE_COPY_ALLOWED | MOVEFILE_WRITE_THROUGH,
             )?;
         }
@@ -188,9 +192,55 @@ where
     let call = move || {
         let user_callback: &mut F = unsafe { &mut *(lpdata as *mut F) };
         user_callback(ProgressStatus {
-            total_file_bytes: totalfilesize.try_into().unwrap(),
-            total_transferred_bytes: totalbytestransferred.try_into().unwrap(),
+            total_file_bytes: totalfilesize.try_into().unwrap_or_else(|_| unreachable!()),
+            total_transferred_bytes: totalbytestransferred
+                .try_into()
+                .unwrap_or_else(|_| unreachable!()),
         })
     };
     catch_unwind_and_abort(call).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_transfer_internal_callback() -> io::Result<()> {
+        let target_progress_status = ProgressStatus {
+            total_file_bytes: 1,
+            total_transferred_bytes: 1,
+        };
+        let progress_ret_val = ProgressRetVal::Stop;
+        let mut progress_callback = ProgressCallback::new(|progress_status| {
+            assert_eq!(progress_status, target_progress_status);
+            progress_ret_val
+        });
+        let raw_progress_callback = progress_callback
+            .typed_raw_progress_callback()
+            .unwrap_or_else(|| unreachable!());
+        let raw_call_result = unsafe {
+            raw_progress_callback(
+                target_progress_status
+                    .total_file_bytes
+                    .try_into()
+                    .unwrap_or_else(|_| unreachable!()),
+                target_progress_status
+                    .total_transferred_bytes
+                    .try_into()
+                    .unwrap_or_else(|_| unreachable!()),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                progress_callback
+                    .as_raw_lpdata()
+                    .unwrap_or_else(|| unreachable!()),
+            )
+        };
+        assert_eq!(raw_call_result, progress_ret_val.into());
+        Ok(())
+    }
 }
