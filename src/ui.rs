@@ -178,8 +178,11 @@ pub mod resource;
 #[derive(Eq, PartialEq, Debug)]
 pub struct WindowHandle {
     raw_handle: HWND,
-    marker: PhantomData<*mut ()>,
+    _marker: PhantomData<*mut ()>,
 }
+
+#[cfg(test)]
+static_assertions::assert_not_impl_any!(WindowHandle: Send, Sync);
 
 impl WindowHandle {
     /// Returns the console window associated with the current process, if there is one.
@@ -219,7 +222,7 @@ impl WindowHandle {
     pub(crate) fn from_non_null(handle: HWND) -> Self {
         Self {
             raw_handle: handle,
-            marker: PhantomData,
+            _marker: PhantomData,
         }
     }
 
@@ -227,7 +230,7 @@ impl WindowHandle {
         if !handle.is_null() {
             Some(Self {
                 raw_handle: handle,
-                marker: PhantomData,
+                _marker: PhantomData,
             })
         } else {
             None

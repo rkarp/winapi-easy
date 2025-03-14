@@ -34,6 +34,7 @@ features = [
 
 [dev-dependencies]
 more-asserts = "0.3.1"
+static_assertions = "1.1.0"
 
 [build-dependencies]
 rustversion = "1.0.17"

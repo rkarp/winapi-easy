@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::marker::PhantomData;
 use std::ops::Add;
 
 use num_enum::IntoPrimitive;
@@ -99,11 +100,19 @@ impl<ID> Default for GlobalHotkeySet<ID> {
 }
 
 /// Registers global hotkeys and then yields hotkey events.
+///
+/// # Multithreading
+///
+/// This iterator is not [`Send`] and [`Sync`] because the hotkeys are registered only to the current thread.
 #[derive(Clone, Debug)]
 pub struct GlobalHotkeyIter<ID> {
     hotkeys: GlobalHotkeySet<ID>,
     id_assocs: HashMap<i32, ID>,
+    _marker: PhantomData<*mut ()>,
 }
+
+#[cfg(test)]
+static_assertions::assert_not_impl_any!(GlobalHotkeyIter<u64>: Send, Sync);
 
 impl<ID> GlobalHotkeyIter<ID>
 where
@@ -136,7 +145,11 @@ where
         let id_assocs: HashMap<i32, ID> = ids()
             .zip(hotkeys.hotkey_defs.iter().map(|def| def.user_id))
             .collect();
-        Ok(Self { hotkeys, id_assocs })
+        Ok(Self {
+            hotkeys,
+            id_assocs,
+            _marker: PhantomData,
+        })
     }
 }
 
