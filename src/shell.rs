@@ -62,7 +62,7 @@ use crate::string::{
     ZeroTerminatedWideString,
     max_path_extend,
 };
-use crate::ui::{
+use crate::ui::window::{
     Window,
     WindowClass,
     WindowClassAppearance,

@@ -8,12 +8,12 @@ use winapi_easy::input::hotkeys::{
     GlobalHotkeySet,
     Modifier,
 };
-use winapi_easy::ui::{
+use winapi_easy::ui::window::{
     MonitorPower,
     WindowHandle,
     WindowShowState,
-    lock_workstation,
 };
+use winapi_easy::ui::lock_workstation;
 
 #[derive(Copy, Clone, Debug)]
 enum Action {

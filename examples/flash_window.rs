@@ -4,10 +4,10 @@ use std::{
 };
 use std::time::Duration;
 
-use winapi_easy::ui::{
+use winapi_easy::ui::window::WindowHandle;
+use winapi_easy::ui::taskbar::{
     ProgressState,
     Taskbar,
-    WindowHandle,
 };
 
 fn main() -> io::Result<()> {

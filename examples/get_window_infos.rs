@@ -1,7 +1,7 @@
 use std::io;
 
-use winapi_easy::ui::{
-    Rectangle,
+use winapi_easy::ui::Rectangle;
+use winapi_easy::ui::window::{
     WindowHandle,
     WindowShowState,
 };

@@ -99,7 +99,7 @@ pub fn show_message_box(
 ) -> io::Result<PressedMessageBoxButton> {
     let result = unsafe {
         MessageBoxExW(
-            Some(window_handle.raw_handle),
+            Some(window_handle.into()),
             options
                 .message
                 .map(|x| PCWSTR::from_raw(x.to_wide_string().as_ptr()))

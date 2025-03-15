@@ -9,7 +9,7 @@ use winapi_easy::process::{
     IoPriority,
     Process,
 };
-use winapi_easy::ui::WindowHandle;
+use winapi_easy::ui::window::WindowHandle;
 
 fn main() -> io::Result<()> {
     #[derive(Copy, Clone, Debug)]

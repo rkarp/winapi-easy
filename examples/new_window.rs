@@ -6,10 +6,10 @@ use num_enum::{
     IntoPrimitive,
 };
 use winapi_easy::messaging::ThreadMessageLoop;
-use winapi_easy::ui::{
+use winapi_easy::ui::Point;
+use winapi_easy::ui::window::{
     BalloonNotification,
     NotificationIconOptions,
-    Point,
     Window,
     WindowClass,
     WindowClassAppearance,

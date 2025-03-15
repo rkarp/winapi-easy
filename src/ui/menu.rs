@@ -180,7 +180,7 @@ impl PopupMenu {
                 coords.x,
                 coords.y,
                 None,
-                window.raw_handle,
+                window.into(),
                 None,
             )
             .if_null_get_last_error_else_drop()?;

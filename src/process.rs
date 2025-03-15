@@ -441,7 +441,7 @@ mod tests {
     use more_asserts::*;
 
     #[cfg(feature = "ui")]
-    use crate::ui::WindowHandle;
+    use crate::ui::window::WindowHandle;
     use super::*;
 
     #[test]
