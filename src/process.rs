@@ -6,10 +6,7 @@ use std::{
     mem,
 };
 
-use ntapi::ntpsapi::{
-    NtSetInformationProcess,
-    ProcessIoPriority,
-};
+use ntapi::ntpsapi::NtSetInformationProcess;
 use num_enum::{
     IntoPrimitive,
     TryFromPrimitive,
@@ -17,6 +14,7 @@ use num_enum::{
 use windows::Wdk::System::Threading::{
     NtQueryInformationProcess,
     PROCESSINFOCLASS,
+    ProcessIoPriority,
 };
 use windows::Win32::Foundation::{
     HANDLE,
@@ -52,6 +50,8 @@ use windows::Win32::System::Threading::{
     THREAD_PRIORITY,
 };
 
+#[rustversion::before(1.87)]
+use crate::internal::std_unstable::CastUnsigned;
 use crate::internal::{
     AutoClose,
     ReturnValue,
@@ -69,7 +69,8 @@ impl Process {
     /// When transferred to a different process, it will point to that process when used from it.
     pub fn current() -> Self {
         let pseudo_handle = unsafe { GetCurrentProcess() };
-        Self::from_maybe_null(pseudo_handle).expect("Pseudo process handle should never be null")
+        Self::from_maybe_null(pseudo_handle)
+            .unwrap_or_else(|| unreachable!("Pseudo process handle should never be null"))
     }
 
     /// Tries to acquire a process handle from an ID.
@@ -125,26 +126,27 @@ impl Process {
             NtQueryInformationProcess(
                 self.handle.entity,
                 ProcessInformationClass::ProcessIoPriority.into(),
-                &mut raw_io_priority as *mut i32 as *mut c_void,
-                mem::size_of::<i32>() as u32,
+                (&raw mut raw_io_priority).cast::<c_void>(),
+                u32::try_from(mem::size_of::<i32>()).unwrap_or_else(|_| unreachable!()),
                 &mut return_length,
             )
         };
         ret_val.0.if_non_null_to_error(|| {
             custom_err_with_code("Getting IO priority failed", ret_val.0)
         })?;
-        Ok(IoPriority::try_from(raw_io_priority as u32).ok())
+        Ok(IoPriority::try_from(raw_io_priority.cast_unsigned()).ok())
     }
 
     pub fn set_io_priority(&mut self, io_priority: IoPriority) -> io::Result<()> {
+        let mut raw_io_priority = u32::from(io_priority);
         let ret_val = unsafe {
             NtSetInformationProcess(
-                self.handle.entity.0 as *mut ntapi::winapi::ctypes::c_void,
+                self.handle.entity.0.cast::<ntapi::winapi::ctypes::c_void>(),
                 i32::from(ProcessInformationClass::ProcessIoPriority)
                     .try_into()
-                    .unwrap(),
-                &mut u32::from(io_priority) as *mut u32 as *mut ntapi::winapi::ctypes::c_void,
-                mem::size_of::<u32>() as u32,
+                    .unwrap_or_else(|_| unreachable!()),
+                (&raw mut raw_io_priority).cast::<ntapi::winapi::ctypes::c_void>(),
+                u32::try_from(mem::size_of::<u32>()).unwrap_or_else(|_| unreachable!()),
             )
         };
         ret_val
@@ -165,12 +167,12 @@ impl Process {
     }
 
     fn from_maybe_null(handle: HANDLE) -> Option<Self> {
-        if !handle.is_null() {
+        if handle.is_null() {
+            None
+        } else {
             Some(Self {
                 handle: handle.into(),
             })
-        } else {
-            None
         }
     }
 }
@@ -205,7 +207,8 @@ impl Thread {
     /// When transferred to a different thread, it will point to that thread when used from it.
     pub fn current() -> Self {
         let pseudo_handle = unsafe { GetCurrentThread() };
-        Self::from_maybe_null(pseudo_handle).expect("Pseudo thread handle should never be null")
+        Self::from_maybe_null(pseudo_handle)
+            .unwrap_or_else(|| unreachable!("Pseudo thread handle should never be null"))
     }
 
     /// Tries to acquire a thread handle from an ID.
@@ -264,12 +267,12 @@ impl Thread {
     }
 
     fn from_maybe_null(handle: HANDLE) -> Option<Self> {
-        if !handle.is_null() {
+        if handle.is_null() {
+            None
+        } else {
             Some(Self {
                 handle: handle.into(),
             })
-        } else {
-            None
         }
     }
 }
@@ -302,7 +305,6 @@ pub struct ThreadInfo {
 impl ThreadInfo {
     /// Returns all threads of all processes.
     pub fn all_threads() -> io::Result<Vec<Self>> {
-        #[inline(always)]
         fn get_empty_thread_entry() -> THREADENTRY32 {
             THREADENTRY32 {
                 dwSize: mem::size_of::<THREADENTRY32>().try_into().unwrap(),
@@ -409,7 +411,7 @@ pub enum IoPriority {
 #[derive(IntoPrimitive, Clone, Copy, Debug)]
 #[repr(i32)]
 enum ProcessInformationClass {
-    ProcessIoPriority = ProcessIoPriority as i32,
+    ProcessIoPriority = ProcessIoPriority.0,
 }
 
 impl From<ProcessInformationClass> for PROCESSINFOCLASS {

@@ -6,7 +6,10 @@ use std::ffi::{
     OsString,
 };
 use std::iter::once;
-use std::mem;
+use std::{
+    io,
+    mem,
+};
 use std::os::windows::ffi::{
     OsStrExt,
     OsStringExt,
@@ -70,17 +73,18 @@ pub(crate) struct WinUnicodeString {
 
 impl WinUnicodeString {
     #[allow(dead_code)]
-    pub(crate) fn new(string: &str) -> Self {
+    pub(crate) fn new(string: &str) -> io::Result<Self> {
         let os_str: &OsStr = string.as_ref();
         let mut wide_string: Vec<u16> = os_str.encode_wide().collect();
-        WinUnicodeString {
+        Ok(WinUnicodeString {
             win_unicode_string: UNICODE_STRING {
-                Length: (wide_string.len() * mem::size_of::<u16>()) as u16,
+                Length: u16::try_from(wide_string.len() * mem::size_of::<u16>())
+                    .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?,
                 MaximumLength: 0,
                 Buffer: PWSTR::from_raw(wide_string.as_mut_ptr()),
             },
             wide_string,
-        }
+        })
     }
 }
 

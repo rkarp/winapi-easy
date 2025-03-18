@@ -41,9 +41,10 @@ impl ThreadMessageLoop {
         F: FnMut() -> io::Result<()>,
     {
         Self::RUNNING.with(|running| {
-            if running.get() {
-                panic!("Cannot run two thread message loops on the same thread");
-            }
+            assert!(
+                !running.get(),
+                "Cannot run two thread message loops on the same thread"
+            );
             running.set(true);
         });
         let mut msg: MSG = Default::default();
@@ -60,7 +61,7 @@ impl ThreadMessageLoop {
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
-            if Self::ENABLE_CALLBACK_ONCE.with(|x| x.take()) {
+            if Self::ENABLE_CALLBACK_ONCE.with(Cell::take) {
                 loop_callback()?;
             }
         }
@@ -75,16 +76,16 @@ impl ThreadMessageLoop {
     ///
     /// Will panic if the message loop is not running.
     pub fn post_quit_message() {
-        if !ThreadMessageLoop::is_loop_running() {
-            panic!("Cannot post quit message because thread message loop is not running");
-        }
+        assert!(
+            ThreadMessageLoop::is_loop_running(),
+            "Cannot post quit message because thread message loop is not running"
+        );
         unsafe {
             PostQuitMessage(0);
         }
     }
 
-    #[inline(always)]
     fn is_loop_running() -> bool {
-        Self::RUNNING.with(|running| running.get())
+        Self::RUNNING.with(Cell::get)
     }
 }

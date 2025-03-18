@@ -1,7 +1,10 @@
 //! Filesystem functionality.
 
 use std::ffi::c_void;
-use std::io;
+use std::{
+    io,
+    ptr,
+};
 use std::path::Path;
 
 use num_enum::IntoPrimitive;
@@ -58,7 +61,7 @@ where
     fn as_raw_lpdata(&mut self) -> Option<*const c_void> {
         self.0
             .as_mut()
-            .map(|callback| callback as *mut F as *const _)
+            .map(|callback| ptr::from_mut::<F>(callback).cast_const().cast::<c_void>())
     }
 }
 
@@ -105,7 +108,7 @@ pub trait PathExt: AsRef<Path> {
     /// - Will copy symlinks themselves, not their targets.
     /// - Will block until the operation is complete.
     /// - Will fail if the target path already exists.
-    /// - Supports file names longer than MAX_PATH characters.
+    /// - Supports file names longer than `MAX_PATH` characters.
     ///
     /// Progress notifications can be enabled using a [`ProgressCallback`].
     /// Use [`Default::default`] to disable.
@@ -143,7 +146,7 @@ pub trait PathExt: AsRef<Path> {
     /// - Symlinks can be moved within the same volume (renamed) without extended permission.
     /// - Will block until the operation is complete.
     /// - Will fail if the target path already exists.
-    /// - Supports file names longer than MAX_PATH characters.
+    /// - Supports file names longer than `MAX_PATH` characters.
     ///
     /// Progress notifications can be enabled using a [`ProgressCallback`].
     /// Use [`Default::default`] to disable.

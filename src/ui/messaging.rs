@@ -24,7 +24,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::internal::catch_unwind_and_abort;
-use crate::internal::windows_missing::*;
+use crate::internal::windows_missing::{
+    GET_X_LPARAM,
+    GET_Y_LPARAM,
+    HIWORD,
+    LOWORD,
+    NIN_KEYSELECT,
+};
 use crate::messaging::ThreadMessageLoop;
 use crate::ui::{
     Point,
@@ -65,33 +71,33 @@ impl ListenerAnswer {
 pub trait WindowMessageListener {
     /// An item from a window's menu was selected by the user.
     #[allow(unused_variables)]
-    #[inline(always)]
+    #[inline]
     fn handle_menu_command(&self, window: &WindowHandle, selected_item_id: u32) {}
     /// A 'minimize window' action was performed.
     #[allow(unused_variables)]
-    #[inline(always)]
+    #[inline]
     fn handle_window_minimized(&self, window: &WindowHandle) {}
     /// A 'close window' action was performed.
     #[allow(unused_variables)]
-    #[inline(always)]
+    #[inline]
     fn handle_window_close(&self, window: &WindowHandle) -> ListenerAnswer {
         Default::default()
     }
     /// A window was destroyed and removed from the screen.
     #[allow(unused_variables)]
-    #[inline(always)]
+    #[inline]
     fn handle_window_destroy(&self, window: &WindowHandle) {}
     /// A notification icon was selected (triggered).
     #[allow(unused_variables)]
-    #[inline(always)]
+    #[inline]
     fn handle_notification_icon_select(&self, icon_id: u16, xy_coords: Point) {}
     /// A notification icon was context-selected (e.g. right-clicked).
     #[allow(unused_variables)]
-    #[inline(always)]
+    #[inline]
     fn handle_notification_icon_context_select(&self, icon_id: u16, xy_coords: Point) {}
     /// A custom user message was sent.
     #[allow(unused_variables)]
-    #[inline(always)]
+    #[inline]
     fn handle_custom_user_message(
         &self,
         window: &WindowHandle,
@@ -127,7 +133,7 @@ impl RawMessage {
 
     pub(crate) fn dispatch_to_message_listener<WML: WindowMessageListener>(
         self,
-        window: WindowHandle,
+        window: &WindowHandle,
         listener: &WML,
     ) -> Option<LRESULT> {
         // Many messages won't go through the thread message loop, so we need to notify it.
@@ -137,7 +143,7 @@ impl RawMessage {
         let result = match self.message {
             value if value >= WM_APP && value <= WM_APP + (u32::from(u8::MAX)) => {
                 listener.handle_custom_user_message(
-                    &window,
+                    window,
                     (self.message - WM_APP).try_into().unwrap(),
                     self.w_param,
                     self.l_param,
@@ -162,11 +168,11 @@ impl RawMessage {
                 match event_code {
                     // NIN_SELECT only happens with left clicks. Space will produce 1x NIN_KEYSELECT, Enter 2x NIN_KEYSELECT.
                     NIN_SELECT | NIN_KEYSELECT => {
-                        listener.handle_notification_icon_select(icon_id, xy_coords)
+                        listener.handle_notification_icon_select(icon_id, xy_coords);
                     }
                     // Works both with mouse right click and the context menu key.
                     WM_CONTEXTMENU => {
-                        listener.handle_notification_icon_context_select(icon_id, xy_coords)
+                        listener.handle_notification_icon_context_select(icon_id, xy_coords);
                     }
                     _ => (),
                 }
@@ -179,18 +185,18 @@ impl RawMessage {
                 let item_id = menu_handle
                     .get_item_id(self.w_param.0.try_into().unwrap())
                     .unwrap();
-                listener.handle_menu_command(&window, item_id);
+                listener.handle_menu_command(window, item_id);
                 None
             }
             WM_SIZE => {
                 if self.w_param.0 == SIZE_MINIMIZED.try_into().unwrap() {
-                    listener.handle_window_minimized(&window);
+                    listener.handle_window_minimized(window);
                 }
                 None
             }
-            WM_CLOSE => listener.handle_window_close(&window).to_raw_lresult(),
+            WM_CLOSE => listener.handle_window_close(window).to_raw_lresult(),
             WM_DESTROY => {
-                listener.handle_window_destroy(&window);
+                listener.handle_window_destroy(window);
                 None
             }
             _ => {
@@ -252,7 +258,7 @@ where
         // before the first call to this function
         let listener_result =
             unsafe { window.get_user_data_ptr::<WML>() }.and_then(|listener_ptr| {
-                raw_message.dispatch_to_message_listener(window, unsafe { listener_ptr.as_ref() })
+                raw_message.dispatch_to_message_listener(&window, unsafe { listener_ptr.as_ref() })
             });
 
         if let Some(l_result) = listener_result {

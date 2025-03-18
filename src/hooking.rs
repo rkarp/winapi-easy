@@ -3,7 +3,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::io;
+use std::{
+    io,
+    ptr,
+};
 use std::marker::PhantomData;
 use std::sync::{
     Mutex,
@@ -42,6 +45,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_XBUTTONDOWN,
     WM_XBUTTONUP,
 };
+#[allow(clippy::wildcard_imports)]
 use private::*;
 
 use crate::input::{
@@ -50,6 +54,8 @@ use crate::input::{
     MouseScrollEvent,
 };
 use crate::internal::catch_unwind_and_abort;
+#[rustversion::before(1.87)]
+use crate::internal::std_unstable::CastSigned;
 use crate::internal::windows_missing::HIWORD;
 use crate::messaging::ThreadMessageLoop;
 
@@ -143,7 +149,7 @@ impl From<RawLowLevelMessage> for LowLevelKeyboardMessage {
     fn from(value: RawLowLevelMessage) -> Self {
         let w_param = u32::try_from(value.w_param).unwrap();
         let message_data = unsafe { *(value.l_param as *const KBDLLHOOKSTRUCT) };
-        let key = KeyboardKey::from(message_data.vkCode as u16);
+        let key = KeyboardKey::from(u16::try_from(message_data.vkCode).expect("Key code too big"));
         let action = LowLevelKeyboardAction::from(w_param);
         LowLevelKeyboardMessage {
             action,
@@ -191,6 +197,7 @@ pub enum HookReturnValue {
 }
 
 mod private {
+    #[allow(clippy::wildcard_imports)]
     use super::*;
 
     type StoredFunction = usize;
@@ -240,7 +247,7 @@ mod private {
                 let mut map_ref = cell.borrow_mut();
                 assert_ne!(maybe_user_callback.is_some(), map_ref.contains_key(&id));
                 if let Some(user_callback) = maybe_user_callback {
-                    map_ref.insert(id, user_callback as *mut F as StoredFunction);
+                    map_ref.insert(id, ptr::from_mut::<F>(user_callback) as StoredFunction);
                 } else {
                     map_ref.remove(&id);
                 }
@@ -277,7 +284,7 @@ mod private {
             assert_ne!(user_callback.is_some(), hooks.contains_key(&id));
             match user_callback {
                 Some(user_callback) => {
-                    let value = user_callback as *mut F as StoredFunction;
+                    let value = ptr::from_mut::<F>(user_callback) as StoredFunction;
                     hooks.insert(id, value);
                 }
                 None => {
@@ -301,7 +308,7 @@ mod private {
             HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send,
         {
-            Self::set_raw_closure_with_id::<HT, _>(id, user_callback)
+            Self::set_raw_closure_with_id::<HT, _>(id, user_callback);
         }
     }
 
@@ -401,7 +408,7 @@ mod private {
 
     impl<HT: HookType> Drop for HookHandle<HT> {
         fn drop(&mut self) {
-            self.remove().unwrap()
+            self.remove().unwrap();
         }
     }
 }

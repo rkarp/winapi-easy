@@ -29,7 +29,7 @@ pub fn get_file_list() -> io::Result<Vec<PathBuf>> {
     let f = || {
         let mut clipboard_data = {
             let clipboard_data = unsafe { GetClipboardData(CF_HDROP.0.into()) }?;
-            GlobalLockedData::lock(HGLOBAL(clipboard_data.0 as *mut _))?
+            GlobalLockedData::lock(HGLOBAL(clipboard_data.0))?
         };
 
         let num_files = unsafe { DragQueryFileW(HDROP(clipboard_data.ptr()), u32::MAX, None) };

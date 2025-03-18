@@ -29,6 +29,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::PWSTR;
 
 use crate::internal::ReturnValue;
+#[rustversion::before(1.87)]
+use crate::internal::std_unstable::CastUnsigned;
 use crate::string::ToWideString;
 use crate::ui::{
     Point,
@@ -61,13 +63,13 @@ impl MenuHandle {
     }
 
     pub(crate) fn from_maybe_null(handle: HMENU) -> Option<Self> {
-        if !handle.is_null() {
+        if handle.is_null() {
+            None
+        } else {
             Some(Self {
                 raw_handle: handle,
                 marker: PhantomData,
             })
-        } else {
-            None
         }
     }
 
@@ -113,7 +115,7 @@ impl MenuHandle {
                 })?,
             )
         };
-        id.if_eq_to_error(-1i32 as u32, || ErrorKind::Other.into())?;
+        id.if_eq_to_error((-1i32).cast_unsigned(), || ErrorKind::Other.into())?;
         Ok(id)
     }
 
@@ -162,7 +164,11 @@ impl PopupMenu {
     pub fn insert_menu_item(&self, item: MenuItem, id: u32, index: Option<u32>) -> io::Result<()> {
         let idx = match index {
             Some(idx) => idx,
-            None => self.handle.get_item_count()?.try_into().unwrap(),
+            None => self
+                .handle
+                .get_item_count()?
+                .try_into()
+                .unwrap_or_else(|_| unreachable!()),
         };
         self.handle.insert_submenu_item(idx, item, id)?;
         Ok(())
@@ -171,7 +177,7 @@ impl PopupMenu {
     /// Shows the popup menu at the given coordinates.
     ///
     /// The coordinates can for example be retrieved from the window message handler, see
-    /// [crate::ui::messaging::WindowMessageListener::handle_notification_icon_context_select]
+    /// [`crate::ui::messaging::WindowMessageListener::handle_notification_icon_context_select`]
     pub fn show_popup_menu(&self, window: &WindowHandle, coords: Point) -> io::Result<()> {
         unsafe {
             TrackPopupMenu(
@@ -191,7 +197,7 @@ impl PopupMenu {
 
 impl Drop for PopupMenu {
     fn drop(&mut self) {
-        self.handle.destroy().unwrap()
+        self.handle.destroy().unwrap();
     }
 }
 

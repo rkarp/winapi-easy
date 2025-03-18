@@ -3,6 +3,7 @@
 use std::ffi::{
     OsStr,
     OsString,
+    c_void,
 };
 use std::io;
 use std::iter::once;
@@ -63,7 +64,7 @@ impl ScreenDeviceContext {
     pub(crate) fn get_raw_gamma_ramp(&self) -> io::Result<[[u16; 256]; 3]> {
         let mut rgbs: [[u16; 256]; 3] = [[0; 256]; 3];
         let _ = unsafe {
-            GetDeviceGammaRamp(self.raw_context, rgbs.as_mut_ptr() as *mut _)
+            GetDeviceGammaRamp(self.raw_context, rgbs.as_mut_ptr().cast::<c_void>())
                 .if_null_to_error(|| io::ErrorKind::Other.into())?
         };
         Ok(rgbs)
@@ -72,7 +73,7 @@ impl ScreenDeviceContext {
     #[allow(dead_code)]
     pub(crate) fn set_raw_gamma_ramp(&self, values: &[[u16; 256]; 3]) -> io::Result<()> {
         let _ = unsafe {
-            SetDeviceGammaRamp(self.raw_context, values as *const _ as *const _)
+            SetDeviceGammaRamp(self.raw_context, values.as_ptr().cast::<c_void>())
                 .if_null_to_error(|| io::ErrorKind::Other.into())?
         };
         Ok(())
@@ -205,7 +206,12 @@ mod policy_config {
         }
     }
 
-    windows::core::imp::interface_hierarchy!(IPolicyConfig, windows::core::IUnknown);
+    #[allow(clippy::transmute_ptr_to_ptr)]
+    mod interface_hierarchy {
+        use super::IPolicyConfig;
+
+        windows::core::imp::interface_hierarchy!(IPolicyConfig, windows::core::IUnknown);
+    }
 
     impl Clone for IPolicyConfig {
         fn clone(&self) -> Self {

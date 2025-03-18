@@ -74,6 +74,7 @@ where
     /// This does not register the hotkey combination with Windows yet.
     ///
     /// Not all key combinations may work as hotkeys.
+    #[must_use]
     pub fn add_hotkey<KC>(mut self, id: ID, key_combination: KC) -> Self
     where
         KC: Into<KeyCombination>,
@@ -134,7 +135,7 @@ where
                     .map_err(From::from)
                 };
                 if result.is_err() {
-                    for id in (GlobalHotkeySet::<ID>::MIN_ID..=curr_id - 1).rev() {
+                    for id in (GlobalHotkeySet::<ID>::MIN_ID..curr_id).rev() {
                         unsafe {
                             let _ = UnregisterHotKey(None, id);
                         }

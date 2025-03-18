@@ -4,6 +4,12 @@ A small collection of various abstractions over the Windows API.
 
 #![cfg_attr(all(doc, nightly), feature(doc_auto_cfg))]
 #![allow(clippy::uninlined_format_args)]
+#![allow(clippy::must_use_candidate)]
+#![allow(clippy::default_trait_access)]
+#![allow(clippy::too_many_lines)]
+#![allow(clippy::missing_errors_doc)]
+// Until compiler version 1.87
+#![allow(unstable_name_collisions)]
 
 #[cfg(not(windows))]
 compile_error!(

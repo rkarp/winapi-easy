@@ -5,6 +5,7 @@ Component Object Model (COM) initialization.
 #![allow(dead_code)]
 
 use std::cell::Cell;
+use std::ffi::c_void;
 use std::io;
 
 use windows::Win32::System::Com::{
@@ -25,14 +26,14 @@ pub fn initialize_com() -> windows::core::Result<()> {
         static COM_INITIALIZED: Cell<bool> = const { Cell::new(false) };
     }
     COM_INITIALIZED.with(|initialized| {
-        if !initialized.get() {
+        if initialized.get() {
+            Ok(())
+        } else {
             let init_result = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok() };
             if let Ok(()) = init_result {
                 initialized.set(true);
             }
             init_result
-        } else {
-            Ok(())
         }
     })
 }
@@ -59,7 +60,7 @@ impl<T> From<*mut T> for ComTaskMemory<T> {
 
 impl<T> Drop for ComTaskMemory<T> {
     fn drop(&mut self) {
-        unsafe { CoTaskMemFree(Some(self.0 as *mut _)) }
+        unsafe { CoTaskMemFree(Some(self.0.cast_const().cast::<c_void>())) }
     }
 }
 

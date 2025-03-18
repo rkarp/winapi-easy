@@ -149,9 +149,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     XBUTTON1,
     XBUTTON2,
 };
+#[allow(clippy::wildcard_imports)]
 use private::*;
 
 use crate::internal::ReturnValue;
+#[rustversion::before(1.87)]
+use crate::internal::std_unstable::CastUnsigned;
 
 pub mod hotkeys;
 
@@ -160,9 +163,9 @@ pub trait GenericKey: GenericKeyInternal {
     fn is_pressed(self) -> io::Result<bool> {
         let result = unsafe {
             GetAsyncKeyState(self.into())
-                .if_null_to_error(|| io::ErrorKind::PermissionDenied.into())? as u16
+                .if_null_to_error(|| io::ErrorKind::PermissionDenied.into())?
         };
-        Ok(result >> (u16::BITS - 1) == 1)
+        Ok(result.cast_unsigned() >> (u16::BITS - 1) == 1)
     }
 
     /// Globally sends a 'press' event (without a corresponding 'release').
@@ -205,13 +208,10 @@ impl GenericKey for KeyboardKey {}
 impl GenericKey for MouseButton {}
 
 mod private {
+    #[allow(clippy::wildcard_imports)]
     use super::*;
 
-    pub trait GenericKeyInternal: Copy + Into<i32>
-    where
-        // Declared like this due to IntelliJ bug
-        Self: Into<u16>,
-    {
+    pub trait GenericKeyInternal: Copy + Into<i32> {
         fn send_input(self, is_release: bool) -> io::Result<()> {
             let raw_input = self.get_press_raw_input(is_release);
             send_raw_inputs(&[raw_input])
@@ -389,7 +389,7 @@ pub enum KeyboardKey {
     Oem2 = VK_OEM_2.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
-    /// * For the US standard keyboard, the '`~' key
+    /// * For the US standard keyboard, the '\`~' key
     /// * For the German keyboard, the 'ö' key
     Oem3 = VK_OEM_3.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
@@ -405,7 +405,7 @@ pub enum KeyboardKey {
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
     /// * For the US standard keyboard, the ']}' key
-    /// * For the German keyboard, the '´`' key
+    /// * For the German keyboard, the '´\`' key
     Oem6 = VK_OEM_6.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
@@ -426,7 +426,7 @@ pub enum KeyboardKey {
 impl KeyboardKey {
     /// Returns true if the key has lock functionality (e.g. Caps Lock) and the lock is toggled.
     pub fn is_lock_toggled(self) -> bool {
-        let result = unsafe { GetKeyState(self.into()) as u16 };
+        let result = unsafe { GetKeyState(self.into()).cast_unsigned() };
         result & 1 == 1
     }
 }
@@ -439,7 +439,7 @@ impl From<KeyboardKey> for u32 {
 
 impl From<KeyboardKey> for i32 {
     fn from(value: KeyboardKey) -> Self {
-        u16::from(value) as Self
+        u16::from(value).into()
     }
 }
 
@@ -475,7 +475,7 @@ pub enum MouseButton {
 
 impl From<MouseButton> for i32 {
     fn from(value: MouseButton) -> Self {
-        u16::from(value) as Self
+        u16::from(value).into()
     }
 }
 
@@ -498,6 +498,7 @@ pub enum MouseScrollEvent {
 }
 
 impl MouseScrollEvent {
+    #[allow(clippy::cast_possible_truncation)]
     const WHEEL_DELTA_INT: i16 = WHEEL_DELTA as _;
 
     /// Globally sends a single scroll event.
@@ -519,7 +520,7 @@ impl MouseScrollEvent {
             Anonymous: INPUT_0 {
                 mi: MOUSEINPUT {
                     // bit-cast semantics necessary here because negative values should be allowed
-                    mouseData: mouse_data as u32,
+                    mouseData: mouse_data.cast_unsigned(),
                     dwFlags: MOUSEEVENTF_WHEEL,
                     ..Default::default()
                 },
@@ -530,11 +531,11 @@ impl MouseScrollEvent {
 
     #[cfg(feature = "hooking")]
     pub(crate) fn from_raw_movement(raw_movement: u16) -> Self {
-        let raw_movement = raw_movement as i16;
-        const WHEEL_DELTA_INT: i16 = WHEEL_DELTA as _;
-        if raw_movement == WHEEL_DELTA_INT {
+        let raw_movement: i16 = raw_movement.cast_signed();
+        let wheel_delta_int: i16 = WHEEL_DELTA.try_into().unwrap_or_else(|_| unreachable!());
+        if raw_movement == wheel_delta_int {
             MouseScrollEvent::Up
-        } else if raw_movement == -WHEEL_DELTA_INT {
+        } else if raw_movement == -wheel_delta_int {
             MouseScrollEvent::Down
         } else {
             MouseScrollEvent::Continuous(raw_movement)

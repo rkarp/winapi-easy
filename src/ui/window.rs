@@ -192,8 +192,9 @@ impl WindowHandle {
     pub fn get_toplevel_windows() -> io::Result<Vec<Self>> {
         let mut result: Vec<WindowHandle> = Vec::new();
         let mut callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
-            let window_handle =
-                Self::from_maybe_null(handle).expect("Window handle should not be null");
+            let window_handle = Self::from_maybe_null(handle).unwrap_or_else(|| {
+                unreachable!("Window handle passed to callback should never be null")
+            });
             result.push(window_handle);
             true.into()
         };
@@ -210,13 +211,13 @@ impl WindowHandle {
     }
 
     pub(crate) fn from_maybe_null(handle: HWND) -> Option<Self> {
-        if !handle.is_null() {
+        if handle.is_null() {
+            None
+        } else {
             Some(Self {
                 raw_handle: handle,
                 _marker: PhantomData,
             })
-        } else {
-            None
         }
     }
 
@@ -233,21 +234,26 @@ impl WindowHandle {
 
     /// Returns the window caption text, converted to UTF-8 in a potentially lossy way.
     pub fn get_caption_text(&self) -> String {
-        let required_length = unsafe { GetWindowTextLengthW(self.raw_handle) };
-        let required_length = if required_length <= 0 {
+        let required_length: usize = unsafe { GetWindowTextLengthW(self.raw_handle) }
+            .try_into()
+            .unwrap_or_else(|_| unreachable!());
+        let required_length = if required_length == 0 {
             return String::new();
         } else {
             1 + required_length
         };
 
         let mut buffer: Vec<u16> = vec![0; required_length as usize];
-        let copied_chars = unsafe { GetWindowTextW(self.raw_handle, buffer.as_mut()) };
-        if copied_chars <= 0 {
-            return String::new();
+        let copied_chars = unsafe { GetWindowTextW(self.raw_handle, buffer.as_mut()) }
+            .try_into()
+            .unwrap_or_else(|_| unreachable!());
+        if copied_chars == 0 {
+            String::new()
+        } else {
+            // Normally unnecessary, but the text length can theoretically change between the 2 API calls
+            buffer.truncate(copied_chars);
+            buffer.to_string_lossy()
         }
-        // Normally unnecessary, but the text length can theoretically change between the 2 API calls
-        buffer.truncate(copied_chars as usize);
-        buffer.to_string_lossy()
     }
 
     /// Sets the window caption text.
@@ -301,7 +307,9 @@ impl WindowHandle {
     /// Returns the window's show state and positions.
     pub fn get_placement(&self) -> io::Result<WindowPlacement> {
         let mut raw_placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
-            length: mem::size_of::<WINDOWPLACEMENT>().try_into().unwrap(),
+            length: mem::size_of::<WINDOWPLACEMENT>()
+                .try_into()
+                .unwrap_or_else(|_| unreachable!()),
             ..Default::default()
         };
         unsafe { GetWindowPlacement(self.raw_handle, &mut raw_placement)? };
@@ -318,9 +326,11 @@ impl WindowHandle {
     pub fn get_class_name(&self) -> io::Result<String> {
         const BUFFER_SIZE: usize = WindowClass::MAX_WINDOW_CLASS_NAME_CHARS + 1;
         let mut buffer: Vec<u16> = vec![0; BUFFER_SIZE];
-        let chars_copied = unsafe { GetClassNameW(self.raw_handle, buffer.as_mut()) };
-        chars_copied.if_null_get_last_error()?;
-        buffer.truncate(chars_copied as usize);
+        let chars_copied: usize = unsafe { GetClassNameW(self.raw_handle, buffer.as_mut()) }
+            .if_null_get_last_error()?
+            .try_into()
+            .unwrap_or_else(|_| unreachable!());
+        buffer.truncate(chars_copied);
         Ok(buffer.to_string_lossy())
     }
 
@@ -341,9 +351,8 @@ impl WindowHandle {
     /// Flashes the window using default flash settings.
     ///
     /// Same as [`Self::flash_custom`] using [`Default::default`] for all parameters.
-    #[inline(always)]
     pub fn flash(&self) {
-        self.flash_custom(Default::default(), Default::default(), Default::default())
+        self.flash_custom(Default::default(), Default::default(), Default::default());
     }
 
     /// Flashes the window, allowing various customization parameters.
@@ -361,7 +370,9 @@ impl WindowHandle {
         };
         let flags = flags | element.to_flashwinfo_flags();
         let raw_config = FLASHWINFO {
-            cbSize: mem::size_of::<FLASHWINFO>().try_into().unwrap(),
+            cbSize: mem::size_of::<FLASHWINFO>()
+                .try_into()
+                .unwrap_or_else(|_| unreachable!()),
             hwnd: self.into(),
             dwFlags: flags,
             uCount: count,
@@ -378,7 +389,9 @@ impl WindowHandle {
     /// Stops the window from flashing.
     pub fn flash_stop(&self) {
         let raw_config = FLASHWINFO {
-            cbSize: mem::size_of::<FLASHWINFO>().try_into().unwrap(),
+            cbSize: mem::size_of::<FLASHWINFO>()
+                .try_into()
+                .unwrap_or_else(|_| unreachable!()),
             hwnd: self.into(),
             dwFlags: FLASHW_STOP,
             ..Default::default()
@@ -390,14 +403,12 @@ impl WindowHandle {
 
     /// Returns the thread ID that created this window.
     #[cfg(feature = "process")]
-    #[inline(always)]
     pub fn get_creator_thread_id(&self) -> ThreadId {
         self.get_creator_thread_process_ids().0
     }
 
     /// Returns the process ID that created this window.
     #[cfg(feature = "process")]
-    #[inline(always)]
     pub fn get_creator_process_id(&self) -> ProcessId {
         self.get_creator_thread_process_ids().1
     }
@@ -416,8 +427,9 @@ impl WindowHandle {
         use windows::Win32::UI::WindowsAndMessaging::EnumThreadWindows;
         let mut result: Vec<WindowHandle> = Vec::new();
         let mut callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
-            let window_handle =
-                WindowHandle::from_maybe_null(handle).expect("Window handle should not be null");
+            let window_handle = WindowHandle::from_maybe_null(handle).unwrap_or_else(|| {
+                unreachable!("Window handle passed to callback should never be null")
+            });
             result.push(window_handle);
             true.into()
         };
@@ -438,7 +450,11 @@ impl WindowHandle {
             SendMessageW(
                 self.raw_handle,
                 WM_SYSCOMMAND,
-                Some(WPARAM(SC_MONITORPOWER.try_into().unwrap())),
+                Some(WPARAM(
+                    SC_MONITORPOWER
+                        .try_into()
+                        .unwrap_or_else(|_| unreachable!()),
+                )),
                 Some(LPARAM(level.into())),
             )
         };
@@ -541,21 +557,20 @@ impl<'res, WML: WindowMessageListener> WindowClass<'res, WML> {
 
         let icon_handle = appearance
             .icon
-            .map(|x| x.as_handle())
-            .unwrap_or(Ok(Default::default()))?;
+            .map_or_else(|| Ok(Default::default()), |x| x.as_handle())?;
         // No need to reserve extra window memory if we only need a single pointer
         let class_def = WNDCLASSEXW {
-            cbSize: mem::size_of::<WNDCLASSEXW>().try_into().unwrap(),
+            cbSize: mem::size_of::<WNDCLASSEXW>()
+                .try_into()
+                .unwrap_or_else(|_| unreachable!()),
             lpfnWndProc: Some(generic_window_proc::<WML>),
             hIcon: icon_handle,
             hCursor: appearance
                 .cursor
-                .map(|x| x.as_handle())
-                .unwrap_or(Ok(Default::default()))?,
+                .map_or_else(|| Ok(Default::default()), |x| x.as_handle())?,
             hbrBackground: appearance
                 .background_brush
-                .map(|x| x.as_handle())
-                .unwrap_or(Ok(Default::default()))?,
+                .map_or_else(|| Ok(Default::default()), |x| x.as_handle())?,
             lpszClassName: PCWSTR::from_raw(class_name_wide.as_ptr()),
             ..Default::default()
         };
@@ -758,7 +773,9 @@ impl WindowPlacement {
     }
 
     pub fn set_show_state(&mut self, state: WindowShowState) {
-        self.raw_placement.showCmd = i32::from(state).try_into().unwrap();
+        self.raw_placement.showCmd = i32::from(state)
+            .try_into()
+            .unwrap_or_else(|_| unreachable!());
     }
 
     pub fn get_minimized_position(&self) -> Point {
@@ -974,6 +991,7 @@ impl<WML> Drop for NotificationIcon<'_, WML> {
     }
 }
 
+#[allow(clippy::option_option)]
 fn get_notification_call_data(
     window_handle: &WindowHandle,
     icon_id: NotificationIconId,
@@ -997,7 +1015,7 @@ fn get_notification_call_data(
             icon_data.uFlags |= NIF_GUID;
         }
         NotificationIconId::Simple(simple_id) => icon_data.uID = simple_id.into(),
-    };
+    }
     if set_callback_message {
         icon_data.uCallbackMessage = super::messaging::RawMessage::ID_NOTIFICATION_ICON_MSG;
         icon_data.uFlags |= NIF_MESSAGE;

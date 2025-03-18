@@ -67,7 +67,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     OIC_SHIELD,
     OIC_WARNING,
 };
-use windows_missing::*;
+use windows_missing::MAKEINTRESOURCEW;
 
 pub trait Icon {
     fn as_handle(&self) -> io::Result<HICON>;
@@ -202,7 +202,6 @@ mod windows_missing {
 
     // Temporary function until this gets resolved: https://github.com/microsoft/windows-rs/issues/641
     #[allow(non_snake_case)]
-    #[inline]
     pub fn MAKEINTRESOURCEW(i: u32) -> PCWSTR {
         PCWSTR(i as usize as *const u16)
     }
