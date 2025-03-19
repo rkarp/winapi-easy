@@ -5,13 +5,13 @@ use std::fmt::{
     Display,
     Formatter,
 };
+use std::marker::PhantomData;
+use std::ptr::NonNull;
 use std::{
     io,
     mem,
     vec,
 };
-use std::marker::PhantomData;
-use std::ptr::NonNull;
 
 use num_enum::{
     IntoPrimitive,
@@ -111,10 +111,19 @@ use windows::core::{
     PCWSTR,
 };
 
+use super::{
+    Point,
+    Rectangle,
+};
 use crate::internal::{
     ReturnValue,
     custom_err_with_code,
     with_sync_closure_to_callback2,
+};
+#[cfg(feature = "process")]
+use crate::process::{
+    ProcessId,
+    ThreadId,
 };
 use crate::string::{
     FromWideString,
@@ -132,15 +141,6 @@ use crate::ui::resource::{
     BuiltinIcon,
     Cursor,
     Icon,
-};
-#[cfg(feature = "process")]
-use crate::process::{
-    ProcessId,
-    ThreadId,
-};
-use super::{
-    Point,
-    Rectangle,
 };
 
 /// A (non-null) handle to a window.

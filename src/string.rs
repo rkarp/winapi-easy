@@ -6,15 +6,15 @@ use std::ffi::{
     OsString,
 };
 use std::iter::once;
-use std::{
-    io,
-    mem,
-};
 use std::os::windows::ffi::{
     OsStrExt,
     OsStringExt,
 };
 use std::path::Path;
+use std::{
+    io,
+    mem,
+};
 
 use windows::Win32::Foundation::UNICODE_STRING;
 use windows::core::{

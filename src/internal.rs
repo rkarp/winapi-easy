@@ -3,18 +3,17 @@
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::fmt::Display;
-use std::{
-    io,
-    ptr,
-};
 use std::io::ErrorKind;
 use std::panic::{
     AssertUnwindSafe,
     catch_unwind,
 };
 use std::ptr::NonNull;
+use std::{
+    io,
+    ptr,
+};
 
-use windows::core::BOOL;
 use windows::Win32::Foundation::{
     CloseHandle,
     HANDLE,
@@ -29,6 +28,7 @@ use windows::Win32::System::Memory::{
     GlobalUnlock,
 };
 use windows::Win32::UI::WindowsAndMessaging::HMENU;
+use windows::core::BOOL;
 
 pub(crate) trait ReturnValue: PartialEq + Sized + Copy {
     const NULL_VALUE: Self;

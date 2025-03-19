@@ -2,19 +2,21 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::ffi::c_void;
-use std::{
-    io,
-    ptr,
-};
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::{
     Mutex,
     OnceLock,
 };
+use std::{
+    io,
+    ptr,
+};
 
 use num_enum::FromPrimitive;
+#[allow(clippy::wildcard_imports)]
+use private::*;
 use windows::Win32::Foundation::{
     LPARAM,
     LRESULT,
@@ -46,8 +48,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_XBUTTONDOWN,
     WM_XBUTTONUP,
 };
-#[allow(clippy::wildcard_imports)]
-use private::*;
 
 use crate::input::{
     KeyboardKey,

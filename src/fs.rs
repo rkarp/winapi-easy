@@ -1,11 +1,11 @@
 //! Filesystem functionality.
 
 use std::ffi::c_void;
+use std::path::Path;
 use std::{
     io,
     ptr,
 };
-use std::path::Path;
 
 use num_enum::IntoPrimitive;
 use windows::Win32::Foundation::HANDLE;

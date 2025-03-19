@@ -442,9 +442,9 @@ impl ModuleHandle {
 mod tests {
     use more_asserts::*;
 
+    use super::*;
     #[cfg(feature = "ui")]
     use crate::ui::window::WindowHandle;
-    use super::*;
 
     #[test]
     fn get_all_threads() -> io::Result<()> {

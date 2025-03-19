@@ -3,7 +3,6 @@
 use std::cell::Cell;
 use std::io;
 
-use windows::core::BOOL;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW,
     GetMessageW,
@@ -12,6 +11,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     TranslateMessage,
     WM_QUIT,
 };
+use windows::core::BOOL;
 
 use crate::internal::ReturnValue;
 

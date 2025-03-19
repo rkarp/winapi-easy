@@ -1,14 +1,14 @@
+use std::time::Duration;
 use std::{
     io,
     thread,
 };
-use std::time::Duration;
 
-use winapi_easy::ui::window::WindowHandle;
 use winapi_easy::ui::taskbar::{
     ProgressState,
     Taskbar,
 };
+use winapi_easy::ui::window::WindowHandle;
 
 fn main() -> io::Result<()> {
     let maybe_window = WindowHandle::get_console_window();

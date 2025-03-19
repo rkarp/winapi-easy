@@ -9,6 +9,8 @@ use num_enum::{
     FromPrimitive,
     IntoPrimitive,
 };
+#[allow(clippy::wildcard_imports)]
+use private::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState,
     GetKeyState,
@@ -149,8 +151,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     XBUTTON1,
     XBUTTON2,
 };
-#[allow(clippy::wildcard_imports)]
-use private::*;
 
 use crate::internal::ReturnValue;
 #[rustversion::before(1.87)]

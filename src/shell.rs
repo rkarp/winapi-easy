@@ -1,10 +1,6 @@
 //! Windows Shell functionality.
 
 use std::cell::Cell;
-use std::{
-    io,
-    ptr,
-};
 use std::ops::{
     BitOr,
     BitOrAssign,
@@ -12,6 +8,10 @@ use std::ops::{
 use std::path::{
     Path,
     PathBuf,
+};
+use std::{
+    io,
+    ptr,
 };
 
 use num_enum::{
@@ -64,13 +64,13 @@ use crate::string::{
     ZeroTerminatedWideString,
     max_path_extend,
 };
+use crate::ui::messaging::WindowMessageListener;
 use crate::ui::window::{
     Window,
     WindowClass,
     WindowClassAppearance,
     WindowHandle,
 };
-use crate::ui::messaging::WindowMessageListener;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]

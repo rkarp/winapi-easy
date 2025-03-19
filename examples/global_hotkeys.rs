@@ -1,19 +1,19 @@
 use std::io;
 
-use winapi_easy::input::{
-    GenericKey,
-    KeyboardKey,
-};
 use winapi_easy::input::hotkeys::{
     GlobalHotkeySet,
     Modifier,
 };
+use winapi_easy::input::{
+    GenericKey,
+    KeyboardKey,
+};
+use winapi_easy::ui::lock_workstation;
 use winapi_easy::ui::window::{
     MonitorPower,
     WindowHandle,
     WindowShowState,
 };
-use winapi_easy::ui::lock_workstation;
 
 #[derive(Copy, Clone, Debug)]
 enum Action {

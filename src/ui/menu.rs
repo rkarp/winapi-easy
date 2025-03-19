@@ -1,11 +1,11 @@
 //! Menus and menu items.
 
+use std::io::ErrorKind;
+use std::marker::PhantomData;
 use std::{
     io,
     mem,
 };
-use std::io::ErrorKind;
-use std::marker::PhantomData;
 
 use windows::Win32::UI::WindowsAndMessaging::{
     CreatePopupMenu,

@@ -32,11 +32,11 @@ use crate::internal::windows_missing::{
     NIN_KEYSELECT,
 };
 use crate::messaging::ThreadMessageLoop;
+use crate::ui::menu::MenuHandle;
 use crate::ui::{
     Point,
     WindowHandle,
 };
-use crate::ui::menu::MenuHandle;
 
 /// Indicates what should be done after the [`WindowMessageListener`] is done processing the message.
 #[derive(Copy, Clone, Default, Debug)]

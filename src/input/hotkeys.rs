@@ -6,7 +6,6 @@ use std::marker::PhantomData;
 use std::ops::Add;
 
 use num_enum::IntoPrimitive;
-use windows::core::BOOL;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     HOT_KEY_MODIFIERS,
     MOD_ALT,
@@ -22,6 +21,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     MSG,
     WM_HOTKEY,
 };
+use windows::core::BOOL;
 
 use crate::input::KeyboardKey;
 

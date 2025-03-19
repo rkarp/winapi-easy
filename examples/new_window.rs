@@ -7,15 +7,6 @@ use num_enum::{
 };
 use winapi_easy::messaging::ThreadMessageLoop;
 use winapi_easy::ui::Point;
-use winapi_easy::ui::window::{
-    BalloonNotification,
-    NotificationIconOptions,
-    Window,
-    WindowClass,
-    WindowClassAppearance,
-    WindowHandle,
-    WindowShowState,
-};
 use winapi_easy::ui::menu::{
     MenuItem,
     PopupMenu,
@@ -28,6 +19,15 @@ use winapi_easy::ui::messaging::WindowMessageListener;
 use winapi_easy::ui::resource::{
     BuiltinColor,
     BuiltinIcon,
+};
+use winapi_easy::ui::window::{
+    BalloonNotification,
+    NotificationIconOptions,
+    Window,
+    WindowClass,
+    WindowClassAppearance,
+    WindowHandle,
+    WindowShowState,
 };
 
 #[derive(Copy, Clone, Debug)]
