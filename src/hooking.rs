@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::ffi::c_void;
 use std::{
     io,
     ptr,
@@ -100,7 +101,7 @@ impl HookType for LowLevelKeyboardHook {
 impl LowLevelInputHook for LowLevelKeyboardHook {}
 
 /// Decoded mouse message.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub struct LowLevelMouseMessage {
     pub action: LowLevelMouseAction,
     pub coords: POINT,
@@ -137,7 +138,7 @@ impl From<RawLowLevelMessage> for LowLevelMouseMessage {
 }
 
 /// Decoded keyboard message.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub struct LowLevelKeyboardMessage {
     pub action: LowLevelKeyboardAction,
     pub key: KeyboardKey,
@@ -200,12 +201,39 @@ mod private {
     #[allow(clippy::wildcard_imports)]
     use super::*;
 
-    type StoredFunction = usize;
+    #[derive(Clone, Copy, Debug)]
+    #[repr(transparent)]
+    struct StoredClosurePtr(*mut c_void);
+
+    unsafe impl Send for StoredClosurePtr {}
+
+    impl StoredClosurePtr {
+        fn from_closure<HT, F>(value: &mut F) -> Self
+        where
+            HT: HookType,
+            F: FnMut(HT::Message) -> HookReturnValue + Send,
+        {
+            StoredClosurePtr(ptr::from_mut::<F>(value).cast::<c_void>())
+        }
+
+        /// Transforms the pointer to an arbitrary closure.
+        ///
+        /// # Safety
+        ///
+        /// Unsafe both because any type is supported and because an arbitrary lifetime can be generated.
+        unsafe fn to_closure<'a, HT, F>(self) -> &'a mut F
+        where
+            HT: HookType,
+            F: FnMut(HT::Message) -> HookReturnValue + Send,
+        {
+            unsafe { &mut *(self.0.cast::<F>()) }
+        }
+    }
 
     pub type IdType = u32;
 
     pub trait RawClosureStore {
-        fn get_raw_closure<'a, HT, F>(id: IdType) -> Option<&'a mut F>
+        unsafe fn get_raw_closure<'a, HT, F>(id: IdType) -> Option<&'a mut F>
         where
             HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send;
@@ -222,32 +250,33 @@ mod private {
         // This should be safe since for the low level mouse and keyboard hooks windows will only use
         // the same thread as the one registering the hook to send messages to the internal callback.
         thread_local! {
-            static RAW_CLOSURE: RefCell<HashMap<IdType, StoredFunction>> = RefCell::new(HashMap::new());
+            static RAW_CLOSURE: RefCell<HashMap<IdType, StoredClosurePtr>> = RefCell::new(HashMap::new());
         }
     }
 
     impl RawClosureStore for ThreadLocalRawClosureStore {
-        fn get_raw_closure<'a, HT, F>(id: IdType) -> Option<&'a mut F>
+        unsafe fn get_raw_closure<'a, HT, F>(id: IdType) -> Option<&'a mut F>
         where
             HT: HookType,
-            F: FnMut(HT::Message) -> HookReturnValue,
+            F: FnMut(HT::Message) -> HookReturnValue + Send,
         {
-            let unwrapped_closure: Option<StoredFunction> =
+            let unwrapped_closure: Option<StoredClosurePtr> =
                 Self::RAW_CLOSURE.with(|cell| cell.borrow_mut().get(&id).copied());
-            let closure: Option<&mut F> = unwrapped_closure.map(|x| unsafe { &mut *(x as *mut F) });
+            let closure: Option<&mut F> =
+                unwrapped_closure.map(|ptr| unsafe { ptr.to_closure::<HT, _>() });
             closure
         }
 
         fn set_raw_closure<HT, F>(id: IdType, maybe_user_callback: Option<&mut F>)
         where
             HT: HookType,
-            F: FnMut(HT::Message) -> HookReturnValue,
+            F: FnMut(HT::Message) -> HookReturnValue + Send,
         {
             Self::RAW_CLOSURE.with(|cell| {
                 let mut map_ref = cell.borrow_mut();
                 assert_ne!(maybe_user_callback.is_some(), map_ref.contains_key(&id));
                 if let Some(user_callback) = maybe_user_callback {
-                    map_ref.insert(id, ptr::from_mut::<F>(user_callback) as StoredFunction);
+                    map_ref.insert(id, StoredClosurePtr::from_closure::<HT, _>(user_callback));
                 } else {
                     map_ref.remove(&id);
                 }
@@ -258,20 +287,20 @@ mod private {
     pub enum GlobalRawClosureStore {}
 
     impl GlobalRawClosureStore {
-        fn closures() -> &'static Mutex<HashMap<IdType, StoredFunction>> {
-            static CLOSURES: OnceLock<Mutex<HashMap<IdType, StoredFunction>>> = OnceLock::new();
+        fn closures() -> &'static Mutex<HashMap<IdType, StoredClosurePtr>> {
+            static CLOSURES: OnceLock<Mutex<HashMap<IdType, StoredClosurePtr>>> = OnceLock::new();
             CLOSURES.get_or_init(|| Mutex::new(HashMap::new()))
         }
 
-        fn get_raw_closure_with_id<'a, HT, F>(id: IdType) -> Option<&'a mut F>
+        unsafe fn get_raw_closure_with_id<'a, HT, F>(id: IdType) -> Option<&'a mut F>
         where
             HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send,
         {
             let raw_hooks = Self::closures().lock().unwrap();
-            let maybe_stored_fn: Option<StoredFunction> = raw_hooks.get(&id).copied();
+            let maybe_stored_fn: Option<StoredClosurePtr> = raw_hooks.get(&id).copied();
             let closure: Option<&mut F> =
-                maybe_stored_fn.map(|ptr_usize| unsafe { &mut *(ptr_usize as *mut F) });
+                maybe_stored_fn.map(|ptr| unsafe { ptr.to_closure::<HT, _>() });
             closure
         }
 
@@ -284,7 +313,7 @@ mod private {
             assert_ne!(user_callback.is_some(), hooks.contains_key(&id));
             match user_callback {
                 Some(user_callback) => {
-                    let value = ptr::from_mut::<F>(user_callback) as StoredFunction;
+                    let value = StoredClosurePtr::from_closure::<HT, _>(user_callback);
                     hooks.insert(id, value);
                 }
                 None => {
@@ -295,12 +324,12 @@ mod private {
     }
 
     impl RawClosureStore for GlobalRawClosureStore {
-        fn get_raw_closure<'a, HT, F>(id: IdType) -> Option<&'a mut F>
+        unsafe fn get_raw_closure<'a, HT, F>(id: IdType) -> Option<&'a mut F>
         where
             HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send,
         {
-            Self::get_raw_closure_with_id::<HT, _>(id)
+            unsafe { Self::get_raw_closure_with_id::<HT, _>(id) }
         }
 
         fn set_raw_closure<HT, F>(id: IdType, user_callback: Option<&mut F>)
@@ -321,7 +350,7 @@ mod private {
 
     pub trait HookType: Sized {
         const TYPE_ID: WINDOWS_HOOK_ID;
-        type Message: From<RawLowLevelMessage>;
+        type Message: From<RawLowLevelMessage> + Send;
         type ClosureStore: RawClosureStore;
 
         fn add_hook<const ID: IdType, F>(user_callback: &mut F) -> io::Result<HookHandle<Self>>
@@ -348,7 +377,7 @@ mod private {
                     };
                     let message = HT::Message::from(raw_message);
                     let maybe_closure: Option<&mut F> =
-                        HT::ClosureStore::get_raw_closure::<HT, F>(ID);
+                        unsafe { HT::ClosureStore::get_raw_closure::<HT, F>(ID) };
                     if let Some(closure) = maybe_closure {
                         closure(message)
                     } else {
@@ -409,6 +438,87 @@ mod private {
     impl<HT: HookType> Drop for HookHandle<HT> {
         fn drop(&mut self) {
             self.remove().unwrap();
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        const EXPECTED_MESSAGE: LowLevelMouseMessage = LowLevelMouseMessage {
+            action: LowLevelMouseAction::Move,
+            coords: POINT { x: 0, y: 0 },
+            timestamp_ms: 42,
+        };
+        const EXPECTED_HOOK_RET_VAL: HookReturnValue = HookReturnValue::BlockMessage;
+
+        #[test]
+        fn curr_thread_set_and_retrieve_closure_thread_local() {
+            curr_thread_set_and_retrieve_closure::<ThreadLocalRawClosureStore>();
+        }
+
+        #[test]
+        fn curr_thread_set_and_retrieve_closure_global() {
+            curr_thread_set_and_retrieve_closure::<GlobalRawClosureStore>();
+        }
+
+        fn curr_thread_set_and_retrieve_closure<CS>()
+        where
+            CS: RawClosureStore,
+        {
+            let mut closure = generate_closure();
+            check_retrieved_closure::<CS, LowLevelMouseHook, _>(0, &mut closure, EXPECTED_MESSAGE);
+        }
+
+        #[test]
+        fn new_thread_set_and_retrieve_closure() {
+            let mut closure = generate_closure();
+            check_retrieved_closure_new_thread::<GlobalRawClosureStore, LowLevelMouseHook, _>(
+                1,
+                &mut closure,
+                EXPECTED_MESSAGE,
+            );
+        }
+
+        const fn generate_closure()
+        -> impl Fn(<LowLevelMouseHook as HookType>::Message) -> HookReturnValue {
+            |message| {
+                assert_eq!(message, EXPECTED_MESSAGE);
+                EXPECTED_HOOK_RET_VAL
+            }
+        }
+
+        fn check_retrieved_closure<CS, HT, F>(
+            id: IdType,
+            closure: &mut F,
+            expected_message: HT::Message,
+        ) where
+            CS: RawClosureStore,
+            HT: HookType,
+            F: FnMut(HT::Message) -> HookReturnValue + Send,
+        {
+            CS::set_raw_closure::<HT, _>(id, Some(closure));
+            let retrieved_closure = unsafe { CS::get_raw_closure::<HT, F>(id) }.unwrap();
+            assert_eq!(retrieved_closure(expected_message), EXPECTED_HOOK_RET_VAL)
+        }
+
+        fn check_retrieved_closure_new_thread<CS, HT, F>(
+            id: IdType,
+            closure: &mut F,
+            expected_message: HT::Message,
+        ) where
+            CS: RawClosureStore,
+            HT: HookType,
+            F: FnMut(HT::Message) -> HookReturnValue + Send,
+            <HT as HookType>::Message: 'static,
+        {
+            CS::set_raw_closure::<HT, _>(id, Some(closure));
+            std::thread::spawn(move || {
+                let retrieved_closure = unsafe { CS::get_raw_closure::<HT, F>(id) }.unwrap();
+                assert_eq!(retrieved_closure(expected_message), EXPECTED_HOOK_RET_VAL)
+            })
+            .join()
+            .unwrap();
         }
     }
 }
