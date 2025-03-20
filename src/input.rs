@@ -530,8 +530,7 @@ impl MouseScrollEvent {
     }
 
     #[cfg(feature = "hooking")]
-    pub(crate) fn from_raw_movement(raw_movement: u16) -> Self {
-        let raw_movement: i16 = raw_movement.cast_signed();
+    pub(crate) fn from_raw_movement(raw_movement: i16) -> Self {
         let wheel_delta_int: i16 = WHEEL_DELTA.try_into().unwrap_or_else(|_| unreachable!());
         if raw_movement == wheel_delta_int {
             MouseScrollEvent::Up

@@ -108,8 +108,8 @@ pub struct LowLevelMouseMessage {
     pub timestamp_ms: u32,
 }
 
-impl From<RawLowLevelMessage> for LowLevelMouseMessage {
-    fn from(value: RawLowLevelMessage) -> Self {
+impl FromRawLowLevelMessage for LowLevelMouseMessage {
+    unsafe fn from_raw_message(value: RawLowLevelMessage) -> Self {
         let w_param = u32::try_from(value.w_param).unwrap();
         let message_data = unsafe { *(value.l_param as *const MSLLHOOKSTRUCT) };
         let action = match (w_param, HIWORD(message_data.mouseData)) {
@@ -124,9 +124,9 @@ impl From<RawLowLevelMessage> for LowLevelMouseMessage {
             (WM_MBUTTONUP, _) => LowLevelMouseAction::ButtonUp(MouseButton::Middle),
             (WM_XBUTTONUP, 1) => LowLevelMouseAction::ButtonUp(MouseButton::X1),
             (WM_XBUTTONUP, 2) => LowLevelMouseAction::ButtonUp(MouseButton::X2),
-            (WM_MOUSEWHEEL, raw_movement) => {
-                LowLevelMouseAction::WheelScroll(MouseScrollEvent::from_raw_movement(raw_movement))
-            }
+            (WM_MOUSEWHEEL, raw_movement) => LowLevelMouseAction::WheelScroll(
+                MouseScrollEvent::from_raw_movement(raw_movement.cast_signed()),
+            ),
             (_, _) => LowLevelMouseAction::Other(w_param),
         };
         LowLevelMouseMessage {
@@ -146,8 +146,8 @@ pub struct LowLevelKeyboardMessage {
     pub timestamp_ms: u32,
 }
 
-impl From<RawLowLevelMessage> for LowLevelKeyboardMessage {
-    fn from(value: RawLowLevelMessage) -> Self {
+impl FromRawLowLevelMessage for LowLevelKeyboardMessage {
+    unsafe fn from_raw_message(value: RawLowLevelMessage) -> Self {
         let w_param = u32::try_from(value.w_param).unwrap();
         let message_data = unsafe { *(value.l_param as *const KBDLLHOOKSTRUCT) };
         let key = KeyboardKey::from(u16::try_from(message_data.vkCode).expect("Key code too big"));
@@ -343,14 +343,17 @@ mod private {
 
     #[derive(Copy, Clone, Debug)]
     pub struct RawLowLevelMessage {
-        pub code: i32,
         pub w_param: usize,
         pub l_param: isize,
     }
 
+    pub trait FromRawLowLevelMessage {
+        unsafe fn from_raw_message(value: RawLowLevelMessage) -> Self;
+    }
+
     pub trait HookType: Sized {
         const TYPE_ID: WINDOWS_HOOK_ID;
-        type Message: From<RawLowLevelMessage> + Send;
+        type Message: FromRawLowLevelMessage + Send;
         type ClosureStore: RawClosureStore;
 
         fn add_hook<const ID: IdType, F>(user_callback: &mut F) -> io::Result<HookHandle<Self>>
@@ -371,11 +374,10 @@ mod private {
                 }
                 let call = move || {
                     let raw_message = RawLowLevelMessage {
-                        code,
                         w_param: w_param.0,
                         l_param: l_param.0,
                     };
-                    let message = HT::Message::from(raw_message);
+                    let message = unsafe { HT::Message::from_raw_message(raw_message) };
                     let maybe_closure: Option<&mut F> =
                         unsafe { HT::ClosureStore::get_raw_closure::<HT, F>(ID) };
                     if let Some(closure) = maybe_closure {
