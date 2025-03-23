@@ -482,39 +482,33 @@ impl From<MouseButton> for i32 {
 /// Mouse scroll wheel 'up' or 'down' event, possibly continuous.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum MouseScrollEvent {
-    /// Single up-scroll event.
+    /// One or more full up-scroll events.
     ///
-    /// Equivalent to [`Self::Continuous`] with a value of [`WHEEL_DELTA`].
-    Up,
-    /// Single down-scroll event.
+    /// Equivalent to [`Self::Continuous`] with a multiple of [`Self::WHEEL_DELTA`].
+    Up(u16),
+    /// One or more full down-scroll events.
     ///
-    /// Equivalent to [`Self::Continuous`] with a value of -[`WHEEL_DELTA`].
-    Down,
+    /// Equivalent to [`Self::Continuous`] with a multiple of -[`Self::WHEEL_DELTA`].
+    Down(u16),
     /// Continuous 'up' (positive value) or 'down' (negative value) scroll event.
     ///
-    /// Values other than positive or negative [`WHEEL_DELTA`] are used for mouses
+    /// Values other than multiples of positive or negative [`Self::WHEEL_DELTA`] are used for mouses
     /// with continuous scroll wheels.
     Continuous(i16),
 }
 
 impl MouseScrollEvent {
     #[allow(clippy::cast_possible_truncation)]
-    const WHEEL_DELTA_INT: i16 = WHEEL_DELTA as _;
+    pub const WHEEL_DELTA: i16 = WHEEL_DELTA as _;
 
     /// Globally sends a single scroll event.
     pub fn send(self) -> io::Result<()> {
-        self.send_amount(1)
-    }
-
-    /// Globally sends a certain amount of scroll events.
-    pub fn send_amount(self, amount: u8) -> io::Result<()> {
-        let single_delta = match self {
-            MouseScrollEvent::Up => Self::WHEEL_DELTA_INT,
-            MouseScrollEvent::Down => -Self::WHEEL_DELTA_INT,
-            MouseScrollEvent::Continuous(delta) => delta,
-        };
         // Should never overflow due to data types
-        let mouse_data = i32::from(single_delta) * i32::from(amount);
+        let mouse_data: i32 = match self {
+            MouseScrollEvent::Up(amount) => i32::from(Self::WHEEL_DELTA) * i32::from(amount),
+            MouseScrollEvent::Down(amount) => -i32::from(Self::WHEEL_DELTA) * i32::from(amount),
+            MouseScrollEvent::Continuous(delta) => i32::from(delta),
+        };
         let raw_input = INPUT {
             r#type: INPUT_MOUSE,
             Anonymous: INPUT_0 {
@@ -531,13 +525,12 @@ impl MouseScrollEvent {
 
     #[cfg(feature = "hooking")]
     pub(crate) fn from_raw_movement(raw_movement: i16) -> Self {
-        let wheel_delta_int: i16 = WHEEL_DELTA.try_into().unwrap_or_else(|_| unreachable!());
-        if raw_movement == wheel_delta_int {
-            MouseScrollEvent::Up
-        } else if raw_movement == -wheel_delta_int {
-            MouseScrollEvent::Down
-        } else {
+        if raw_movement % Self::WHEEL_DELTA != 0 {
             MouseScrollEvent::Continuous(raw_movement)
+        } else if raw_movement > 0 {
+            MouseScrollEvent::Up((raw_movement / Self::WHEEL_DELTA).cast_unsigned())
+        } else {
+            MouseScrollEvent::Down((-raw_movement / Self::WHEEL_DELTA).cast_unsigned())
         }
     }
 }
