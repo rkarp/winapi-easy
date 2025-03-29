@@ -4,14 +4,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::fmt::Debug;
+use std::io;
 use std::marker::PhantomData;
 use std::sync::{
     Mutex,
     OnceLock,
-};
-use std::{
-    io,
-    ptr,
 };
 
 use num_enum::FromPrimitive;
@@ -65,7 +62,7 @@ use crate::messaging::ThreadMessageLoop;
 /// This hook can be used to listen to mouse (with [`LowLevelMouseHook`]) or keyboard (with [`LowLevelKeyboardHook`]) events,
 /// no matter which application or window they occur in.
 pub trait LowLevelInputHook: HookType + Copy {
-    fn run_hook<F>(user_callback: &mut F) -> io::Result<()>
+    fn run_hook<F>(user_callback: F) -> io::Result<()>
     where
         F: FnMut(Self::Message) -> HookReturnValue + Send,
     {
@@ -208,12 +205,12 @@ mod private {
     unsafe impl Send for StoredClosurePtr {}
 
     impl StoredClosurePtr {
-        fn from_closure<HT, F>(value: &mut F) -> Self
+        fn from_closure<HT, F>(value: *mut F) -> Self
         where
             HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send,
         {
-            StoredClosurePtr(ptr::from_mut::<F>(value).cast::<c_void>())
+            StoredClosurePtr(value.cast::<c_void>())
         }
 
         /// Transforms the pointer to an arbitrary closure.
@@ -238,7 +235,7 @@ mod private {
             HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send;
 
-        fn set_raw_closure<HT, F>(id: IdType, user_callback: Option<&mut F>)
+        fn set_raw_closure<HT, F>(id: IdType, user_callback: Option<*mut F>)
         where
             HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send;
@@ -267,7 +264,7 @@ mod private {
             closure
         }
 
-        fn set_raw_closure<HT, F>(id: IdType, maybe_user_callback: Option<&mut F>)
+        fn set_raw_closure<HT, F>(id: IdType, maybe_user_callback: Option<*mut F>)
         where
             HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send,
@@ -304,7 +301,7 @@ mod private {
             closure
         }
 
-        fn set_raw_closure_with_id<HT, F>(id: IdType, user_callback: Option<&mut F>)
+        fn set_raw_closure_with_id<HT, F>(id: IdType, user_callback: Option<*mut F>)
         where
             HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send,
@@ -332,7 +329,7 @@ mod private {
             unsafe { Self::get_raw_closure_with_id::<HT, _>(id) }
         }
 
-        fn set_raw_closure<HT, F>(id: IdType, user_callback: Option<&mut F>)
+        fn set_raw_closure<HT, F>(id: IdType, user_callback: Option<*mut F>)
         where
             HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send,
@@ -351,12 +348,28 @@ mod private {
         unsafe fn from_raw_message(value: RawLowLevelMessage) -> Self;
     }
 
+    #[derive(Debug)]
+    struct RawBox<T>(*mut T);
+
+    impl<T> RawBox<T> {
+        fn new(value: T) -> Self {
+            Self(Box::into_raw(Box::new(value)))
+        }
+    }
+
+    impl<T> Drop for RawBox<T> {
+        fn drop(&mut self) {
+            let _ = unsafe { Box::from_raw(self.0) };
+        }
+    }
+
     pub trait HookType: Sized {
         const TYPE_ID: WINDOWS_HOOK_ID;
         type Message: FromRawLowLevelMessage + Send;
         type ClosureStore: RawClosureStore;
 
-        fn add_hook<const ID: IdType, F>(user_callback: &mut F) -> io::Result<HookHandle<Self>>
+        /// Registers a hook and returns a handle for auto-drop.
+        fn add_hook<const ID: IdType, F>(user_callback: F) -> io::Result<HookHandle<Self, F>>
         where
             F: FnMut(Self::Message) -> HookReturnValue + Send,
         {
@@ -396,7 +409,8 @@ mod private {
                     HookReturnValue::ExplicitValue(l_result) => l_result,
                 }
             }
-            Self::ClosureStore::set_raw_closure::<Self, F>(ID, Some(user_callback));
+            let user_callback = RawBox::new(user_callback);
+            Self::ClosureStore::set_raw_closure::<Self, F>(ID, Some(user_callback.0));
             let handle = unsafe {
                 SetWindowsHookExW(
                     Self::TYPE_ID,
@@ -405,23 +419,32 @@ mod private {
                     0,
                 )?
             };
-            Ok(HookHandle::new(ID, handle))
+            Ok(HookHandle::new(ID, handle, user_callback))
         }
     }
 
     #[derive(Debug)]
-    pub struct HookHandle<HT: HookType> {
+    pub struct HookHandle<HT: HookType, F> {
         id: IdType,
         handle: HHOOK,
+        #[allow(dead_code)]
+        callback: RawBox<F>,
         remove_initiated: bool,
         phantom: PhantomData<HT>,
     }
 
-    impl<HT: HookType> HookHandle<HT> {
-        fn new(id: IdType, handle: HHOOK) -> Self {
+    #[cfg(test)]
+    static_assertions::assert_not_impl_any!(HookHandle<LowLevelKeyboardHook, ()>: Send, Sync);
+
+    impl<HT: HookType, F> HookHandle<HT, F> {
+        fn new(id: IdType, handle: HHOOK, callback: RawBox<F>) -> Self
+        where
+            F: FnMut(HT::Message) -> HookReturnValue + Send,
+        {
             Self {
                 id,
                 handle,
+                callback,
                 remove_initiated: false,
                 phantom: PhantomData,
             }
@@ -437,7 +460,7 @@ mod private {
         }
     }
 
-    impl<HT: HookType> Drop for HookHandle<HT> {
+    impl<HT: HookType, F> Drop for HookHandle<HT, F> {
         fn drop(&mut self) {
             self.remove().unwrap();
         }
@@ -548,9 +571,11 @@ mod tests {
 
     fn ll_hook_and_unhook_with_ids<const ID1: IdType, const ID2: IdType>()
     -> windows::core::Result<()> {
-        let mut mouse_callback =
+        let mouse_callback =
             |_message: LowLevelMouseMessage| -> HookReturnValue { HookReturnValue::CallNextHook };
-        let mut keyboard_callback = |_message: LowLevelKeyboardMessage| -> HookReturnValue {
+        let mut keyboard_counter = 0;
+        let keyboard_callback = |_message: LowLevelKeyboardMessage| -> HookReturnValue {
+            keyboard_counter += 1;
             HookReturnValue::CallNextHook
         };
         unsafe {
@@ -561,8 +586,8 @@ mod tests {
                 LPARAM::default(),
             )?
         };
-        let _mouse_handle = LowLevelMouseHook::add_hook::<ID1, _>(&mut mouse_callback)?;
-        let _keyboard_handle = LowLevelKeyboardHook::add_hook::<ID2, _>(&mut keyboard_callback)?;
+        let _mouse_handle = LowLevelMouseHook::add_hook::<ID1, _>(mouse_callback)?;
+        let _keyboard_handle = LowLevelKeyboardHook::add_hook::<ID2, _>(keyboard_callback)?;
         ThreadMessageLoop::run_thread_message_loop(|| Ok(()))?;
         Ok(())
     }

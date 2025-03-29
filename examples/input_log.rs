@@ -12,7 +12,7 @@ use winapi_easy::hooking::{
 
 fn main() -> io::Result<()> {
     let mouse_thread = std::thread::spawn(|| {
-        let mut callback = |message: LowLevelMouseMessage| -> HookReturnValue {
+        let callback = |message: LowLevelMouseMessage| -> HookReturnValue {
             match message.action {
                 LowLevelMouseAction::Move => {}
                 _ => {
@@ -21,14 +21,14 @@ fn main() -> io::Result<()> {
             }
             HookReturnValue::CallNextHook
         };
-        LowLevelMouseHook::run_hook(&mut callback)
+        LowLevelMouseHook::run_hook(callback)
     });
     let keyboard_thread = std::thread::spawn(|| {
-        let mut callback = |message: LowLevelKeyboardMessage| -> HookReturnValue {
+        let callback = |message: LowLevelKeyboardMessage| -> HookReturnValue {
             dbg!(message);
             HookReturnValue::CallNextHook
         };
-        LowLevelKeyboardHook::run_hook(&mut callback)
+        LowLevelKeyboardHook::run_hook(callback)
     });
     mouse_thread.join().unwrap()?;
     keyboard_thread.join().unwrap()?;
