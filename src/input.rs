@@ -1,5 +1,6 @@
 //! Keyboard and hotkeys.
 
+use std::ffi::c_void;
 use std::{
     io,
     mem,
@@ -147,6 +148,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_Z,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
+    SPI_GETMOUSESPEED,
+    SPI_SETMOUSESPEED,
+    SPIF_SENDCHANGE,
+    SPIF_UPDATEINIFILE,
+    SystemParametersInfoW,
     WHEEL_DELTA,
     XBUTTON1,
     XBUTTON2,
@@ -532,5 +538,54 @@ impl MouseScrollEvent {
         } else {
             MouseScrollEvent::Down((-raw_movement / Self::WHEEL_DELTA).cast_unsigned())
         }
+    }
+}
+
+/// Returns the global mouse speed.
+pub fn get_mouse_speed() -> io::Result<u32> {
+    let mut speed: u32 = 0;
+    unsafe {
+        SystemParametersInfoW(
+            SPI_GETMOUSESPEED,
+            0,
+            Some((&raw mut speed).cast::<c_void>()),
+            Default::default(),
+        )?;
+    }
+    Ok(speed)
+}
+
+/// Globally sets the mouse speed.
+///
+/// Valid values are `1` to `20` inclusive. The change can be persisted between login sessions.
+pub fn set_mouse_speed(speed: u32, persist: bool) -> io::Result<()> {
+    let flags = if persist {
+        SPIF_UPDATEINIFILE | SPIF_SENDCHANGE
+    } else {
+        SPIF_SENDCHANGE
+    };
+    unsafe {
+        SystemParametersInfoW(
+            SPI_SETMOUSESPEED,
+            0,
+            Some(std::ptr::with_exposed_provenance_mut(
+                usize::try_from(speed).unwrap_or_else(|_| unreachable!()),
+            )),
+            flags,
+        )?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_get_mouse_speed() -> io::Result<()> {
+        let speed = get_mouse_speed()?;
+        dbg!(speed);
+        assert!((1..=20).contains(&speed));
+        Ok(())
     }
 }
