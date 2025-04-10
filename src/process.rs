@@ -13,7 +13,6 @@ use num_enum::{
 };
 use windows::Wdk::System::Threading::{
     NtQueryInformationProcess,
-    PROCESSINFOCLASS,
     ProcessIoPriority,
 };
 use windows::Win32::Foundation::{
@@ -125,7 +124,7 @@ impl Process {
         let ret_val = unsafe {
             NtQueryInformationProcess(
                 self.handle.entity,
-                ProcessInformationClass::ProcessIoPriority.into(),
+                ProcessIoPriority,
                 (&raw mut raw_io_priority).cast::<c_void>(),
                 u32::try_from(mem::size_of::<i32>()).unwrap_or_else(|_| unreachable!()),
                 &mut return_length,
@@ -142,9 +141,7 @@ impl Process {
         let ret_val = unsafe {
             NtSetInformationProcess(
                 self.handle.entity.0.cast::<ntapi::winapi::ctypes::c_void>(),
-                i32::from(ProcessInformationClass::ProcessIoPriority)
-                    .try_into()
-                    .unwrap_or_else(|_| unreachable!()),
+                ProcessIoPriority.0.cast_unsigned(),
                 (&raw mut raw_io_priority).cast::<ntapi::winapi::ctypes::c_void>(),
                 u32::try_from(mem::size_of::<u32>()).unwrap_or_else(|_| unreachable!()),
             )
@@ -406,18 +403,6 @@ pub enum IoPriority {
     VeryLow = 0,
     Low = 1,
     Normal = 2,
-}
-
-#[derive(IntoPrimitive, Clone, Copy, Debug)]
-#[repr(i32)]
-enum ProcessInformationClass {
-    ProcessIoPriority = ProcessIoPriority.0,
-}
-
-impl From<ProcessInformationClass> for PROCESSINFOCLASS {
-    fn from(value: ProcessInformationClass) -> Self {
-        PROCESSINFOCLASS(value.into())
-    }
 }
 
 /// A handle to a module (EXE or DLL).

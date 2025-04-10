@@ -30,9 +30,9 @@ pub(crate) trait ToWideString: AsRef<OsStr> + Sized {
 impl<T: AsRef<OsStr> + Sized> ToWideString for T {}
 
 #[allow(clippy::needless_lifetimes)]
-pub(crate) fn to_wide_chars_iter<'a>(
-    str: &'a (impl AsRef<OsStr> + ?Sized),
-) -> impl Iterator<Item = u16> + 'a {
+pub(crate) fn to_wide_chars_iter(
+    str: &(impl AsRef<OsStr> + ?Sized),
+) -> impl Iterator<Item = u16> + '_ {
     str.as_ref().encode_wide().chain(once(0))
 }
 

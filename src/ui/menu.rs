@@ -145,7 +145,7 @@ impl From<&MenuHandle> for HMENU {
     }
 }
 
-/// A popup menu for use with [`crate::ui::NotificationIcon`].
+/// A popup menu for use with [`crate::ui::window::NotificationIcon`].
 #[derive(Debug)]
 pub struct PopupMenu {
     handle: MenuHandle,

@@ -696,11 +696,10 @@ impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WM
             None,
         );
         unsafe {
-            Shell_NotifyIconW(NIM_ADD, &call_data).if_null_to_error_else_drop(|| {
-                io::Error::new(io::ErrorKind::Other, "Cannot add notification icon")
-            })?;
+            Shell_NotifyIconW(NIM_ADD, &call_data)
+                .if_null_to_error_else_drop(|| io::Error::other("Cannot add notification icon"))?;
             Shell_NotifyIconW(NIM_SETVERSION, &call_data).if_null_to_error_else_drop(|| {
-                io::Error::new(io::ErrorKind::Other, "Cannot set notification version")
+                io::Error::other("Cannot set notification version")
             })?;
         };
         Ok(NotificationIcon {
@@ -874,7 +873,7 @@ pub enum MonitorPower {
 
 /// An icon in the Windows notification area.
 ///
-/// This icon is always associated with a window and can be used in conjunction with [`menu::PopupMenu`].
+/// This icon is always associated with a window and can be used in conjunction with [`crate::ui::menu::PopupMenu`].
 pub struct NotificationIcon<'a, WML> {
     id: NotificationIconId,
     window: &'a Window<'a, 'a, WML>,
@@ -893,9 +892,8 @@ impl<'a, WML> NotificationIcon<'a, WML> {
             None,
         );
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
-                io::Error::new(io::ErrorKind::Other, "Cannot set notification icon")
-            })?;
+            Shell_NotifyIconW(NIM_MODIFY, &call_data)
+                .if_null_to_error_else_drop(|| io::Error::other("Cannot set notification icon"))?;
         };
         Ok(())
     }
@@ -913,10 +911,7 @@ impl<'a, WML> NotificationIcon<'a, WML> {
         );
         unsafe {
             Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    "Cannot set notification icon hidden state",
-                )
+                io::Error::other("Cannot set notification icon hidden state")
             })?;
         };
         Ok(())
@@ -935,10 +930,7 @@ impl<'a, WML> NotificationIcon<'a, WML> {
         );
         unsafe {
             Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    "Cannot set notification icon tooltip text",
-                )
+                io::Error::other("Cannot set notification icon tooltip text")
             })?;
         };
         Ok(())
@@ -960,10 +952,7 @@ impl<'a, WML> NotificationIcon<'a, WML> {
         );
         unsafe {
             Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    "Cannot set notification icon balloon text",
-                )
+                io::Error::other("Cannot set notification icon balloon text")
             })?;
         };
         Ok(())
@@ -983,9 +972,7 @@ impl<WML> Drop for NotificationIcon<'_, WML> {
         );
         unsafe {
             Shell_NotifyIconW(NIM_DELETE, &call_data)
-                .if_null_to_error_else_drop(|| {
-                    io::Error::new(io::ErrorKind::Other, "Cannot remove notification icon")
-                })
+                .if_null_to_error_else_drop(|| io::Error::other("Cannot remove notification icon"))
                 .unwrap();
         }
     }

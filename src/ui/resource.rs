@@ -1,6 +1,9 @@
 //! Application resources.
 
-use std::io;
+use std::{
+    io,
+    ptr,
+};
 
 use num_enum::IntoPrimitive;
 use windows::Win32::Foundation::HANDLE;
@@ -179,7 +182,11 @@ pub enum BuiltinColor {
 
 impl Brush for BuiltinColor {
     fn as_handle(&self) -> io::Result<HBRUSH> {
-        Ok(HBRUSH(i32::from(*self) as *mut std::ffi::c_void))
+        Ok(HBRUSH(ptr::with_exposed_provenance_mut(
+            i32::from(*self)
+                .try_into()
+                .unwrap_or_else(|_| unreachable!()),
+        )))
     }
 }
 

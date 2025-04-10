@@ -3,7 +3,6 @@
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::fmt::Display;
-use std::io::ErrorKind;
 use std::panic::{
     AssertUnwindSafe,
     catch_unwind,
@@ -364,10 +363,7 @@ pub(crate) fn custom_err_with_code<C>(err_text: &str, result_code: C) -> io::Err
 where
     C: Display,
 {
-    io::Error::new(
-        ErrorKind::Other,
-        format!("{}. Code: {}", err_text, result_code),
-    )
+    io::Error::other(format!("{}. Code: {}", err_text, result_code))
 }
 
 #[allow(dead_code)]

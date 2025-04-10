@@ -128,4 +128,4 @@ required-features = ["shell"]
 
 [[example]]
 name = "set_io_priority"
-required-features = ["input", "ui"]
+required-features = ["input", "process", "ui"]
