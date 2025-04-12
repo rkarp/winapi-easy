@@ -4,17 +4,21 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::fmt::Debug;
-use std::io;
 use std::marker::PhantomData;
 use std::sync::{
     Mutex,
     OnceLock,
+};
+use std::{
+    io,
+    ptr,
 };
 
 use num_enum::FromPrimitive;
 #[allow(clippy::wildcard_imports)]
 use private::*;
 use windows::Win32::Foundation::{
+    HWND,
     LPARAM,
     LRESULT,
     POINT,
@@ -22,11 +26,13 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx,
+    HCBT_ACTIVATE,
     HHOOK,
     KBDLLHOOKSTRUCT,
     MSLLHOOKSTRUCT,
     SetWindowsHookExW,
     UnhookWindowsHookEx,
+    WH_CBT,
     WH_KEYBOARD_LL,
     WH_MOUSE_LL,
     WINDOWS_HOOK_ID,
@@ -56,6 +62,7 @@ use crate::internal::catch_unwind_and_abort;
 use crate::internal::std_unstable::CastSigned;
 use crate::internal::windows_missing::HIWORD;
 use crate::messaging::ThreadMessageLoop;
+use crate::ui::window::WindowHandle;
 
 /// A global mouse or keyboard hook.
 ///
@@ -177,6 +184,39 @@ pub enum LowLevelKeyboardAction {
     SysKeyUp = WM_SYSKEYUP,
     #[num_enum(catch_all)]
     Other(u32),
+}
+
+/// Computer-based training (CBT) application hook.
+/// 
+/// Only usable from a DLL.
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum CbtHook {}
+
+impl HookType for CbtHook {
+    const TYPE_ID: WINDOWS_HOOK_ID = WH_CBT;
+    type Message = CbtMessage;
+    type ClosureStore = ThreadLocalRawClosureStore;
+}
+
+/// Computer-based training (CBT) application hook message.
+#[non_exhaustive]
+#[derive(PartialEq, Debug)]
+pub(crate) enum CbtMessage {
+    // A window is about to be activated.
+    WindowActivate(WindowHandle),
+    Other,
+}
+
+impl FromRawLowLevelMessage for CbtMessage {
+    unsafe fn from_raw_message(value: RawLowLevelMessage) -> Self {
+        match value.n_code {
+            HCBT_ACTIVATE => CbtMessage::WindowActivate(
+                WindowHandle::try_from(HWND(ptr::with_exposed_provenance_mut(value.w_param)))
+                    .unwrap_or_else(|_| unreachable!()),
+            ),
+            _ => CbtMessage::Other,
+        }
+    }
 }
 
 /// A value indicating what action should be taken after returning from the user callback
@@ -340,6 +380,7 @@ mod private {
 
     #[derive(Copy, Clone, Debug)]
     pub struct RawLowLevelMessage {
+        pub n_code: u32,
         pub w_param: usize,
         pub l_param: isize,
     }
@@ -365,7 +406,7 @@ mod private {
 
     pub trait HookType: Sized {
         const TYPE_ID: WINDOWS_HOOK_ID;
-        type Message: FromRawLowLevelMessage + Send;
+        type Message: FromRawLowLevelMessage;
         type ClosureStore: RawClosureStore;
 
         /// Registers a hook and returns a handle for auto-drop.
@@ -374,7 +415,7 @@ mod private {
             F: FnMut(Self::Message) -> HookReturnValue + Send,
         {
             unsafe extern "system" fn internal_callback<const ID: IdType, HT, F>(
-                code: i32,
+                n_code: i32,
                 w_param: WPARAM,
                 l_param: LPARAM,
             ) -> LRESULT
@@ -382,11 +423,12 @@ mod private {
                 HT: HookType,
                 F: FnMut(HT::Message) -> HookReturnValue + Send,
             {
-                if code < 0 {
-                    unsafe { return CallNextHookEx(None, code, w_param, l_param) }
+                if n_code < 0 {
+                    unsafe { return CallNextHookEx(None, n_code, w_param, l_param) }
                 }
                 let call = move || {
                     let raw_message = RawLowLevelMessage {
+                        n_code: n_code.cast_unsigned(),
                         w_param: w_param.0,
                         l_param: l_param.0,
                     };
@@ -402,7 +444,7 @@ mod private {
                 let result = catch_unwind_and_abort(call);
                 match result {
                     HookReturnValue::CallNextHook => unsafe {
-                        CallNextHookEx(None, code, w_param, l_param)
+                        CallNextHookEx(None, n_code, w_param, l_param)
                     },
                     HookReturnValue::BlockMessage => LRESULT(1),
                     HookReturnValue::PassToWindowProcOnly => LRESULT(0),
@@ -535,7 +577,7 @@ mod private {
             CS: RawClosureStore,
             HT: HookType,
             F: FnMut(HT::Message) -> HookReturnValue + Send,
-            <HT as HookType>::Message: 'static,
+            <HT as HookType>::Message: Send + 'static,
         {
             CS::set_raw_closure::<HT, _>(id, Some(closure));
             std::thread::spawn(move || {

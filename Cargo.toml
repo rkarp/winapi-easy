@@ -60,6 +60,7 @@ fs = [
 ]
 hooking = [
     "input",
+    "ui",
 ]
 input = [
     "windows/Win32_System_Threading",
