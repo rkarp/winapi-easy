@@ -61,6 +61,7 @@ fs = [
 hooking = [
     "input",
     "ui",
+    "windows/Win32_UI_Accessibility",
 ]
 input = [
     "windows/Win32_System_Threading",
@@ -130,3 +131,7 @@ required-features = ["shell"]
 [[example]]
 name = "set_io_priority"
 required-features = ["input", "process", "ui"]
+
+[[example]]
+name = "window_event_log"
+required-features = ["hooking"]
