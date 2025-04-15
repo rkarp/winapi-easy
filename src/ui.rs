@@ -1,6 +1,9 @@
 //! UI functionality.
 
-use std::io;
+use std::{
+    io,
+    ptr,
+};
 
 use window::WindowHandle;
 use windows::Win32::Foundation::{
@@ -24,6 +27,23 @@ pub mod window;
 pub type Point = POINT;
 /// DPI-scaled virtual coordinates of a rectangle.
 pub type Rectangle = RECT;
+
+trait RectTransform {
+    #[allow(dead_code)]
+    fn as_point_array(&self) -> &[POINT];
+    fn as_point_array_mut(&mut self) -> &mut [POINT];
+}
+impl RectTransform for RECT {
+    fn as_point_array(&self) -> &[POINT] {
+        let data = ptr::from_ref(self).cast::<POINT>();
+        unsafe { std::slice::from_raw_parts(data, 2) }
+    }
+
+    fn as_point_array_mut(&mut self) -> &mut [POINT] {
+        let data = ptr::from_mut(self).cast::<POINT>();
+        unsafe { std::slice::from_raw_parts_mut(data, 2) }
+    }
+}
 
 /// Creates a console window for the current process if there is none.
 pub fn allocate_console() -> io::Result<()> {
