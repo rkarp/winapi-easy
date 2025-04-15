@@ -18,6 +18,7 @@ use num_enum::{
     TryFromPrimitive,
 };
 use windows::Win32::Foundation::{
+    ERROR_SUCCESS,
     GetLastError,
     HWND,
     LPARAM,
@@ -25,6 +26,7 @@ use windows::Win32::Foundation::{
     SetLastError,
     WPARAM,
 };
+use windows::Win32::Graphics::Gdi::MapWindowPoints;
 use windows::Win32::System::Console::GetConsoleWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetActiveWindow;
 use windows::Win32::UI::Shell::{
@@ -66,6 +68,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     FlashWindowEx,
     GWLP_USERDATA,
     GetClassNameW,
+    GetClientRect,
     GetDesktopWindow,
     GetForegroundWindow,
     GetWindowLongPtrW,
@@ -113,6 +116,7 @@ use windows::core::{
 
 use super::{
     Point,
+    RectTransform,
     Rectangle,
 };
 use crate::internal::{
@@ -319,6 +323,36 @@ impl WindowHandle {
     /// Sets the window's show state and positions.
     pub fn set_placement(&self, placement: &WindowPlacement) -> io::Result<()> {
         unsafe { SetWindowPlacement(self.raw_handle, &placement.raw_placement)? };
+        Ok(())
+    }
+
+    /// Returns the window's client area rectangle relative to the screen.
+    pub fn get_client_area_coords(&self) -> io::Result<Rectangle> {
+        let mut result_rect: Rectangle = Default::default();
+        unsafe { GetClientRect(self.raw_handle, &mut result_rect) }?;
+        self.map_points(None, result_rect.as_point_array_mut())?;
+        Ok(result_rect)
+    }
+
+    pub(crate) fn map_points(
+        &self,
+        other_window: Option<Self>,
+        points: &mut [Point],
+    ) -> io::Result<()> {
+        unsafe { SetLastError(ERROR_SUCCESS) };
+        let map_result = unsafe {
+            MapWindowPoints(
+                Some(self.raw_handle),
+                other_window.map(|x| x.raw_handle),
+                points,
+            )
+        };
+        if map_result == 0 {
+            let last_error = unsafe { GetLastError() };
+            if last_error != ERROR_SUCCESS {
+                return Err(io::Error::last_os_error());
+            }
+        }
         Ok(())
     }
 
@@ -1150,15 +1184,16 @@ mod tests {
         let balloon_notification = BalloonNotification::default();
         notification_icon.set_balloon_notification(Some(balloon_notification))?;
 
-        assert_eq!(window.as_ref().get_caption_text(), WINDOW_NAME);
-        window.as_ref().set_caption_text(CAPTION_TEXT)?;
-        assert_eq!(window.as_ref().get_caption_text(), CAPTION_TEXT);
+        let window_handle = window.as_ref();
+        assert_eq!(window_handle.get_caption_text(), WINDOW_NAME);
+        window_handle.set_caption_text(CAPTION_TEXT)?;
+        assert_eq!(window_handle.get_caption_text(), CAPTION_TEXT);
         assert!(
-            window
-                .as_ref()
+            window_handle
                 .get_class_name()?
                 .starts_with(CLASS_NAME_PREFIX)
         );
+        assert!(window_handle.get_client_area_coords()?.left >= 0);
 
         Ok(())
     }
