@@ -13,6 +13,7 @@ use std::{
     vec,
 };
 
+use derive_more::BitOr;
 use num_enum::{
     IntoPrimitive,
     TryFromPrimitive,
@@ -102,11 +103,21 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowTextW,
     ShowWindow,
     UnregisterClassW,
+    WINDOW_EX_STYLE,
+    WINDOW_STYLE,
     WINDOWPLACEMENT,
     WM_SYSCOMMAND,
     WNDCLASSEXW,
     WPF_SETMINPOSITION,
+    WS_CHILD,
+    WS_CLIPCHILDREN,
+    WS_EX_LAYERED,
+    WS_EX_LEFT,
+    WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT,
+    WS_OVERLAPPED,
     WS_OVERLAPPEDWINDOW,
+    WS_VISIBLE,
 };
 use windows::core::{
     BOOL,
@@ -669,18 +680,20 @@ impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WM
         class: &'class WindowClass<WML>,
         listener: &'listener WML,
         window_name: &str,
+        appearance: WindowAppearance,
+        parent: Option<&WindowHandle>,
     ) -> io::Result<Self> {
         let h_wnd: HWND = unsafe {
             CreateWindowExW(
-                Default::default(),
+                appearance.extended_style.into(),
                 PCWSTR(class.atom as *const u16),
                 PCWSTR::from_raw(window_name.to_wide_string().as_ptr()),
-                WS_OVERLAPPEDWINDOW,
+                appearance.style.into(),
                 CW_USEDEFAULT,
                 0,
                 CW_USEDEFAULT,
                 0,
-                None,
+                parent.map(|x| x.raw_handle),
                 None,
                 None,
                 None,
@@ -763,6 +776,71 @@ impl<WML> AsMut<WindowHandle> for Window<'_, '_, WML> {
     fn as_mut(&mut self) -> &mut WindowHandle {
         &mut self.handle
     }
+}
+
+/// Window style.
+///
+/// Using combinations is possible with [`std::ops::BitOr`].
+///
+/// See also: [Microsoft docs](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-styles)
+#[derive(IntoPrimitive, TryFromPrimitive, BitOr, Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
+#[repr(u32)]
+pub enum WindowStyle {
+    Child = WS_CHILD.0,
+    ClipChildren = WS_CLIPCHILDREN.0,
+    Overlapped = WS_OVERLAPPED.0,
+    OverlappedWindow = WS_OVERLAPPEDWINDOW.0,
+    Visible = WS_VISIBLE.0,
+    #[num_enum(catch_all)]
+    Other(u32),
+}
+
+impl Default for WindowStyle {
+    fn default() -> Self {
+        Self::Overlapped
+    }
+}
+
+impl From<WindowStyle> for WINDOW_STYLE {
+    fn from(value: WindowStyle) -> Self {
+        WINDOW_STYLE(value.into())
+    }
+}
+
+/// Extended window style.
+///
+/// Using combinations is possible with [`std::ops::BitOr`].
+///
+/// See also: [Microsoft docs](https://learn.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles)
+#[derive(IntoPrimitive, TryFromPrimitive, BitOr, Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
+#[repr(u32)]
+pub enum WindowExtendedStyle {
+    Layered = WS_EX_LAYERED.0,
+    Left = WS_EX_LEFT.0,
+    Topmost = WS_EX_TOPMOST.0,
+    Transparent = WS_EX_TRANSPARENT.0,
+    #[num_enum(catch_all)]
+    Other(u32),
+}
+
+impl Default for WindowExtendedStyle {
+    fn default() -> Self {
+        Self::Left
+    }
+}
+
+impl From<WindowExtendedStyle> for WINDOW_EX_STYLE {
+    fn from(value: WindowExtendedStyle) -> Self {
+        WINDOW_EX_STYLE(value.into())
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Default, Debug)]
+pub struct WindowAppearance {
+    pub style: WindowStyle,
+    pub extended_style: WindowExtendedStyle,
 }
 
 /// Window show state such as 'minimized' or 'hidden'.
@@ -1173,7 +1251,13 @@ mod tests {
                 ..Default::default()
             },
         )?;
-        let window = Window::create_new(&class, &listener, WINDOW_NAME)?;
+        let window = Window::create_new(
+            &class,
+            &listener,
+            WINDOW_NAME,
+            WindowAppearance::default(),
+            None,
+        )?;
         let notification_icon_options = NotificationIconOptions {
             icon: Some(icon),
             tooltip_text: Some("A tooltip!"),
