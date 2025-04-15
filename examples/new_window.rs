@@ -24,10 +24,12 @@ use winapi_easy::ui::window::{
     BalloonNotification,
     NotificationIconOptions,
     Window,
+    WindowAppearance,
     WindowClass,
     WindowClassAppearance,
     WindowHandle,
     WindowShowState,
+    WindowStyle,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -84,13 +86,17 @@ fn main() -> io::Result<()> {
         message: None.into(),
     };
     let icon: BuiltinIcon = Default::default();
-    let appearance = WindowClassAppearance {
+    let class_appearance = WindowClassAppearance {
         background_brush: Some(BuiltinColor::AppWorkspace),
         icon: Some(icon),
         ..Default::default()
     };
-    let class: WindowClass<MyListener> = WindowClass::register_new("myclass1", appearance)?;
-    let window = Window::create_new(&class, &listener, "mywindow1")?;
+    let class: WindowClass<MyListener> = WindowClass::register_new("myclass1", class_appearance)?;
+    let window_appearance = WindowAppearance {
+        style: WindowStyle::OverlappedWindow,
+        ..Default::default()
+    };
+    let window = Window::create_new(&class, &listener, "mywindow1", window_appearance, None)?;
     let notification_icon_options = NotificationIconOptions {
         icon: Some(icon),
         tooltip_text: Some("A tooltip!"),

@@ -231,7 +231,13 @@ where
         "Shell Change Listener Class",
         WindowClassAppearance::empty(),
     )?;
-    let window = Window::create_new(&window_class, &listener, "Shell Change Listener")?;
+    let window = Window::create_new(
+        &window_class,
+        &listener,
+        "Shell Change Listener",
+        Default::default(),
+        None,
+    )?;
     let reg_id = unsafe {
         SHChangeNotifyRegister(
             HWND::from(window.as_ref()),
