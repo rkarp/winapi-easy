@@ -10,6 +10,7 @@ use std::ptr::NonNull;
 use std::{
     io,
     mem,
+    ptr,
     vec,
 };
 
@@ -142,7 +143,7 @@ use crate::process::{
 };
 use crate::string::{
     FromWideString,
-    ToWideString,
+    ZeroTerminatedWideString,
     to_wide_chars_iter,
 };
 use crate::ui::messaging::{
@@ -276,7 +277,7 @@ impl WindowHandle {
         let ret_val = unsafe {
             SetWindowTextW(
                 self.raw_handle,
-                PCWSTR::from_raw(text.to_wide_string().as_ptr()),
+                ZeroTerminatedWideString::from_os_str(text).as_raw_pcwstr(),
             )
         };
         ret_val?;
@@ -510,12 +511,18 @@ impl WindowHandle {
 
     pub(crate) unsafe fn get_user_data_ptr<T>(&self) -> Option<NonNull<T>> {
         let ptr_value = unsafe { GetWindowLongPtrW(self.raw_handle, GWLP_USERDATA) };
-        NonNull::new(ptr_value as *mut T)
+        NonNull::new(ptr::with_exposed_provenance_mut(ptr_value.cast_unsigned()))
     }
 
     pub(crate) unsafe fn set_user_data_ptr<T>(&self, ptr: *const T) -> io::Result<()> {
         unsafe { SetLastError(NO_ERROR) };
-        let ret_val = unsafe { SetWindowLongPtrW(self.raw_handle, GWLP_USERDATA, ptr as isize) };
+        let ret_val = unsafe {
+            SetWindowLongPtrW(
+                self.raw_handle,
+                GWLP_USERDATA,
+                ptr.expose_provenance().cast_signed(),
+            )
+        };
         if ret_val == 0 {
             let err_val = unsafe { GetLastError() };
             if err_val != NO_ERROR {
@@ -598,8 +605,6 @@ impl<'res, WML: WindowMessageListener> WindowClass<'res, WML> {
         let base64_uuid = URL_SAFE_NO_PAD.encode(uuid::Uuid::new_v4().as_bytes());
         let class_name = class_name_prefix.to_string() + "_" + &base64_uuid;
 
-        let class_name_wide = class_name.to_wide_string();
-
         let icon_handle = appearance
             .icon
             .map_or_else(|| Ok(Default::default()), |x| x.as_handle())?;
@@ -616,7 +621,7 @@ impl<'res, WML: WindowMessageListener> WindowClass<'res, WML> {
             hbrBackground: appearance
                 .background_brush
                 .map_or_else(|| Ok(Default::default()), |x| x.as_handle())?,
-            lpszClassName: PCWSTR::from_raw(class_name_wide.as_ptr()),
+            lpszClassName: ZeroTerminatedWideString::from_os_str(class_name).as_raw_pcwstr(),
             ..Default::default()
         };
         let atom = unsafe { RegisterClassExW(&class_def).if_null_get_last_error()? };
@@ -687,7 +692,7 @@ impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WM
             CreateWindowExW(
                 appearance.extended_style.into(),
                 PCWSTR(class.atom as *const u16),
-                PCWSTR::from_raw(window_name.to_wide_string().as_ptr()),
+                ZeroTerminatedWideString::from_os_str(window_name).as_raw_pcwstr(),
                 appearance.style.into(),
                 CW_USEDEFAULT,
                 0,

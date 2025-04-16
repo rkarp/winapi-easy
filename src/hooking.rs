@@ -134,7 +134,9 @@ pub struct LowLevelMouseMessage {
 impl FromRawLowLevelMessage for LowLevelMouseMessage {
     unsafe fn from_raw_message(value: RawLowLevelMessage) -> Self {
         let w_param = u32::try_from(value.w_param).unwrap();
-        let message_data = unsafe { *(value.l_param as *const MSLLHOOKSTRUCT) };
+        let message_data = unsafe {
+            &*ptr::with_exposed_provenance::<MSLLHOOKSTRUCT>(value.l_param.cast_unsigned())
+        };
         let action = match (w_param, HIWORD(message_data.mouseData)) {
             (WM_MOUSEMOVE, _) => LowLevelMouseAction::Move,
             (WM_LBUTTONDOWN, _) => LowLevelMouseAction::ButtonDown(MouseButton::Left),
@@ -172,7 +174,9 @@ pub struct LowLevelKeyboardMessage {
 impl FromRawLowLevelMessage for LowLevelKeyboardMessage {
     unsafe fn from_raw_message(value: RawLowLevelMessage) -> Self {
         let w_param = u32::try_from(value.w_param).unwrap();
-        let message_data = unsafe { *(value.l_param as *const KBDLLHOOKSTRUCT) };
+        let message_data = unsafe {
+            &*ptr::with_exposed_provenance::<KBDLLHOOKSTRUCT>(value.l_param.cast_unsigned())
+        };
         let key = KeyboardKey::from(u16::try_from(message_data.vkCode).expect("Key code too big"));
         let action = LowLevelKeyboardAction::from(w_param);
         LowLevelKeyboardMessage {

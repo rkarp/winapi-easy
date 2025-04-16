@@ -1,6 +1,9 @@
 //! Window and thread message handling.
 
-use std::io;
+use std::{
+    io,
+    ptr,
+};
 
 use windows::Win32::Foundation::{
     HWND,
@@ -179,9 +182,10 @@ impl RawMessage {
                 None
             }
             WM_MENUCOMMAND => {
-                let menu_handle =
-                    MenuHandle::from_maybe_null(HMENU(self.l_param.0 as *mut std::ffi::c_void))
-                        .expect("Menu handle should not be null here");
+                let menu_handle = MenuHandle::from_maybe_null(HMENU(
+                    ptr::with_exposed_provenance_mut(self.l_param.0.cast_unsigned()),
+                ))
+                .expect("Menu handle should not be null here");
                 let item_id = menu_handle
                     .get_item_id(self.w_param.0.try_into().unwrap())
                     .unwrap();
