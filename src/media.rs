@@ -6,12 +6,8 @@ use std::ffi::{
     c_void,
 };
 use std::io;
-use std::iter::once;
 use std::marker::PhantomData;
-use std::os::windows::ffi::{
-    OsStrExt,
-    OsStringExt,
-};
+use std::os::windows::ffi::OsStringExt;
 
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Graphics::Gdi::{
@@ -33,16 +29,14 @@ use windows::Win32::UI::ColorSystem::{
     GetDeviceGammaRamp,
     SetDeviceGammaRamp,
 };
-use windows::core::{
-    GUID,
-    PCWSTR,
-};
+use windows::core::GUID;
 
 use crate::com::{
     ComInterfaceExt,
     ComTaskMemory,
 };
 use crate::internal::ReturnValue;
+use crate::string::ZeroTerminatedWideString;
 
 #[derive(Debug)]
 pub(crate) struct ScreenDeviceContext {
@@ -138,8 +132,12 @@ impl AudioOutputDevice {
     /// Sets the device as the new default global output device.
     pub fn set_global_default(&self) -> io::Result<()> {
         let policy_config = policy_config::IPolicyConfig::new_instance()?;
-        let raw_id: Vec<u16> = self.get_id().encode_wide().chain(once(0)).collect();
-        let result = unsafe { policy_config.SetDefaultEndpoint(PCWSTR(raw_id.as_ptr()), eConsole) };
+        let result = unsafe {
+            policy_config.SetDefaultEndpoint(
+                ZeroTerminatedWideString::from_os_str(self.get_id()).as_raw_pcwstr(),
+                eConsole,
+            )
+        };
         result.map_err(Into::into)
     }
 }

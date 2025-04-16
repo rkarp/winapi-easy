@@ -193,7 +193,7 @@ where
     F: FnMut(ProgressStatus) -> ProgressRetVal,
 {
     let call = move || {
-        let user_callback: &mut F = unsafe { &mut *(lpdata as *mut F) };
+        let user_callback: &mut F = unsafe { &mut *(lpdata.cast_mut().cast::<F>()) };
         user_callback(ProgressStatus {
             total_file_bytes: totalfilesize.try_into().unwrap_or_else(|_| unreachable!()),
             total_transferred_bytes: totalbytestransferred

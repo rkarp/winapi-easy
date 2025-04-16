@@ -172,7 +172,7 @@ where
             let mut raw_event = 0;
             let lock = unsafe {
                 SHChangeNotification_Lock(
-                    HANDLE(w_param.0 as *mut std::ffi::c_void),
+                    HANDLE(ptr::with_exposed_provenance_mut(w_param.0)),
                     l_param.0.try_into().unwrap_or_else(|_| unreachable!()),
                     Some(&mut raw_ppp_idl),
                     Some(&mut raw_event),

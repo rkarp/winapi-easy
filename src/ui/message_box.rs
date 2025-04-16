@@ -28,10 +28,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     MESSAGEBOX_STYLE,
     MessageBoxExW,
 };
-use windows::core::PCWSTR;
 
 use crate::internal::ReturnValue;
-use crate::string::ToWideString;
+use crate::string::ZeroTerminatedWideString;
 use crate::ui::WindowHandle;
 
 #[derive(Copy, Clone, Default, Debug)]
@@ -97,17 +96,13 @@ pub fn show_message_box(
     window_handle: &WindowHandle,
     options: MessageBoxOptions,
 ) -> io::Result<PressedMessageBoxButton> {
+    let message = options.message.map(ZeroTerminatedWideString::from_os_str);
+    let caption = options.caption.map(ZeroTerminatedWideString::from_os_str);
     let result = unsafe {
         MessageBoxExW(
             Some(window_handle.into()),
-            options
-                .message
-                .map(|x| PCWSTR::from_raw(x.to_wide_string().as_ptr()))
-                .as_ref(),
-            options
-                .caption
-                .map(|x| PCWSTR::from_raw(x.to_wide_string().as_ptr()))
-                .as_ref(),
+            message.map(|x| x.as_raw_pcwstr()).as_ref(),
+            caption.map(|x| x.as_raw_pcwstr()).as_ref(),
             MESSAGEBOX_STYLE::from(options.buttons)
                 | options.icon.map(MESSAGEBOX_STYLE::from).unwrap_or_default(),
             0,
