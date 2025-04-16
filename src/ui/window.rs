@@ -370,7 +370,7 @@ impl WindowHandle {
 
     /// Returns the class name of the window's associated [`WindowClass`].
     pub fn get_class_name(&self) -> io::Result<String> {
-        const BUFFER_SIZE: usize = WindowClass::MAX_WINDOW_CLASS_NAME_CHARS + 1;
+        const BUFFER_SIZE: usize = WindowClass::<()>::MAX_WINDOW_CLASS_NAME_CHARS + 1;
         let mut buffer: Vec<u16> = vec![0; BUFFER_SIZE];
         let chars_copied: usize = unsafe { GetClassNameW(self.raw_handle, buffer.as_mut()) }
             .if_null_get_last_error()?
@@ -574,12 +574,17 @@ impl Error for TryFromHWNDError {}
 #[derive(Debug)]
 pub struct WindowClass<'res, WML> {
     atom: u16,
+    #[allow(dead_code)]
     icon_handle: HICON,
     phantom: PhantomData<(WML, &'res ())>,
 }
 
-impl WindowClass<'_, ()> {
+impl<WML> WindowClass<'_, WML> {
     const MAX_WINDOW_CLASS_NAME_CHARS: usize = 256;
+
+    fn raw_class_identifier(&self) -> PCWSTR {
+        PCWSTR(self.atom as *const u16)
+    }
 }
 
 impl<'res, WML: WindowMessageListener> WindowClass<'res, WML> {
@@ -637,7 +642,7 @@ impl<WML> Drop for WindowClass<'_, WML> {
     /// Unregisters the class on drop.
     fn drop(&mut self) {
         unsafe {
-            UnregisterClassW(PCWSTR(self.atom as *const u16), None).unwrap();
+            UnregisterClassW(self.raw_class_identifier(), None).unwrap();
         }
     }
 }
@@ -671,27 +676,29 @@ impl Default for WindowClassAppearance<BuiltinColor, BuiltinIcon, BuiltinCursor>
 
 /// A window based on a [`WindowClass`].
 #[derive(Debug)]
-pub struct Window<'class, 'listener, WML> {
-    class: &'class WindowClass<'class, WML>,
+pub struct Window<'class, 'listener> {
     handle: WindowHandle,
-    phantom: PhantomData<&'listener mut WML>,
+    phantom: PhantomData<(&'class (), &'listener mut ())>,
 }
 
-impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WML> {
+impl<'class, 'listener> Window<'class, 'listener> {
     /// Creates a new window.
     ///
     /// User interaction with the window will result in messages sent to the [`WindowMessageListener`] provided here.
-    pub fn create_new(
+    pub fn create_new<WML>(
         class: &'class WindowClass<WML>,
         listener: &'listener WML,
         window_name: &str,
         appearance: WindowAppearance,
         parent: Option<&WindowHandle>,
-    ) -> io::Result<Self> {
+    ) -> io::Result<Self>
+    where
+        WML: WindowMessageListener,
+    {
         let h_wnd: HWND = unsafe {
             CreateWindowExW(
                 appearance.extended_style.into(),
-                PCWSTR(class.atom as *const u16),
+                class.raw_class_identifier(),
                 ZeroTerminatedWideString::from_os_str(window_name).as_raw_pcwstr(),
                 appearance.style.into(),
                 CW_USEDEFAULT,
@@ -709,19 +716,9 @@ impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WM
             handle.set_user_data_ptr(listener)?;
         }
         Ok(Window {
-            class,
             handle,
             phantom: PhantomData,
         })
-    }
-
-    /// Changes the [`WindowMessageListener`].
-    ///
-    /// Doing this is likely only possible using a [`WindowMessageListener`] that doesn't contain any closures
-    /// since [`Window`] requires the listener to be of a specific type and closures in Rust each have
-    /// their own (new) type.
-    pub fn set_listener(&self, listener: &'listener WML) -> io::Result<()> {
-        unsafe { self.handle.set_user_data_ptr(listener) }
     }
 
     /// Adds a notification icon.
@@ -730,13 +727,13 @@ impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WM
     pub fn add_notification_icon<'a, NI: Icon + 'a>(
         &'a self,
         options: NotificationIconOptions<NI, &'a str>,
-    ) -> io::Result<NotificationIcon<'a, WML>> {
+    ) -> io::Result<NotificationIcon<'a>> {
         // For GUID handling maybe look at generating it from the executable path:
         // https://stackoverflow.com/questions/7432319/notifyicondata-guid-problem
         let chosen_icon_handle = if let Some(icon) = options.icon {
             icon.as_handle()?
         } else {
-            self.class.icon_handle
+            BuiltinIcon::default().as_handle()?
         };
         let call_data = get_notification_call_data(
             &self.handle,
@@ -761,7 +758,7 @@ impl<'class, 'listener, WML: WindowMessageListener> Window<'class, 'listener, WM
     }
 }
 
-impl<WML> Drop for Window<'_, '_, WML> {
+impl Drop for Window<'_, '_> {
     fn drop(&mut self) {
         unsafe {
             if self.handle.is_window() {
@@ -771,13 +768,13 @@ impl<WML> Drop for Window<'_, '_, WML> {
     }
 }
 
-impl<WML> AsRef<WindowHandle> for Window<'_, '_, WML> {
+impl AsRef<WindowHandle> for Window<'_, '_> {
     fn as_ref(&self) -> &WindowHandle {
         &self.handle
     }
 }
 
-impl<WML> AsMut<WindowHandle> for Window<'_, '_, WML> {
+impl AsMut<WindowHandle> for Window<'_, '_> {
     fn as_mut(&mut self) -> &mut WindowHandle {
         &mut self.handle
     }
@@ -991,12 +988,12 @@ pub enum MonitorPower {
 /// An icon in the Windows notification area.
 ///
 /// This icon is always associated with a window and can be used in conjunction with [`crate::ui::menu::PopupMenu`].
-pub struct NotificationIcon<'a, WML> {
+pub struct NotificationIcon<'a> {
     id: NotificationIconId,
-    window: &'a Window<'a, 'a, WML>,
+    window: &'a Window<'a, 'a>,
 }
 
-impl<'a, WML> NotificationIcon<'a, WML> {
+impl<'a> NotificationIcon<'a> {
     /// Sets the icon graphics.
     pub fn set_icon(&mut self, icon: &'a impl Icon) -> io::Result<()> {
         let call_data = get_notification_call_data(
@@ -1076,7 +1073,7 @@ impl<'a, WML> NotificationIcon<'a, WML> {
     }
 }
 
-impl<WML> Drop for NotificationIcon<'_, WML> {
+impl Drop for NotificationIcon<'_> {
     fn drop(&mut self) {
         let call_data = get_notification_call_data(
             self.window.as_ref(),

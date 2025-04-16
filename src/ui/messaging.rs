@@ -67,7 +67,7 @@ impl ListenerAnswer {
 /// # Design rationale
 ///
 /// The way the Windows API is structured, it doesn't seem to be possible to use closures here
-/// due to [`crate::ui::window::Window`] and [`crate::ui::window::WindowClass`] needing type parameters for the [`WindowMessageListener`],
+/// due to [`crate::ui::window::WindowClass`] needing type parameters for the [`WindowMessageListener`],
 /// making it hard to swap out the listener since every `Fn` has its own type in Rust.
 ///
 /// `Box` with dynamic dispatch `Fn` is also not practical due to allowing only `'static` lifetimes.
