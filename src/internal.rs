@@ -3,6 +3,7 @@
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::fmt::Display;
+use std::marker::PhantomData;
 use std::panic::{
     AssertUnwindSafe,
     catch_unwind,
@@ -359,6 +360,89 @@ pub(crate) fn catch_unwind_and_abort<F: FnOnce() -> R, R>(f: F) -> R {
     }
 }
 
+/// A box-like struct that does not invalidate raw pointers to its data when it is moved.
+#[derive(Debug)]
+#[repr(transparent)]
+pub(crate) struct RawBox<T>(*mut T);
+
+impl<T> RawBox<T> {
+    pub(crate) fn new(value: T) -> Self {
+        Self(Box::into_raw(Box::new(value)))
+    }
+
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut T {
+        self.0
+    }
+}
+
+impl<T> Drop for RawBox<T> {
+    fn drop(&mut self) {
+        let _ = unsafe { Box::from_raw(self.0) };
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct OpaqueRawBox<'inner> {
+    box_ptr: *mut (),
+    destructor: unsafe fn(*mut ()),
+    phantom: PhantomData<&'inner ()>,
+}
+
+impl<'inner> OpaqueRawBox<'inner> {
+    pub(crate) fn new<T: 'inner>(value: T) -> Self {
+        unsafe fn destructor<T>(box_ptr: *mut ()) {
+            let _ = unsafe { Box::from_raw(box_ptr.cast::<T>()) };
+        }
+        Self {
+            box_ptr: Box::into_raw(Box::new(value)).cast::<()>(),
+            destructor: destructor::<T>,
+            phantom: PhantomData,
+        }
+    }
+
+    pub(crate) fn as_mut_ptr<T>(&mut self) -> *mut T {
+        self.box_ptr.cast()
+    }
+}
+
+impl Drop for OpaqueRawBox<'_> {
+    fn drop(&mut self) {
+        unsafe { (self.destructor)(self.box_ptr) };
+    }
+}
+
+/// A struct that hides the concrete type of a closure.
+#[derive(Debug)]
+pub(crate) struct OpaqueClosure<'inner, I, O> {
+    raw_boxed_closure: OpaqueRawBox<'inner>,
+    trampoline: unsafe fn(*mut (), I) -> O,
+}
+
+impl<'inner, I, O> OpaqueClosure<'inner, I, O> {
+    pub(crate) fn new<F>(closure: F) -> Self
+    where
+        F: FnMut(I) -> O + 'inner,
+    {
+        unsafe fn trampoline<F, I, O>(raw_closure: *mut (), input: I) -> O
+        where
+            F: FnMut(I) -> O,
+        {
+            let closure: &mut F = unsafe { &mut *raw_closure.cast::<F>() };
+            closure(input)
+        }
+        Self {
+            raw_boxed_closure: OpaqueRawBox::new(closure),
+            trampoline: trampoline::<F, I, O>,
+        }
+    }
+
+    /// Returns a closure that delegates to the original closure.
+    #[allow(clippy::wrong_self_convention)]
+    pub(crate) fn to_closure(&mut self) -> impl FnMut(I) -> O {
+        |input| unsafe { (self.trampoline)(self.raw_boxed_closure.box_ptr, input) }
+    }
+}
+
 pub(crate) fn custom_err_with_code<C>(err_text: &str, result_code: C) -> io::Error
 where
     C: Display,
@@ -438,5 +522,23 @@ pub(crate) mod std_unstable {
         fn cast_unsigned(self) -> u32 {
             self as u32
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_opaque_closure() {
+        let test_string = &"foo".to_string();
+        let mut x = 0;
+        let mut closure = |_| {
+            x += 1;
+            test_string.to_string()
+        };
+        let mut op_closure = OpaqueClosure::new(&mut closure);
+        let mut re_closure = op_closure.to_closure();
+        assert_eq!(&re_closure(()), test_string);
     }
 }

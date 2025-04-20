@@ -77,6 +77,7 @@ use crate::input::{
 use crate::internal::std_unstable::CastSigned;
 use crate::internal::windows_missing::HIWORD;
 use crate::internal::{
+    RawBox,
     ReturnValue,
     catch_unwind_and_abort,
 };
@@ -449,8 +450,8 @@ mod private {
                     HookReturnValue::ExplicitValue(l_result) => l_result,
                 }
             }
-            let user_callback = RawBox::new(user_callback);
-            Self::ClosureStore::set_raw_closure(ID, Some(user_callback.0));
+            let mut user_callback = RawBox::new(user_callback);
+            Self::ClosureStore::set_raw_closure(ID, Some(user_callback.as_mut_ptr()));
             let handle = unsafe {
                 SetWindowsHookExW(
                     Self::TYPE_ID,
@@ -664,8 +665,8 @@ impl WinEventHook {
             };
             catch_unwind_and_abort(call);
         }
-        let user_callback = RawBox::new(user_callback);
-        RCS::set_raw_closure(ID, Some(user_callback.0));
+        let mut user_callback = RawBox::new(user_callback);
+        RCS::set_raw_closure(ID, Some(user_callback.as_mut_ptr()));
         let handle = unsafe {
             SetWinEventHook(
                 EVENT_MIN,
@@ -719,21 +720,6 @@ impl WinEventMessage {
             object_id: id_object,
             child_id: id_child,
         }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct RawBox<T>(*mut T);
-
-impl<T> RawBox<T> {
-    fn new(value: T) -> Self {
-        Self(Box::into_raw(Box::new(value)))
-    }
-}
-
-impl<T> Drop for RawBox<T> {
-    fn drop(&mut self) {
-        let _ = unsafe { Box::from_raw(self.0) };
     }
 }
 
