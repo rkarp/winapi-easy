@@ -26,13 +26,17 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_SIZE,
 };
 
-use crate::internal::catch_unwind_and_abort;
 use crate::internal::windows_missing::{
     GET_X_LPARAM,
     GET_Y_LPARAM,
     HIWORD,
     LOWORD,
     NIN_KEYSELECT,
+};
+use crate::internal::{
+    OpaqueClosure,
+    OpaqueRawBox,
+    catch_unwind_and_abort,
 };
 use crate::messaging::ThreadMessageLoop;
 use crate::ui::menu::MenuHandle;
@@ -71,7 +75,7 @@ impl ListenerAnswer {
 /// making it hard to swap out the listener since every `Fn` has its own type in Rust.
 ///
 /// `Box` with dynamic dispatch `Fn` is also not practical due to allowing only `'static` lifetimes.
-pub trait WindowMessageListener {
+pub trait WindowMessageListener: Sized {
     /// An item from a window's menu was selected by the user.
     #[allow(unused_variables)]
     #[inline]
@@ -110,6 +114,21 @@ pub trait WindowMessageListener {
     ) {
     }
 }
+
+type WmlOpaqueClosure<'listener, 'a> =
+    OpaqueClosure<'listener, (&'a WindowHandle, RawMessage), Option<LRESULT>>;
+
+pub(crate) trait WindowMessageListenerConversion: WindowMessageListener {
+    fn to_opaque_closure<'listener>(&'listener self) -> OpaqueRawBox<'listener> {
+        let callback = move |(window, raw_message): (&WindowHandle, RawMessage)| {
+            raw_message.dispatch_to_message_listener(window, self)
+        };
+        let op_closure: WmlOpaqueClosure<'listener, '_> = OpaqueClosure::new(callback);
+        OpaqueRawBox::new(op_closure)
+    }
+}
+
+impl<T: WindowMessageListener> WindowMessageListenerConversion for T {}
 
 /// A [`WindowMessageListener`] that leaves all handlers to their default empty impls.
 #[derive(Copy, Clone, Default, Debug)]
@@ -239,15 +258,12 @@ impl RawMessage {
     }
 }
 
-pub(crate) unsafe extern "system" fn generic_window_proc<WML>(
+pub(crate) unsafe extern "system" fn generic_window_proc(
     h_wnd: HWND,
     message: u32,
     w_param: WPARAM,
     l_param: LPARAM,
-) -> LRESULT
-where
-    WML: WindowMessageListener,
-{
+) -> LRESULT {
     let call = move || {
         let window = WindowHandle::from_maybe_null(h_wnd)
             .expect("Window handle given to window procedure should never be NULL");
@@ -260,10 +276,11 @@ where
 
         // When creating a window, the custom data for the loop is not set yet
         // before the first call to this function
-        let listener_result =
-            unsafe { window.get_user_data_ptr::<WML>() }.and_then(|listener_ptr| {
-                raw_message.dispatch_to_message_listener(&window, unsafe { listener_ptr.as_ref() })
-            });
+        let listener_result = unsafe { window.get_user_data_ptr::<WmlOpaqueClosure>() }.and_then(
+            |mut listener_ptr| {
+                unsafe { listener_ptr.as_mut() }.to_closure()((&window, raw_message))
+            },
+        );
 
         if let Some(l_result) = listener_result {
             l_result

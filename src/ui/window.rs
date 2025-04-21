@@ -132,6 +132,7 @@ use super::{
     Rectangle,
 };
 use crate::internal::{
+    OpaqueRawBox,
     ReturnValue,
     custom_err_with_code,
     with_sync_closure_to_callback2,
@@ -148,6 +149,7 @@ use crate::string::{
 };
 use crate::ui::messaging::{
     WindowMessageListener,
+    WindowMessageListenerConversion,
     generic_window_proc,
 };
 use crate::ui::resource::{
@@ -370,7 +372,7 @@ impl WindowHandle {
 
     /// Returns the class name of the window's associated [`WindowClass`].
     pub fn get_class_name(&self) -> io::Result<String> {
-        const BUFFER_SIZE: usize = WindowClass::<()>::MAX_WINDOW_CLASS_NAME_CHARS + 1;
+        const BUFFER_SIZE: usize = WindowClass::MAX_WINDOW_CLASS_NAME_CHARS + 1;
         let mut buffer: Vec<u16> = vec![0; BUFFER_SIZE];
         let chars_copied: usize = unsafe { GetClassNameW(self.raw_handle, buffer.as_mut()) }
             .if_null_get_last_error()?
@@ -572,14 +574,14 @@ impl Error for TryFromHWNDError {}
 
 /// Window class serving as a base for [`Window`].
 #[derive(Debug)]
-pub struct WindowClass<'res, WML> {
+pub struct WindowClass<'res> {
     atom: u16,
     #[allow(dead_code)]
     icon_handle: HICON,
-    phantom: PhantomData<(WML, &'res ())>,
+    phantom: PhantomData<&'res ()>,
 }
 
-impl<WML> WindowClass<'_, WML> {
+impl WindowClass<'_> {
     const MAX_WINDOW_CLASS_NAME_CHARS: usize = 256;
 
     fn raw_class_identifier(&self) -> PCWSTR {
@@ -587,7 +589,7 @@ impl<WML> WindowClass<'_, WML> {
     }
 }
 
-impl<'res, WML: WindowMessageListener> WindowClass<'res, WML> {
+impl<'res> WindowClass<'res> {
     /// Registers a new class.
     ///
     /// This class can then be used to create instances of [`Window`].
@@ -618,7 +620,7 @@ impl<'res, WML: WindowMessageListener> WindowClass<'res, WML> {
             cbSize: mem::size_of::<WNDCLASSEXW>()
                 .try_into()
                 .unwrap_or_else(|_| unreachable!()),
-            lpfnWndProc: Some(generic_window_proc::<WML>),
+            lpfnWndProc: Some(generic_window_proc),
             hIcon: icon_handle,
             hCursor: appearance
                 .cursor
@@ -638,7 +640,7 @@ impl<'res, WML: WindowMessageListener> WindowClass<'res, WML> {
     }
 }
 
-impl<WML> Drop for WindowClass<'_, WML> {
+impl Drop for WindowClass<'_> {
     /// Unregisters the class on drop.
     fn drop(&mut self) {
         unsafe {
@@ -678,7 +680,9 @@ impl Default for WindowClassAppearance<BuiltinColor, BuiltinIcon, BuiltinCursor>
 #[derive(Debug)]
 pub struct Window<'class, 'listener> {
     handle: WindowHandle,
-    phantom: PhantomData<(&'class (), &'listener mut ())>,
+    #[allow(dead_code)]
+    opaque_listener: OpaqueRawBox<'listener>,
+    phantom: PhantomData<&'class ()>,
 }
 
 impl<'class, 'listener> Window<'class, 'listener> {
@@ -686,7 +690,7 @@ impl<'class, 'listener> Window<'class, 'listener> {
     ///
     /// User interaction with the window will result in messages sent to the [`WindowMessageListener`] provided here.
     pub fn create_new<WML>(
-        class: &'class WindowClass<WML>,
+        class: &'class WindowClass,
         listener: &'listener WML,
         window_name: &str,
         appearance: WindowAppearance,
@@ -711,12 +715,14 @@ impl<'class, 'listener> Window<'class, 'listener> {
                 None,
             )?
         };
+        let mut opaque_listener = listener.to_opaque_closure();
         let handle = WindowHandle::from_non_null(h_wnd);
         unsafe {
-            handle.set_user_data_ptr(listener)?;
+            handle.set_user_data_ptr(opaque_listener.as_mut_ptr::<()>())?;
         }
         Ok(Window {
             handle,
+            opaque_listener,
             phantom: PhantomData,
         })
     }
@@ -1246,7 +1252,7 @@ mod tests {
 
         let listener = MyListener;
         let icon: BuiltinIcon = Default::default();
-        let class: WindowClass<MyListener> = WindowClass::register_new(
+        let class: WindowClass = WindowClass::register_new(
             CLASS_NAME_PREFIX,
             WindowClassAppearance {
                 icon: Some(icon),

@@ -91,7 +91,7 @@ fn main() -> io::Result<()> {
         icon: Some(icon),
         ..Default::default()
     };
-    let class: WindowClass<MyListener> = WindowClass::register_new("myclass1", class_appearance)?;
+    let class: WindowClass = WindowClass::register_new("myclass1", class_appearance)?;
     let window_appearance = WindowAppearance {
         style: WindowStyle::OverlappedWindow,
         ..Default::default()
