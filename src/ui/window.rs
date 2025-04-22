@@ -1228,6 +1228,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn run_window_tests_without_parallelism() -> io::Result<()> {
+        check_toplevel_windows()?;
+        new_window_with_class()?;
+        Ok(())
+    }
+
     fn check_toplevel_windows() -> io::Result<()> {
         let all_windows = WindowHandle::get_toplevel_windows()?;
         assert_gt!(all_windows.len(), 0);
@@ -1242,7 +1248,6 @@ mod tests {
         Ok(())
     }
 
-    #[test]
     fn new_window_with_class() -> io::Result<()> {
         struct MyListener;
         impl WindowMessageListener for MyListener {}
@@ -1280,11 +1285,7 @@ mod tests {
         assert_eq!(window_handle.get_caption_text(), WINDOW_NAME);
         window_handle.set_caption_text(CAPTION_TEXT)?;
         assert_eq!(window_handle.get_caption_text(), CAPTION_TEXT);
-        assert!(
-            window_handle
-                .get_class_name()?
-                .starts_with(CLASS_NAME_PREFIX)
-        );
+        assert!(dbg!(window_handle.get_class_name()?).starts_with(CLASS_NAME_PREFIX));
         assert!(window_handle.get_client_area_coords()?.left >= 0);
 
         Ok(())
