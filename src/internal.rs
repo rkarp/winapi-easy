@@ -313,7 +313,7 @@ where
     F: FnMut(IN1, IN2) -> OUT,
 {
     thread_local! {
-        static RAW_CLOSURE: Cell<*mut c_void> = const { Cell::new(ptr::null_mut()) };
+        static RAW_CLOSURE: Cell<*mut ()> = const { Cell::new(ptr::null_mut()) };
     }
 
     unsafe extern "system" fn trampoline<F, IN1, IN2, OUT>(input1: IN1, input2: IN2) -> OUT
@@ -321,31 +321,46 @@ where
         F: FnMut(IN1, IN2) -> OUT,
     {
         let call = move || {
-            let unwrapped_closure: *mut c_void = RAW_CLOSURE.with(Cell::get);
+            let unwrapped_closure: *mut () = RAW_CLOSURE.with(Cell::get);
             let closure: &mut F = unsafe { &mut *(unwrapped_closure.cast::<F>()) };
             closure(input1, input2)
         };
         catch_unwind_and_abort(call)
     }
-    RAW_CLOSURE.with(|cell| cell.set(ptr::from_mut::<F>(closure).cast::<c_void>()));
+    RAW_CLOSURE.with(|cell| cell.set(ptr::from_mut::<F>(closure).cast::<()>()));
     trampoline::<F, IN1, IN2, OUT>
 }
 
 /// Converts a 2 parameter closure to a Windows callback function and feeds it to the acceptor.
+///
+/// # Panics
+///
+/// Nested calls to this function are not allowed and will panic.
 ///
 /// # Safety
 ///
 /// This function ensures that the unsafe callback does not outlive the closure. Still, the acceptor must not
 /// use the unsafe callback in a way that would cause Windows to call it after this function has returned.
 pub(crate) fn with_sync_closure_to_callback2<F, A, O, IN1, IN2, OUT>(
-    closure: &mut F,
+    mut closure: F,
     acceptor: A,
 ) -> O
 where
     F: FnMut(IN1, IN2) -> OUT,
     A: FnOnce(unsafe extern "system" fn(IN1, IN2) -> OUT) -> O,
 {
-    acceptor(sync_closure_to_callback2::<F, IN1, IN2, OUT>(closure))
+    thread_local! {
+        static RUNNING: Cell<bool> = const { Cell::new(false) };
+    }
+
+    if RUNNING.get() {
+        panic!("Nested calls to this function are not allowed")
+    } else {
+        RUNNING.set(true);
+    }
+    let result = acceptor(sync_closure_to_callback2::<F, IN1, IN2, OUT>(&mut closure));
+    RUNNING.set(false);
+    result
 }
 
 pub(crate) fn catch_unwind_and_abort<F: FnOnce() -> R, R>(f: F) -> R {
@@ -528,6 +543,19 @@ pub(crate) mod std_unstable {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_sync_closure() {
+        const TEST_VALUE: usize = 42;
+        let callback = |x: usize, _: ()| x;
+        let acceptor = |raw_fn: unsafe extern "system" fn(usize, ()) -> usize| -> usize {
+            unsafe { raw_fn(TEST_VALUE, ()) }
+        };
+        assert_eq!(
+            with_sync_closure_to_callback2(callback, acceptor),
+            TEST_VALUE
+        );
+    }
 
     #[test]
     fn run_opaque_closure() {
