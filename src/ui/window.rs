@@ -209,7 +209,7 @@ impl WindowHandle {
     /// Returns all top-level windows of desktop apps.
     pub fn get_toplevel_windows() -> io::Result<Vec<Self>> {
         let mut result: Vec<WindowHandle> = Vec::new();
-        let mut callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
+        let callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
             let window_handle = Self::from_maybe_null(handle).unwrap_or_else(|| {
                 unreachable!("Window handle passed to callback should never be null")
             });
@@ -217,7 +217,7 @@ impl WindowHandle {
             true.into()
         };
         let acceptor = |raw_callback| unsafe { EnumWindows(Some(raw_callback), LPARAM::default()) };
-        with_sync_closure_to_callback2(&mut callback, acceptor)?;
+        with_sync_closure_to_callback2(callback, acceptor)?;
         Ok(result)
     }
 
@@ -474,7 +474,7 @@ impl WindowHandle {
     pub fn get_nonchild_windows(thread_id: ThreadId) -> Vec<Self> {
         use windows::Win32::UI::WindowsAndMessaging::EnumThreadWindows;
         let mut result: Vec<WindowHandle> = Vec::new();
-        let mut callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
+        let callback = |handle: HWND, _app_value: LPARAM| -> BOOL {
             let window_handle = WindowHandle::from_maybe_null(handle).unwrap_or_else(|| {
                 unreachable!("Window handle passed to callback should never be null")
             });
@@ -485,7 +485,7 @@ impl WindowHandle {
             let _ =
                 unsafe { EnumThreadWindows(thread_id.0, Some(raw_callback), LPARAM::default()) };
         };
-        with_sync_closure_to_callback2(&mut callback, acceptor);
+        with_sync_closure_to_callback2(callback, acceptor);
         result
     }
 
