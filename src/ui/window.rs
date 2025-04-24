@@ -132,6 +132,7 @@ use super::{
     Rectangle,
 };
 use crate::internal::{
+    OpaqueClosure,
     OpaqueRawBox,
     ReturnValue,
     custom_err_with_code,
@@ -148,8 +149,8 @@ use crate::string::{
     to_wide_chars_iter,
 };
 use crate::ui::messaging::{
-    WindowMessageListener,
-    WindowMessageListenerConversion,
+    ListenerAnswer,
+    ListenerMessage,
     generic_window_proc,
 };
 use crate::ui::resource::{
@@ -176,7 +177,7 @@ use crate::ui::resource::{
 /// in that case is that the windows API will call back into Rust code and that code would then need
 /// exclusive references, which would at least make the API rather cumbersome. If an elegant solution
 /// to this problem is found, this API may change.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub struct WindowHandle {
     raw_handle: HWND,
     _marker: PhantomData<*mut ()>,
@@ -691,13 +692,13 @@ impl<'class, 'listener> Window<'class, 'listener> {
     /// User interaction with the window will result in messages sent to the [`WindowMessageListener`] provided here.
     pub fn create_new<WML>(
         class: &'class WindowClass,
-        listener: &'listener WML,
+        listener: WML,
         window_name: &str,
         appearance: WindowAppearance,
         parent: Option<&WindowHandle>,
     ) -> io::Result<Self>
     where
-        WML: WindowMessageListener,
+        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'listener,
     {
         let h_wnd: HWND = unsafe {
             CreateWindowExW(
@@ -715,7 +716,7 @@ impl<'class, 'listener> Window<'class, 'listener> {
                 None,
             )?
         };
-        let mut opaque_listener = listener.to_opaque_closure();
+        let mut opaque_listener = OpaqueRawBox::new(OpaqueClosure::new(listener));
         let handle = WindowHandle::from_non_null(h_wnd);
         unsafe {
             handle.set_user_data_ptr(opaque_listener.as_mut_ptr::<()>())?;
@@ -725,6 +726,18 @@ impl<'class, 'listener> Window<'class, 'listener> {
             opaque_listener,
             phantom: PhantomData,
         })
+    }
+
+    /// Changes the [`WindowMessageListener`].
+    pub fn set_listener<WML>(&mut self, listener: WML) -> io::Result<()>
+    where
+        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'listener,
+    {
+        let mut opaque_listener = OpaqueRawBox::new(OpaqueClosure::new(listener));
+        unsafe {
+            self.handle.set_user_data_ptr(opaque_listener.as_mut_ptr::<()>())?;
+        }
+        Ok(())
     }
 
     /// Adds a notification icon.
@@ -1249,13 +1262,11 @@ mod tests {
     }
 
     fn new_window_with_class() -> io::Result<()> {
-        struct MyListener;
-        impl WindowMessageListener for MyListener {}
         const CLASS_NAME_PREFIX: &str = "myclass1";
         const WINDOW_NAME: &str = "mywindow1";
         const CAPTION_TEXT: &str = "Testwindow";
 
-        let listener = MyListener;
+        let listener = |_| Default::default();
         let icon: BuiltinIcon = Default::default();
         let class: WindowClass = WindowClass::register_new(
             CLASS_NAME_PREFIX,
@@ -1266,7 +1277,7 @@ mod tests {
         )?;
         let window = Window::create_new(
             &class,
-            &listener,
+            listener,
             WINDOW_NAME,
             WindowAppearance::default(),
             None,
