@@ -35,7 +35,6 @@ use crate::internal::windows_missing::{
 };
 use crate::internal::{
     OpaqueClosure,
-    OpaqueRawBox,
     catch_unwind_and_abort,
 };
 use crate::messaging::ThreadMessageLoop;
@@ -44,6 +43,103 @@ use crate::ui::{
     Point,
     WindowHandle,
 };
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct ListenerMessage {
+    pub window_handle: WindowHandle,
+    pub variant: ListenerMessageVariant,
+}
+
+impl ListenerMessage {
+    fn from_raw_message(raw_message: RawMessage, window_handle: WindowHandle) -> Self {
+        let variant = match raw_message.message {
+            value if value >= WM_APP && value <= WM_APP + (u32::from(u8::MAX)) => {
+                ListenerMessageVariant::CustomUserMessage {
+                    message_id: (raw_message.message - WM_APP).try_into().unwrap(),
+                    w_param: raw_message.w_param,
+                    l_param: raw_message.l_param,
+                }
+            }
+            RawMessage::ID_NOTIFICATION_ICON_MSG => {
+                let icon_id = HIWORD(
+                    u32::try_from(raw_message.l_param.0).expect("Icon ID conversion failed"),
+                );
+                let event_code: u32 = LOWORD(
+                    u32::try_from(raw_message.l_param.0).expect("Event code conversion failed"),
+                )
+                .into();
+                let xy_coords = {
+                    // `w_param` does contain the coordinates of the click event, but they are not adjusted for DPI scaling, so we can't use them.
+                    // Instead we have to call `GetMessagePos`, which will however return mouse coordinates even if the keyboard was used.
+                    // An alternative would be to use `NOTIFYICON_VERSION_4`, but that would not allow exposing an API for rich pop-up UIs
+                    // when the user hovers over the tray icon since the necessary notifications would not be sent.
+                    // See also: https://stackoverflow.com/a/41649787
+                    let raw_position = unsafe { GetMessagePos() };
+                    get_param_xy_coords(raw_position)
+                };
+                match event_code {
+                    // NIN_SELECT only happens with left clicks. Space will produce 1x NIN_KEYSELECT, Enter 2x NIN_KEYSELECT.
+                    NIN_SELECT | NIN_KEYSELECT => {
+                        ListenerMessageVariant::NotificationIconSelect { icon_id, xy_coords }
+                    }
+                    // Works both with mouse right click and the context menu key.
+                    WM_CONTEXTMENU => {
+                        ListenerMessageVariant::NotificationIconContextSelect { icon_id, xy_coords }
+                    }
+                    _ => ListenerMessageVariant::Other,
+                }
+            }
+            WM_MENUCOMMAND => {
+                let menu_handle = MenuHandle::from_maybe_null(HMENU(
+                    ptr::with_exposed_provenance_mut(raw_message.l_param.0.cast_unsigned()),
+                ))
+                .expect("Menu handle should not be null here");
+                let selected_item_id = menu_handle
+                    .get_item_id(raw_message.w_param.0.try_into().unwrap())
+                    .unwrap();
+                ListenerMessageVariant::MenuCommand { selected_item_id }
+            }
+            WM_SIZE => {
+                if raw_message.w_param.0 == SIZE_MINIMIZED.try_into().unwrap() {
+                    ListenerMessageVariant::WindowMinimized
+                } else {
+                    ListenerMessageVariant::Other
+                }
+            }
+            WM_CLOSE => ListenerMessageVariant::WindowClose,
+            WM_DESTROY => ListenerMessageVariant::WindowDestroy,
+            _ => ListenerMessageVariant::Other,
+        };
+        ListenerMessage {
+            window_handle,
+            variant,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum ListenerMessageVariant {
+    MenuCommand {
+        selected_item_id: u32,
+    },
+    WindowMinimized,
+    WindowClose,
+    WindowDestroy,
+    NotificationIconSelect {
+        icon_id: u16,
+        xy_coords: Point,
+    },
+    NotificationIconContextSelect {
+        icon_id: u16,
+        xy_coords: Point,
+    },
+    CustomUserMessage {
+        message_id: u8,
+        w_param: WPARAM,
+        l_param: LPARAM,
+    },
+    Other,
+}
 
 /// Indicates what should be done after the [`WindowMessageListener`] is done processing the message.
 #[derive(Copy, Clone, Default, Debug)]
@@ -64,77 +160,7 @@ impl ListenerAnswer {
     }
 }
 
-/// A user-defined implementation for various windows message handlers.
-///
-/// The trait already defines a default for all methods, making it easier to just implement specific ones.
-///
-/// # Design rationale
-///
-/// The way the Windows API is structured, it doesn't seem to be possible to use closures here
-/// due to [`crate::ui::window::WindowClass`] needing type parameters for the [`WindowMessageListener`],
-/// making it hard to swap out the listener since every `Fn` has its own type in Rust.
-///
-/// `Box` with dynamic dispatch `Fn` is also not practical due to allowing only `'static` lifetimes.
-pub trait WindowMessageListener: Sized {
-    /// An item from a window's menu was selected by the user.
-    #[allow(unused_variables)]
-    #[inline]
-    fn handle_menu_command(&self, window: &WindowHandle, selected_item_id: u32) {}
-    /// A 'minimize window' action was performed.
-    #[allow(unused_variables)]
-    #[inline]
-    fn handle_window_minimized(&self, window: &WindowHandle) {}
-    /// A 'close window' action was performed.
-    #[allow(unused_variables)]
-    #[inline]
-    fn handle_window_close(&self, window: &WindowHandle) -> ListenerAnswer {
-        Default::default()
-    }
-    /// A window was destroyed and removed from the screen.
-    #[allow(unused_variables)]
-    #[inline]
-    fn handle_window_destroy(&self, window: &WindowHandle) {}
-    /// A notification icon was selected (triggered).
-    #[allow(unused_variables)]
-    #[inline]
-    fn handle_notification_icon_select(&self, icon_id: u16, xy_coords: Point) {}
-    /// A notification icon was context-selected (e.g. right-clicked).
-    #[allow(unused_variables)]
-    #[inline]
-    fn handle_notification_icon_context_select(&self, icon_id: u16, xy_coords: Point) {}
-    /// A custom user message was sent.
-    #[allow(unused_variables)]
-    #[inline]
-    fn handle_custom_user_message(
-        &self,
-        window: &WindowHandle,
-        message_id: u8,
-        w_param: WPARAM,
-        l_param: LPARAM,
-    ) {
-    }
-}
-
-type WmlOpaqueClosure<'listener, 'a> =
-    OpaqueClosure<'listener, (&'a WindowHandle, RawMessage), Option<LRESULT>>;
-
-pub(crate) trait WindowMessageListenerConversion: WindowMessageListener {
-    fn to_opaque_closure<'listener>(&'listener self) -> OpaqueRawBox<'listener> {
-        let callback = move |(window, raw_message): (&WindowHandle, RawMessage)| {
-            raw_message.dispatch_to_message_listener(window, self)
-        };
-        let op_closure: WmlOpaqueClosure<'listener, '_> = OpaqueClosure::new(callback);
-        OpaqueRawBox::new(op_closure)
-    }
-}
-
-impl<T: WindowMessageListener> WindowMessageListenerConversion for T {}
-
-/// A [`WindowMessageListener`] that leaves all handlers to their default empty impls.
-#[derive(Copy, Clone, Default, Debug)]
-pub struct EmptyWindowMessageListener;
-
-impl WindowMessageListener for EmptyWindowMessageListener {}
+pub(crate) type WmlOpaqueClosure<'a> = OpaqueClosure<'a, ListenerMessage, ListenerAnswer>;
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct RawMessage {
@@ -152,86 +178,6 @@ impl RawMessage {
 
     pub(crate) const ID_APP_WAKEUP_MSG: u32 = Self::STR_MSG_RANGE_START - 1;
     pub(crate) const ID_NOTIFICATION_ICON_MSG: u32 = Self::STR_MSG_RANGE_START - 2;
-
-    pub(crate) fn dispatch_to_message_listener<WML: WindowMessageListener>(
-        self,
-        window: &WindowHandle,
-        listener: &WML,
-    ) -> Option<LRESULT> {
-        // Many messages won't go through the thread message loop, so we need to notify it.
-        // No chance of an infinite loop here since the window procedure won't be called for messages with no associated windows.
-        Self::post_loop_wakeup_message().unwrap();
-        let mut call_message_loop_callback = true;
-        let result = match self.message {
-            value if value >= WM_APP && value <= WM_APP + (u32::from(u8::MAX)) => {
-                listener.handle_custom_user_message(
-                    window,
-                    (self.message - WM_APP).try_into().unwrap(),
-                    self.w_param,
-                    self.l_param,
-                );
-                None
-            }
-            Self::ID_NOTIFICATION_ICON_MSG => {
-                let icon_id =
-                    HIWORD(u32::try_from(self.l_param.0).expect("Icon ID conversion failed"));
-                let event_code: u32 =
-                    LOWORD(u32::try_from(self.l_param.0).expect("Event code conversion failed"))
-                        .into();
-                let xy_coords = {
-                    // `w_param` does contain the coordinates of the click event, but they are not adjusted for DPI scaling, so we can't use them.
-                    // Instead we have to call `GetMessagePos`, which will however return mouse coordinates even if the keyboard was used.
-                    // An alternative would be to use `NOTIFYICON_VERSION_4`, but that would not allow exposing an API for rich pop-up UIs
-                    // when the user hovers over the tray icon since the necessary notifications would not be sent.
-                    // See also: https://stackoverflow.com/a/41649787
-                    let raw_position = unsafe { GetMessagePos() };
-                    get_param_xy_coords(raw_position)
-                };
-                match event_code {
-                    // NIN_SELECT only happens with left clicks. Space will produce 1x NIN_KEYSELECT, Enter 2x NIN_KEYSELECT.
-                    NIN_SELECT | NIN_KEYSELECT => {
-                        listener.handle_notification_icon_select(icon_id, xy_coords);
-                    }
-                    // Works both with mouse right click and the context menu key.
-                    WM_CONTEXTMENU => {
-                        listener.handle_notification_icon_context_select(icon_id, xy_coords);
-                    }
-                    _ => (),
-                }
-                None
-            }
-            WM_MENUCOMMAND => {
-                let menu_handle = MenuHandle::from_maybe_null(HMENU(
-                    ptr::with_exposed_provenance_mut(self.l_param.0.cast_unsigned()),
-                ))
-                .expect("Menu handle should not be null here");
-                let item_id = menu_handle
-                    .get_item_id(self.w_param.0.try_into().unwrap())
-                    .unwrap();
-                listener.handle_menu_command(window, item_id);
-                None
-            }
-            WM_SIZE => {
-                if self.w_param.0 == SIZE_MINIMIZED.try_into().unwrap() {
-                    listener.handle_window_minimized(window);
-                }
-                None
-            }
-            WM_CLOSE => listener.handle_window_close(window).to_raw_lresult(),
-            WM_DESTROY => {
-                listener.handle_window_destroy(window);
-                None
-            }
-            _ => {
-                call_message_loop_callback = false;
-                None
-            }
-        };
-        if call_message_loop_callback {
-            ThreadMessageLoop::ENABLE_CALLBACK_ONCE.with(|x| x.set(true));
-        }
-        result
-    }
 
     /// Posts a message to the thread message queue and returns immediately.
     ///
@@ -278,7 +224,14 @@ pub(crate) unsafe extern "system" fn generic_window_proc(
         // before the first call to this function
         let listener_result = unsafe { window.get_user_data_ptr::<WmlOpaqueClosure>() }.and_then(
             |mut listener_ptr| {
-                unsafe { listener_ptr.as_mut() }.to_closure()((&window, raw_message))
+                let listener_message = ListenerMessage::from_raw_message(raw_message, window);
+                if !matches!(listener_message.variant, ListenerMessageVariant::Other) {
+                    ThreadMessageLoop::ENABLE_CALLBACK_ONCE.with(|x| x.set(true));
+                }
+                // Many messages won't go through the thread message loop, so we need to notify it.
+                // No chance of an infinite loop here since the window procedure won't be called for messages with no associated windows.
+                RawMessage::post_loop_wakeup_message().unwrap();
+                unsafe { listener_ptr.as_mut() }.to_closure()(listener_message).to_raw_lresult()
             },
         );
 

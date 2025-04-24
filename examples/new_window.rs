@@ -15,7 +15,11 @@ use winapi_easy::ui::message_box::{
     MessageBoxOptions,
     show_message_box,
 };
-use winapi_easy::ui::messaging::WindowMessageListener;
+use winapi_easy::ui::messaging::{
+    ListenerAnswer,
+    ListenerMessage,
+    ListenerMessageVariant,
+};
 use winapi_easy::ui::resource::{
     BuiltinColor,
     BuiltinIcon,
@@ -27,7 +31,6 @@ use winapi_easy::ui::window::{
     WindowAppearance,
     WindowClass,
     WindowClassAppearance,
-    WindowHandle,
     WindowShowState,
     WindowStyle,
 };
@@ -50,41 +53,37 @@ enum MenuID {
     Other(u32),
 }
 
-struct MyListener {
-    message: Cell<Option<MyMessage>>,
-}
-
-impl WindowMessageListener for MyListener {
-    fn handle_menu_command(&self, _window: &WindowHandle, selected_item_id: u32) {
-        self.message
-            .replace(Some(MyMessage::MenuItem(selected_item_id.into())));
-    }
-
-    fn handle_window_destroy(&self, _: &WindowHandle) {
-        ThreadMessageLoop::post_quit_message();
-    }
-    fn handle_notification_icon_select(&self, icon_id: u16, xy_coords: Point) {
-        println!(
-            "Selected notification icon id: {}, coords: ({}, {})",
-            icon_id, xy_coords.x, xy_coords.y
-        );
-        self.message
-            .replace(Some(MyMessage::IconLeftClicked(xy_coords)));
-    }
-    fn handle_notification_icon_context_select(&self, icon_id: u16, xy_coords: Point) {
-        println!(
-            "Context-selected notification icon id: {}, coords: ({}, {})",
-            icon_id, xy_coords.x, xy_coords.y
-        );
-        self.message
-            .replace(Some(MyMessage::IconRightClicked(xy_coords)));
-    }
-}
-
 fn main() -> io::Result<()> {
-    let listener = MyListener {
-        message: None.into(),
+    let listener_data: Cell<Option<MyMessage>> = None.into();
+    let listener = |message: ListenerMessage| match message.variant {
+        ListenerMessageVariant::MenuCommand { selected_item_id } => {
+            listener_data.replace(Some(MyMessage::MenuItem(selected_item_id.into())));
+            ListenerAnswer::MessageProcessed
+        }
+        ListenerMessageVariant::WindowDestroy => {
+            ThreadMessageLoop::post_quit_message();
+            ListenerAnswer::CallDefaultHandler
+        }
+        ListenerMessageVariant::NotificationIconSelect { icon_id, xy_coords } => {
+            println!(
+                "Selected notification icon id: {}, coords: ({}, {})",
+                icon_id, xy_coords.x, xy_coords.y
+            );
+            listener_data.replace(Some(MyMessage::IconLeftClicked(xy_coords)));
+            ListenerAnswer::MessageProcessed
+        }
+        ListenerMessageVariant::NotificationIconContextSelect { icon_id, xy_coords } => {
+            println!(
+                "Context-selected notification icon id: {}, coords: ({}, {})",
+                icon_id, xy_coords.x, xy_coords.y
+            );
+            listener_data.replace(Some(MyMessage::IconRightClicked(xy_coords)));
+            ListenerAnswer::MessageProcessed
+        }
+        ListenerMessageVariant::Other => ListenerAnswer::default(),
+        _ => ListenerAnswer::default(),
     };
+
     let icon: BuiltinIcon = Default::default();
     let class_appearance = WindowClassAppearance {
         background_brush: Some(BuiltinColor::AppWorkspace),
@@ -96,7 +95,7 @@ fn main() -> io::Result<()> {
         style: WindowStyle::OverlappedWindow,
         ..Default::default()
     };
-    let window = Window::create_new(&class, &listener, "mywindow1", window_appearance, None)?;
+    let window = Window::create_new(&class, listener, "mywindow1", window_appearance, None)?;
     let notification_icon_options = NotificationIconOptions {
         icon: Some(icon),
         tooltip_text: Some("A tooltip!"),
@@ -129,7 +128,7 @@ fn main() -> io::Result<()> {
         None,
     )?;
     let loop_callback = || {
-        if let Some(message) = listener.message.take() {
+        if let Some(message) = listener_data.take() {
             let window_handle = window.as_ref();
             match message {
                 MyMessage::IconLeftClicked(_coords) => {

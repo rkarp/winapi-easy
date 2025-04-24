@@ -21,8 +21,6 @@ use num_enum::{
 use windows::Win32::Foundation::{
     HANDLE,
     HWND,
-    LPARAM,
-    WPARAM,
 };
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
@@ -64,12 +62,15 @@ use crate::string::{
     ZeroTerminatedWideString,
     max_path_extend,
 };
-use crate::ui::messaging::WindowMessageListener;
+use crate::ui::messaging::{
+    ListenerAnswer,
+    ListenerMessage,
+    ListenerMessageVariant,
+};
 use crate::ui::window::{
     Window,
     WindowClass,
     WindowClassAppearance,
-    WindowHandle,
 };
 
 #[allow(dead_code)]
@@ -139,18 +140,14 @@ pub(crate) fn monitor_path_changes<F>(
 where
     F: FnMut(&PathChangeEvent) -> io::Result<()>,
 {
-    #[derive(Default)]
-    struct Listener {
-        data: Cell<PathChangeEvent>,
-    }
-    impl WindowMessageListener for Listener {
-        fn handle_custom_user_message(
-            &self,
-            _window: &WindowHandle,
-            message_id: u8,
-            w_param: WPARAM,
-            l_param: LPARAM,
-        ) {
+    let listener_data: Cell<PathChangeEvent> = Cell::default();
+    let listener = |message: ListenerMessage| {
+        if let ListenerMessageVariant::CustomUserMessage {
+            message_id,
+            w_param,
+            l_param,
+        } = message.variant
+        {
             fn get_path_from_id_list(raw_id_list: ITEMIDLIST) -> PathBuf {
                 let mut raw_path_buffer: ZeroTerminatedWideString =
                     ZeroTerminatedWideString(vec![0; 32000]);
@@ -193,13 +190,16 @@ where
                 unsafe { raw_pid_list_pair[0].as_ref() }.map(|x| get_path_from_id_list(*x));
             let path_2 =
                 unsafe { raw_pid_list_pair[1].as_ref() }.map(|x| get_path_from_id_list(*x));
-            self.data.replace(PathChangeEvent {
+            listener_data.replace(PathChangeEvent {
                 event: event_type,
                 path_1,
                 path_2,
             });
+            ListenerAnswer::MessageProcessed
+        } else {
+            ListenerAnswer::default()
         }
-    }
+    };
 
     // Unclear if it works if only some items are recursive
     let recursive = monitored_paths.iter().any(|x| x.recursive);
@@ -225,15 +225,13 @@ where
         .collect();
     let raw_entries: Vec<SHChangeNotifyEntry> = path_id_lists.iter().map(|x| x.0).collect();
 
-    let listener = Listener::default();
-
     let window_class = WindowClass::register_new(
         "Shell Change Listener Class",
         WindowClassAppearance::empty(),
     )?;
     let window = Window::create_new(
         &window_class,
-        &listener,
+        listener,
         "Shell Change Listener",
         Default::default(),
         None,
@@ -264,7 +262,7 @@ where
         },
     };
 
-    ThreadMessageLoop::run_thread_message_loop(|| callback(&listener.data.take()))?;
+    ThreadMessageLoop::run_thread_message_loop(|| callback(&listener_data.take()))?;
     Ok(())
 }
 
