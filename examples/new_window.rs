@@ -1,4 +1,7 @@
-use std::cell::Cell;
+use std::cell::{
+    Cell,
+    RefCell,
+};
 use std::io;
 
 use num_enum::{
@@ -26,11 +29,13 @@ use winapi_easy::ui::resource::{
 };
 use winapi_easy::ui::window::{
     BalloonNotification,
+    NotificationIcon,
     NotificationIconOptions,
     Window,
     WindowAppearance,
     WindowClass,
     WindowClassAppearance,
+    WindowKind,
     WindowShowState,
     WindowStyle,
 };
@@ -95,15 +100,16 @@ fn main() -> io::Result<()> {
         style: WindowStyle::OverlappedWindow,
         ..Default::default()
     };
-    let window = Window::create_new(&class, listener, "mywindow1", window_appearance, None)?;
+    let window: RefCell<_> =
+        Window::create_new(&class, listener, "mywindow1", window_appearance, None)?.into();
     let notification_icon_options = NotificationIconOptions {
         icon: Some(icon),
-        tooltip_text: Some("A tooltip!"),
+        tooltip_text: Some("A tooltip!".to_string()),
         visible: true,
         ..Default::default()
     };
-    let mut notification_icon = window.add_notification_icon(notification_icon_options)?;
-    let window_handle = window.as_ref();
+    let mut notification_icon = NotificationIcon::new(&window, notification_icon_options)?;
+    let window_handle = window.borrow().handle();
     window_handle.set_caption_text("My Window")?;
     window_handle.set_show_state(WindowShowState::Show)?;
     let popup = PopupMenu::new()?;
@@ -129,7 +135,7 @@ fn main() -> io::Result<()> {
     )?;
     let loop_callback = || {
         if let Some(message) = listener_data.take() {
-            let window_handle = window.as_ref();
+            let window_handle = window.borrow().handle();
             match message {
                 MyMessage::IconLeftClicked(_coords) => {
                     window_handle.set_show_state(WindowShowState::ShowNormal)?;

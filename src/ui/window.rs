@@ -1,5 +1,6 @@
 //! UI components related to windows.
 
+use std::cell::RefCell;
 use std::error::Error;
 use std::fmt::{
     Display,
@@ -677,6 +678,10 @@ impl Default for WindowClassAppearance<BuiltinColor, BuiltinIcon, BuiltinCursor>
     }
 }
 
+pub trait WindowKind {
+    fn handle(&self) -> WindowHandle;
+}
+
 /// A window based on a [`WindowClass`].
 #[derive(Debug)]
 pub struct Window<'class, 'listener> {
@@ -735,45 +740,16 @@ impl<'class, 'listener> Window<'class, 'listener> {
     {
         let mut opaque_listener = OpaqueRawBox::new(OpaqueClosure::new(listener));
         unsafe {
-            self.handle.set_user_data_ptr(opaque_listener.as_mut_ptr::<()>())?;
+            self.handle
+                .set_user_data_ptr(opaque_listener.as_mut_ptr::<()>())?;
         }
         Ok(())
     }
+}
 
-    /// Adds a notification icon.
-    ///
-    /// The window's [`WindowMessageListener`] will receive messages when user interactions with the icon occur.
-    pub fn add_notification_icon<'a, NI: Icon + 'a>(
-        &'a self,
-        options: NotificationIconOptions<NI, &'a str>,
-    ) -> io::Result<NotificationIcon<'a>> {
-        // For GUID handling maybe look at generating it from the executable path:
-        // https://stackoverflow.com/questions/7432319/notifyicondata-guid-problem
-        let chosen_icon_handle = if let Some(icon) = options.icon {
-            icon.as_handle()?
-        } else {
-            BuiltinIcon::default().as_handle()?
-        };
-        let call_data = get_notification_call_data(
-            &self.handle,
-            options.icon_id,
-            true,
-            Some(chosen_icon_handle),
-            options.tooltip_text,
-            Some(!options.visible),
-            None,
-        );
-        unsafe {
-            Shell_NotifyIconW(NIM_ADD, &call_data)
-                .if_null_to_error_else_drop(|| io::Error::other("Cannot add notification icon"))?;
-            Shell_NotifyIconW(NIM_SETVERSION, &call_data).if_null_to_error_else_drop(|| {
-                io::Error::other("Cannot set notification version")
-            })?;
-        };
-        Ok(NotificationIcon {
-            id: options.icon_id,
-            window: self,
-        })
+impl WindowKind for Window<'_, '_> {
+    fn handle(&self) -> WindowHandle {
+        self.handle
     }
 }
 
@@ -1007,16 +983,55 @@ pub enum MonitorPower {
 /// An icon in the Windows notification area.
 ///
 /// This icon is always associated with a window and can be used in conjunction with [`crate::ui::menu::PopupMenu`].
-pub struct NotificationIcon<'a> {
+#[derive(Debug)]
+pub struct NotificationIcon<'res, 'wnd, W: WindowKind + 'wnd> {
     id: NotificationIconId,
-    window: &'a Window<'a, 'a>,
+    window: &'wnd RefCell<W>,
+    _phantom: PhantomData<&'res dyn Icon>,
 }
 
-impl<'a> NotificationIcon<'a> {
-    /// Sets the icon graphics.
-    pub fn set_icon(&mut self, icon: &'a impl Icon) -> io::Result<()> {
+impl<'res, 'wnd, W: WindowKind> NotificationIcon<'res, 'wnd, W> {
+    /// Adds a notification icon.
+    ///
+    /// The window's [`WindowMessageListener`] will receive messages when user interactions with the icon occur.
+    pub fn new<NI: Icon + 'res>(
+        window: &'wnd RefCell<W>,
+        options: NotificationIconOptions<NI>,
+    ) -> io::Result<NotificationIcon<'res, 'wnd, W>> {
+        // For GUID handling maybe look at generating it from the executable path:
+        // https://stackoverflow.com/questions/7432319/notifyicondata-guid-problem
+        let chosen_icon_handle = if let Some(icon) = options.icon {
+            icon.as_handle()?
+        } else {
+            BuiltinIcon::default().as_handle()?
+        };
         let call_data = get_notification_call_data(
-            self.window.as_ref(),
+            window.borrow().handle(),
+            options.icon_id,
+            true,
+            Some(chosen_icon_handle),
+            options.tooltip_text.as_deref(),
+            Some(!options.visible),
+            None,
+        );
+        unsafe {
+            Shell_NotifyIconW(NIM_ADD, &call_data)
+                .if_null_to_error_else_drop(|| io::Error::other("Cannot add notification icon"))?;
+            Shell_NotifyIconW(NIM_SETVERSION, &call_data).if_null_to_error_else_drop(|| {
+                io::Error::other("Cannot set notification version")
+            })?;
+        };
+        Ok(NotificationIcon {
+            id: options.icon_id,
+            window,
+            _phantom: PhantomData,
+        })
+    }
+
+    /// Sets the icon graphics.
+    pub fn set_icon(&mut self, icon: &'res impl Icon) -> io::Result<()> {
+        let call_data = get_notification_call_data(
+            self.window.borrow().handle(),
             self.id,
             false,
             Some(icon.as_handle()?),
@@ -1034,7 +1049,7 @@ impl<'a> NotificationIcon<'a> {
     /// Allows showing or hiding the icon in the notification area.
     pub fn set_icon_hidden_state(&mut self, hidden: bool) -> io::Result<()> {
         let call_data = get_notification_call_data(
-            self.window.as_ref(),
+            self.window.borrow().handle(),
             self.id,
             false,
             None,
@@ -1053,7 +1068,7 @@ impl<'a> NotificationIcon<'a> {
     /// Sets the tooltip text when hovering over the icon with the mouse.
     pub fn set_tooltip_text(&mut self, text: &str) -> io::Result<()> {
         let call_data = get_notification_call_data(
-            self.window.as_ref(),
+            self.window.borrow().handle(),
             self.id,
             false,
             None,
@@ -1075,7 +1090,7 @@ impl<'a> NotificationIcon<'a> {
         notification: Option<BalloonNotification>,
     ) -> io::Result<()> {
         let call_data = get_notification_call_data(
-            self.window.as_ref(),
+            self.window.borrow().handle(),
             self.id,
             false,
             None,
@@ -1092,10 +1107,10 @@ impl<'a> NotificationIcon<'a> {
     }
 }
 
-impl Drop for NotificationIcon<'_> {
+impl<W: WindowKind> Drop for NotificationIcon<'_, '_, W> {
     fn drop(&mut self) {
         let call_data = get_notification_call_data(
-            self.window.as_ref(),
+            self.window.borrow().handle(),
             self.id,
             false,
             None,
@@ -1113,7 +1128,7 @@ impl Drop for NotificationIcon<'_> {
 
 #[allow(clippy::option_option)]
 fn get_notification_call_data(
-    window_handle: &WindowHandle,
+    window_handle: WindowHandle,
     icon_id: NotificationIconId,
     set_callback_message: bool,
     maybe_icon: Option<HICON>,
@@ -1206,10 +1221,10 @@ impl Default for NotificationIconId {
 
 /// Options for a new notification icon used by [`Window::add_notification_icon`].
 #[derive(Eq, PartialEq, Default, Debug)]
-pub struct NotificationIconOptions<I, S> {
+pub struct NotificationIconOptions<I> {
     pub icon_id: NotificationIconId,
     pub icon: Option<I>,
-    pub tooltip_text: Option<S>,
+    pub tooltip_text: Option<String>,
     pub visible: bool,
 }
 
@@ -1275,24 +1290,25 @@ mod tests {
                 ..Default::default()
             },
         )?;
-        let window = Window::create_new(
+        let window: RefCell<_> = Window::create_new(
             &class,
             listener,
             WINDOW_NAME,
             WindowAppearance::default(),
             None,
-        )?;
+        )?
+        .into();
         let notification_icon_options = NotificationIconOptions {
             icon: Some(icon),
-            tooltip_text: Some("A tooltip!"),
+            tooltip_text: Some("A tooltip!".to_string()),
             visible: false,
             ..Default::default()
         };
-        let mut notification_icon = window.add_notification_icon(notification_icon_options)?;
+        let mut notification_icon = NotificationIcon::new(&window, notification_icon_options)?;
         let balloon_notification = BalloonNotification::default();
         notification_icon.set_balloon_notification(Some(balloon_notification))?;
 
-        let window_handle = window.as_ref();
+        let window_handle = *window.borrow().as_ref();
         assert_eq!(window_handle.get_caption_text(), WINDOW_NAME);
         window_handle.set_caption_text(CAPTION_TEXT)?;
         assert_eq!(window_handle.get_caption_text(), CAPTION_TEXT);

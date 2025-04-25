@@ -178,7 +178,7 @@ impl PopupMenu {
     ///
     /// The coordinates can for example be retrieved from the window message handler, see
     /// [`crate::ui::messaging::WindowMessageListener::handle_notification_icon_context_select`]
-    pub fn show_popup_menu(&self, window: &WindowHandle, coords: Point) -> io::Result<()> {
+    pub fn show_popup_menu(&self, window: WindowHandle, coords: Point) -> io::Result<()> {
         unsafe {
             TrackPopupMenu(
                 self.handle.raw_handle,

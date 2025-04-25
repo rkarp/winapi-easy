@@ -93,7 +93,7 @@ pub enum PressedMessageBoxButton {
 }
 
 pub fn show_message_box(
-    window_handle: &WindowHandle,
+    window_handle: WindowHandle,
     options: MessageBoxOptions,
 ) -> io::Result<PressedMessageBoxButton> {
     let message = options.message.map(ZeroTerminatedWideString::from_os_str);
