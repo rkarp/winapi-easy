@@ -1,7 +1,4 @@
-use std::cell::{
-    Cell,
-    RefCell,
-};
+use std::cell::Cell;
 use std::io;
 
 use num_enum::{
@@ -30,7 +27,7 @@ use winapi_easy::ui::resource::{
 };
 use winapi_easy::ui::window::{
     BalloonNotification,
-    NotificationIcon,
+    NotificationIconId,
     NotificationIconOptions,
     Window,
     WindowAppearance,
@@ -101,16 +98,16 @@ fn main() -> io::Result<()> {
         style: WindowStyle::OverlappedWindow,
         ..Default::default()
     };
-    let window: RefCell<_> =
-        Window::create_new(&class, listener, "mywindow1", window_appearance, None)?.into();
+    let mut window = Window::create_new(&class, listener, "mywindow1", window_appearance, None)?;
+    let notification_icon_id = NotificationIconId::Simple(0);
     let notification_icon_options = NotificationIconOptions {
+        icon_id: notification_icon_id,
         icon: Some(icon),
         tooltip_text: Some("A tooltip!".to_string()),
         visible: true,
-        ..Default::default()
     };
-    let mut notification_icon = NotificationIcon::new(&window, notification_icon_options)?;
-    let window_handle = window.borrow().handle();
+    let _ = window.add_notification_icon(notification_icon_options)?;
+    let window_handle = window.handle();
     window_handle.set_caption_text("My Window")?;
     window_handle.set_show_state(WindowShowState::Show)?;
     let popup = PopupMenu::new()?;
@@ -136,7 +133,7 @@ fn main() -> io::Result<()> {
     )?;
     let loop_callback = || {
         if let Some(message) = listener_data.take() {
-            let window_handle = window.borrow().handle();
+            let window_handle = window.handle();
             match message {
                 MyMessage::IconLeftClicked(_coords) => {
                     window_handle.set_show_state(WindowShowState::ShowNormal)?;
@@ -158,7 +155,9 @@ fn main() -> io::Result<()> {
                         body: "Lorem ipsum",
                         ..Default::default()
                     };
-                    notification_icon.set_balloon_notification(Some(notification))?;
+                    window
+                        .get_notification_icon(notification_icon_id)
+                        .set_balloon_notification(Some(notification))?;
                 }
                 MyMessage::MenuItem(MenuID::ShowMessageBox) => {
                     show_message_box(
