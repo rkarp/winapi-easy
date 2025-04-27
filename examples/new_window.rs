@@ -24,8 +24,9 @@ use winapi_easy::ui::messaging::{
     ListenerMessageVariant,
 };
 use winapi_easy::ui::resource::{
+    Brush,
     BuiltinColor,
-    BuiltinIcon,
+    Icon,
 };
 use winapi_easy::ui::window::{
     BalloonNotification,
@@ -89,10 +90,10 @@ fn main() -> io::Result<()> {
         _ => ListenerAnswer::default(),
     };
 
-    let icon: BuiltinIcon = Default::default();
+    let icon: Icon = Default::default();
     let class_appearance = WindowClassAppearance {
-        background_brush: Some(BuiltinColor::AppWorkspace),
-        icon: Some(icon),
+        background_brush: Some(Brush::BuiltinColor(BuiltinColor::AppWorkspace)),
+        icon: Some(icon.clone()),
         ..Default::default()
     };
     let class: WindowClass = WindowClass::register_new("myclass1", class_appearance)?;

@@ -156,8 +156,6 @@ use crate::ui::messaging::{
 };
 use crate::ui::resource::{
     Brush,
-    BuiltinColor,
-    BuiltinCursor,
     BuiltinIcon,
     Cursor,
     Icon,
@@ -576,14 +574,13 @@ impl Error for TryFromHWNDError {}
 
 /// Window class serving as a base for [`Window`].
 #[derive(Debug)]
-pub struct WindowClass<'res> {
+pub struct WindowClass {
     atom: u16,
     #[allow(dead_code)]
-    icon_handle: HICON,
-    phantom: PhantomData<&'res ()>,
+    appearance: WindowClassAppearance,
 }
 
-impl WindowClass<'_> {
+impl WindowClass {
     const MAX_WINDOW_CLASS_NAME_CHARS: usize = 256;
 
     fn raw_class_identifier(&self) -> PCWSTR {
@@ -591,7 +588,7 @@ impl WindowClass<'_> {
     }
 }
 
-impl<'res> WindowClass<'res> {
+impl WindowClass {
     /// Registers a new class.
     ///
     /// This class can then be used to create instances of [`Window`].
@@ -599,15 +596,10 @@ impl<'res> WindowClass<'res> {
     /// The class name will be generated from the given prefix by adding a random base64 encoded UUID
     /// to ensure uniqueness. This means that the maximum length of the class name prefix is a little less
     /// than the standard 256 characters for class names.
-    pub fn register_new<B, I, C>(
+    pub fn register_new(
         class_name_prefix: &str,
-        appearance: WindowClassAppearance<B, I, C>,
-    ) -> io::Result<Self>
-    where
-        B: Brush + 'res,
-        I: Icon + 'res,
-        C: Cursor + 'res,
-    {
+        appearance: WindowClassAppearance,
+    ) -> io::Result<Self> {
         use base64::Engine;
         use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
@@ -616,7 +608,8 @@ impl<'res> WindowClass<'res> {
 
         let icon_handle = appearance
             .icon
-            .map_or_else(|| Ok(Default::default()), |x| x.as_handle())?;
+            .as_ref()
+            .map_or_else(|| Ok(Default::default()), Icon::as_handle)?;
         // No need to reserve extra window memory if we only need a single pointer
         let class_def = WNDCLASSEXW {
             cbSize: mem::size_of::<WNDCLASSEXW>()
@@ -626,23 +619,21 @@ impl<'res> WindowClass<'res> {
             hIcon: icon_handle,
             hCursor: appearance
                 .cursor
-                .map_or_else(|| Ok(Default::default()), |x| x.as_handle())?,
+                .as_ref()
+                .map_or_else(|| Ok(Default::default()), Cursor::as_handle)?,
             hbrBackground: appearance
                 .background_brush
-                .map_or_else(|| Ok(Default::default()), |x| x.as_handle())?,
+                .as_ref()
+                .map_or_else(Default::default, Brush::as_handle),
             lpszClassName: ZeroTerminatedWideString::from_os_str(class_name).as_raw_pcwstr(),
             ..Default::default()
         };
         let atom = unsafe { RegisterClassExW(&class_def).if_null_get_last_error()? };
-        Ok(WindowClass {
-            atom,
-            icon_handle,
-            phantom: PhantomData,
-        })
+        Ok(WindowClass { atom, appearance })
     }
 }
 
-impl Drop for WindowClass<'_> {
+impl Drop for WindowClass {
     /// Unregisters the class on drop.
     fn drop(&mut self) {
         unsafe {
@@ -652,13 +643,13 @@ impl Drop for WindowClass<'_> {
 }
 
 #[derive(Clone, Debug)]
-pub struct WindowClassAppearance<B, I, C> {
-    pub background_brush: Option<B>,
-    pub icon: Option<I>,
-    pub cursor: Option<C>,
+pub struct WindowClassAppearance {
+    pub background_brush: Option<Brush>,
+    pub icon: Option<Icon>,
+    pub cursor: Option<Cursor>,
 }
 
-impl WindowClassAppearance<BuiltinColor, BuiltinIcon, BuiltinCursor> {
+impl WindowClassAppearance {
     pub fn empty() -> Self {
         Self {
             background_brush: None,
@@ -668,7 +659,7 @@ impl WindowClassAppearance<BuiltinColor, BuiltinIcon, BuiltinCursor> {
     }
 }
 
-impl Default for WindowClassAppearance<BuiltinColor, BuiltinIcon, BuiltinCursor> {
+impl Default for WindowClassAppearance {
     fn default() -> Self {
         Self {
             background_brush: Some(Default::default()),
@@ -984,23 +975,24 @@ pub enum MonitorPower {
 ///
 /// This icon is always associated with a window and can be used in conjunction with [`crate::ui::menu::PopupMenu`].
 #[derive(Debug)]
-pub struct NotificationIcon<'res, 'wnd, W: WindowKind + 'wnd> {
+pub struct NotificationIcon<'wnd, W: WindowKind + 'wnd> {
     id: NotificationIconId,
     window: &'wnd RefCell<W>,
-    _phantom: PhantomData<&'res dyn Icon>,
+    #[allow(dead_code)]
+    icon: Option<Icon>,
 }
 
-impl<'res, 'wnd, W: WindowKind> NotificationIcon<'res, 'wnd, W> {
+impl<'wnd, W: WindowKind> NotificationIcon<'wnd, W> {
     /// Adds a notification icon.
     ///
     /// The window's [`WindowMessageListener`] will receive messages when user interactions with the icon occur.
-    pub fn new<NI: Icon + 'res>(
+    pub fn new(
         window: &'wnd RefCell<W>,
-        options: NotificationIconOptions<NI>,
-    ) -> io::Result<NotificationIcon<'res, 'wnd, W>> {
+        options: NotificationIconOptions,
+    ) -> io::Result<NotificationIcon<'wnd, W>> {
         // For GUID handling maybe look at generating it from the executable path:
         // https://stackoverflow.com/questions/7432319/notifyicondata-guid-problem
-        let chosen_icon_handle = if let Some(icon) = options.icon {
+        let chosen_icon_handle = if let Some(icon) = options.icon.as_ref() {
             icon.as_handle()?
         } else {
             BuiltinIcon::default().as_handle()?
@@ -1024,12 +1016,12 @@ impl<'res, 'wnd, W: WindowKind> NotificationIcon<'res, 'wnd, W> {
         Ok(NotificationIcon {
             id: options.icon_id,
             window,
-            _phantom: PhantomData,
+            icon: options.icon,
         })
     }
 
     /// Sets the icon graphics.
-    pub fn set_icon(&mut self, icon: &'res impl Icon) -> io::Result<()> {
+    pub fn set_icon(&mut self, icon: &Icon) -> io::Result<()> {
         let call_data = get_notification_call_data(
             self.window.borrow().handle(),
             self.id,
@@ -1107,7 +1099,7 @@ impl<'res, 'wnd, W: WindowKind> NotificationIcon<'res, 'wnd, W> {
     }
 }
 
-impl<W: WindowKind> Drop for NotificationIcon<'_, '_, W> {
+impl<W: WindowKind> Drop for NotificationIcon<'_, W> {
     fn drop(&mut self) {
         let call_data = get_notification_call_data(
             self.window.borrow().handle(),
@@ -1203,7 +1195,7 @@ fn get_notification_call_data(
 }
 
 /// Notification icon ID given to the Windows API.
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
 pub enum NotificationIconId {
     /// A simple ID.
     Simple(u16),
@@ -1221,9 +1213,9 @@ impl Default for NotificationIconId {
 
 /// Options for a new notification icon used by [`Window::add_notification_icon`].
 #[derive(Eq, PartialEq, Default, Debug)]
-pub struct NotificationIconOptions<I> {
+pub struct NotificationIconOptions {
     pub icon_id: NotificationIconId,
-    pub icon: Option<I>,
+    pub icon: Option<Icon>,
     pub tooltip_text: Option<String>,
     pub visible: bool,
 }
@@ -1282,11 +1274,11 @@ mod tests {
         const CAPTION_TEXT: &str = "Testwindow";
 
         let listener = |_| Default::default();
-        let icon: BuiltinIcon = Default::default();
+        let icon: Icon = Default::default();
         let class: WindowClass = WindowClass::register_new(
             CLASS_NAME_PREFIX,
             WindowClassAppearance {
-                icon: Some(icon),
+                icon: Some(icon.clone()),
                 ..Default::default()
             },
         )?;

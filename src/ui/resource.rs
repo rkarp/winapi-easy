@@ -72,10 +72,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows_missing::MAKEINTRESOURCEW;
 
-pub trait Icon {
-    fn as_handle(&self) -> io::Result<HICON>;
-}
-
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
 #[repr(u32)]
 pub enum BuiltinIcon {
@@ -88,15 +84,31 @@ pub enum BuiltinIcon {
     Shield = OIC_SHIELD,
 }
 
-impl Icon for BuiltinIcon {
-    fn as_handle(&self) -> io::Result<HICON> {
+impl BuiltinIcon {
+    pub(crate) fn as_handle(&self) -> io::Result<HICON> {
         let handle = get_shared_image_handle((*self).into(), IMAGE_ICON)?;
         Ok(HICON(handle.0))
     }
 }
 
-pub trait Cursor {
-    fn as_handle(&self) -> io::Result<HCURSOR>;
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub enum Icon {
+    BuiltinIcon(BuiltinIcon),
+    // TODO: Add custom icon variant as `Arc<>` to avoid lifetimes
+}
+
+impl Icon {
+    pub(crate) fn as_handle(&self) -> io::Result<HICON> {
+        match self {
+            Self::BuiltinIcon(builtin_icon) => builtin_icon.as_handle(),
+        }
+    }
+}
+
+impl Default for Icon {
+    fn default() -> Self {
+        Self::BuiltinIcon(Default::default())
+    }
 }
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
@@ -133,15 +145,31 @@ pub enum BuiltinCursor {
     Up = OCR_UP.0,
 }
 
-impl Cursor for BuiltinCursor {
+impl BuiltinCursor {
     fn as_handle(&self) -> io::Result<HCURSOR> {
         let handle = get_shared_image_handle((*self).into(), IMAGE_CURSOR)?;
         Ok(HCURSOR(handle.0))
     }
 }
 
-pub trait Brush {
-    fn as_handle(&self) -> io::Result<HBRUSH>;
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub enum Cursor {
+    BuiltinCursor(BuiltinCursor),
+    // TODO: Add custom Cursor variant as `Arc<>` to avoid lifetimes
+}
+
+impl Cursor {
+    pub(crate) fn as_handle(&self) -> io::Result<HCURSOR> {
+        match self {
+            Self::BuiltinCursor(builtin_cursor) => builtin_cursor.as_handle(),
+        }
+    }
+}
+
+impl Default for Cursor {
+    fn default() -> Self {
+        Self::BuiltinCursor(Default::default())
+    }
 }
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
@@ -180,13 +208,32 @@ pub enum BuiltinColor {
     MenuBar = COLOR_MENUBAR.0,
 }
 
-impl Brush for BuiltinColor {
-    fn as_handle(&self) -> io::Result<HBRUSH> {
-        Ok(HBRUSH(ptr::with_exposed_provenance_mut(
+impl BuiltinColor {
+    fn as_handle(&self) -> HBRUSH {
+        HBRUSH(ptr::with_exposed_provenance_mut(
             i32::from(*self)
                 .try_into()
                 .unwrap_or_else(|_| unreachable!()),
-        )))
+        ))
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub enum Brush {
+    BuiltinColor(BuiltinColor),
+}
+
+impl Brush {
+    pub(crate) fn as_handle(&self) -> HBRUSH {
+        match self {
+            Self::BuiltinColor(builtin_brush) => builtin_brush.as_handle(),
+        }
+    }
+}
+
+impl Default for Brush {
+    fn default() -> Self {
+        Self::BuiltinColor(Default::default())
     }
 }
 
