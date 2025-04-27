@@ -1,6 +1,6 @@
 //! UI components related to windows.
 
-use std::cell::RefCell;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{
     Display,
@@ -679,6 +679,7 @@ pub struct Window<'class, 'listener> {
     handle: WindowHandle,
     #[allow(dead_code)]
     opaque_listener: OpaqueRawBox<'listener>,
+    notification_icons: HashMap<NotificationIconId, NotificationIcon>,
     phantom: PhantomData<&'class ()>,
 }
 
@@ -720,6 +721,7 @@ impl<'class, 'listener> Window<'class, 'listener> {
         Ok(Window {
             handle,
             opaque_listener,
+            notification_icons: HashMap::new(),
             phantom: PhantomData,
         })
     }
@@ -735,6 +737,48 @@ impl<'class, 'listener> Window<'class, 'listener> {
                 .set_user_data_ptr(opaque_listener.as_mut_ptr::<()>())?;
         }
         Ok(())
+    }
+
+    /// Adds a new notification icon.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the notification icon ID already exists.
+    pub fn add_notification_icon(
+        &mut self,
+        options: NotificationIconOptions,
+    ) -> io::Result<&mut NotificationIcon> {
+        let id = options.icon_id;
+        assert!(
+            !self.notification_icons.contains_key(&id),
+            "Notification icon ID already exists"
+        );
+        self.notification_icons
+            .insert(id, NotificationIcon::new(self.handle, options)?);
+        Ok(self.get_notification_icon(id))
+    }
+
+    /// Returns a reference to a previously added notification icon.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the ID doesn't exist.
+    pub fn get_notification_icon(&mut self, id: NotificationIconId) -> &mut NotificationIcon {
+        self.notification_icons
+            .get_mut(&id)
+            .expect("Notification icon ID doesn't exist")
+    }
+
+    /// Removes a notification icon.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the ID doesn't exist.
+    pub fn remove_notification_icon(&mut self, id: NotificationIconId) {
+        let _ = self
+            .notification_icons
+            .remove(&id)
+            .expect("Notification icon ID doesn't exist");
     }
 }
 
@@ -975,21 +1019,18 @@ pub enum MonitorPower {
 ///
 /// This icon is always associated with a window and can be used in conjunction with [`crate::ui::menu::PopupMenu`].
 #[derive(Debug)]
-pub struct NotificationIcon<'wnd, W: WindowKind + 'wnd> {
+pub struct NotificationIcon {
     id: NotificationIconId,
-    window: &'wnd RefCell<W>,
+    window: WindowHandle,
     #[allow(dead_code)]
     icon: Option<Icon>,
 }
 
-impl<'wnd, W: WindowKind> NotificationIcon<'wnd, W> {
+impl NotificationIcon {
     /// Adds a notification icon.
     ///
     /// The window's [`WindowMessageListener`] will receive messages when user interactions with the icon occur.
-    pub fn new(
-        window: &'wnd RefCell<W>,
-        options: NotificationIconOptions,
-    ) -> io::Result<NotificationIcon<'wnd, W>> {
+    fn new(window: WindowHandle, options: NotificationIconOptions) -> io::Result<Self> {
         // For GUID handling maybe look at generating it from the executable path:
         // https://stackoverflow.com/questions/7432319/notifyicondata-guid-problem
         let chosen_icon_handle = if let Some(icon) = options.icon.as_ref() {
@@ -998,7 +1039,7 @@ impl<'wnd, W: WindowKind> NotificationIcon<'wnd, W> {
             BuiltinIcon::default().as_handle()?
         };
         let call_data = get_notification_call_data(
-            window.borrow().handle(),
+            window,
             options.icon_id,
             true,
             Some(chosen_icon_handle),
@@ -1021,9 +1062,9 @@ impl<'wnd, W: WindowKind> NotificationIcon<'wnd, W> {
     }
 
     /// Sets the icon graphics.
-    pub fn set_icon(&mut self, icon: &Icon) -> io::Result<()> {
+    pub fn set_icon(&mut self, icon: Icon) -> io::Result<()> {
         let call_data = get_notification_call_data(
-            self.window.borrow().handle(),
+            self.window,
             self.id,
             false,
             Some(icon.as_handle()?),
@@ -1035,20 +1076,14 @@ impl<'wnd, W: WindowKind> NotificationIcon<'wnd, W> {
             Shell_NotifyIconW(NIM_MODIFY, &call_data)
                 .if_null_to_error_else_drop(|| io::Error::other("Cannot set notification icon"))?;
         };
+        self.icon = Some(icon);
         Ok(())
     }
 
     /// Allows showing or hiding the icon in the notification area.
     pub fn set_icon_hidden_state(&mut self, hidden: bool) -> io::Result<()> {
-        let call_data = get_notification_call_data(
-            self.window.borrow().handle(),
-            self.id,
-            false,
-            None,
-            None,
-            Some(hidden),
-            None,
-        );
+        let call_data =
+            get_notification_call_data(self.window, self.id, false, None, None, Some(hidden), None);
         unsafe {
             Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
                 io::Error::other("Cannot set notification icon hidden state")
@@ -1059,15 +1094,8 @@ impl<'wnd, W: WindowKind> NotificationIcon<'wnd, W> {
 
     /// Sets the tooltip text when hovering over the icon with the mouse.
     pub fn set_tooltip_text(&mut self, text: &str) -> io::Result<()> {
-        let call_data = get_notification_call_data(
-            self.window.borrow().handle(),
-            self.id,
-            false,
-            None,
-            Some(text),
-            None,
-            None,
-        );
+        let call_data =
+            get_notification_call_data(self.window, self.id, false, None, Some(text), None, None);
         unsafe {
             Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
                 io::Error::other("Cannot set notification icon tooltip text")
@@ -1082,7 +1110,7 @@ impl<'wnd, W: WindowKind> NotificationIcon<'wnd, W> {
         notification: Option<BalloonNotification>,
     ) -> io::Result<()> {
         let call_data = get_notification_call_data(
-            self.window.borrow().handle(),
+            self.window,
             self.id,
             false,
             None,
@@ -1099,17 +1127,10 @@ impl<'wnd, W: WindowKind> NotificationIcon<'wnd, W> {
     }
 }
 
-impl<W: WindowKind> Drop for NotificationIcon<'_, W> {
+impl Drop for NotificationIcon {
     fn drop(&mut self) {
-        let call_data = get_notification_call_data(
-            self.window.borrow().handle(),
-            self.id,
-            false,
-            None,
-            None,
-            None,
-            None,
-        );
+        let call_data =
+            get_notification_call_data(self.window, self.id, false, None, None, None, None);
         unsafe {
             Shell_NotifyIconW(NIM_DELETE, &call_data)
                 .if_null_to_error_else_drop(|| io::Error::other("Cannot remove notification icon"))
@@ -1282,25 +1303,24 @@ mod tests {
                 ..Default::default()
             },
         )?;
-        let window: RefCell<_> = Window::create_new(
+        let mut window = Window::create_new(
             &class,
             listener,
             WINDOW_NAME,
             WindowAppearance::default(),
             None,
-        )?
-        .into();
+        )?;
         let notification_icon_options = NotificationIconOptions {
             icon: Some(icon),
             tooltip_text: Some("A tooltip!".to_string()),
             visible: false,
             ..Default::default()
         };
-        let mut notification_icon = NotificationIcon::new(&window, notification_icon_options)?;
+        let notification_icon = window.add_notification_icon(notification_icon_options)?;
         let balloon_notification = BalloonNotification::default();
         notification_icon.set_balloon_notification(Some(balloon_notification))?;
 
-        let window_handle = *window.borrow().as_ref();
+        let window_handle = window.handle();
         assert_eq!(window_handle.get_caption_text(), WINDOW_NAME);
         window_handle.set_caption_text(CAPTION_TEXT)?;
         assert_eq!(window_handle.get_caption_text(), CAPTION_TEXT);
