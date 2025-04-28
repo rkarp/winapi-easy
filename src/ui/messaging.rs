@@ -182,7 +182,7 @@ impl RawMessage {
     /// Posts a message to the thread message queue and returns immediately.
     ///
     /// If no window is given, the window procedure won't be called by `DispatchMessageW`.
-    fn post_to_queue(&self, window: Option<&WindowHandle>) -> io::Result<()> {
+    fn post_to_queue(&self, window: Option<WindowHandle>) -> io::Result<()> {
         unsafe {
             PostMessageW(
                 window.map(Into::into),

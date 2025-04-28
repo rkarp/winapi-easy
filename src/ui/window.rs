@@ -240,18 +240,18 @@ impl WindowHandle {
     }
 
     /// Checks if the handle points to an existing window.
-    pub fn is_window(&self) -> bool {
+    pub fn is_window(self) -> bool {
         let result = unsafe { IsWindow(Some(self.raw_handle)) };
         result.as_bool()
     }
 
-    pub fn is_visible(&self) -> bool {
+    pub fn is_visible(self) -> bool {
         let result = unsafe { IsWindowVisible(self.raw_handle) };
         result.as_bool()
     }
 
     /// Returns the window caption text, converted to UTF-8 in a potentially lossy way.
-    pub fn get_caption_text(&self) -> String {
+    pub fn get_caption_text(self) -> String {
         let required_length: usize = unsafe { GetWindowTextLengthW(self.raw_handle) }
             .try_into()
             .unwrap_or_else(|_| unreachable!());
@@ -275,7 +275,7 @@ impl WindowHandle {
     }
 
     /// Sets the window caption text.
-    pub fn set_caption_text(&self, text: &str) -> io::Result<()> {
+    pub fn set_caption_text(self, text: &str) -> io::Result<()> {
         let ret_val = unsafe {
             SetWindowTextW(
                 self.raw_handle,
@@ -287,7 +287,7 @@ impl WindowHandle {
     }
 
     /// Brings the window to the foreground.
-    pub fn set_as_foreground(&self) -> io::Result<()> {
+    pub fn set_as_foreground(self) -> io::Result<()> {
         unsafe {
             SetForegroundWindow(self.raw_handle).if_null_to_error_else_drop(|| {
                 io::Error::new(
@@ -300,7 +300,7 @@ impl WindowHandle {
     }
 
     /// Sets the window as the currently active (selected) window.
-    pub fn set_as_active(&self) -> io::Result<()> {
+    pub fn set_as_active(self) -> io::Result<()> {
         unsafe {
             SetActiveWindow(self.raw_handle)?;
         }
@@ -308,7 +308,7 @@ impl WindowHandle {
     }
 
     /// Changes the window show state.
-    pub fn set_show_state(&self, state: WindowShowState) -> io::Result<()> {
+    pub fn set_show_state(self, state: WindowShowState) -> io::Result<()> {
         if self.is_window() {
             unsafe {
                 let _ = ShowWindow(self.raw_handle, state.into());
@@ -323,7 +323,7 @@ impl WindowHandle {
     }
 
     /// Returns the window's show state and positions.
-    pub fn get_placement(&self) -> io::Result<WindowPlacement> {
+    pub fn get_placement(self) -> io::Result<WindowPlacement> {
         let mut raw_placement: WINDOWPLACEMENT = WINDOWPLACEMENT {
             length: mem::size_of::<WINDOWPLACEMENT>()
                 .try_into()
@@ -335,13 +335,13 @@ impl WindowHandle {
     }
 
     /// Sets the window's show state and positions.
-    pub fn set_placement(&self, placement: &WindowPlacement) -> io::Result<()> {
+    pub fn set_placement(self, placement: &WindowPlacement) -> io::Result<()> {
         unsafe { SetWindowPlacement(self.raw_handle, &placement.raw_placement)? };
         Ok(())
     }
 
     /// Returns the window's client area rectangle relative to the screen.
-    pub fn get_client_area_coords(&self) -> io::Result<Rectangle> {
+    pub fn get_client_area_coords(self) -> io::Result<Rectangle> {
         let mut result_rect: Rectangle = Default::default();
         unsafe { GetClientRect(self.raw_handle, &mut result_rect) }?;
         self.map_points(None, result_rect.as_point_array_mut())?;
@@ -349,7 +349,7 @@ impl WindowHandle {
     }
 
     pub(crate) fn map_points(
-        &self,
+        self,
         other_window: Option<Self>,
         points: &mut [Point],
     ) -> io::Result<()> {
@@ -371,7 +371,7 @@ impl WindowHandle {
     }
 
     /// Returns the class name of the window's associated [`WindowClass`].
-    pub fn get_class_name(&self) -> io::Result<String> {
+    pub fn get_class_name(self) -> io::Result<String> {
         const BUFFER_SIZE: usize = WindowClass::MAX_WINDOW_CLASS_NAME_CHARS + 1;
         let mut buffer: Vec<u16> = vec![0; BUFFER_SIZE];
         let chars_copied: usize = unsafe { GetClassNameW(self.raw_handle, buffer.as_mut()) }
@@ -383,7 +383,7 @@ impl WindowHandle {
     }
 
     /// Sends a command to the window, same as if one of the symbols in its top right were clicked.
-    pub fn send_command(&self, action: WindowCommand) -> io::Result<()> {
+    pub fn send_command(self, action: WindowCommand) -> io::Result<()> {
         let result = unsafe {
             SendMessageW(
                 self.raw_handle,
@@ -399,13 +399,13 @@ impl WindowHandle {
     /// Flashes the window using default flash settings.
     ///
     /// Same as [`Self::flash_custom`] using [`Default::default`] for all parameters.
-    pub fn flash(&self) {
+    pub fn flash(self) {
         self.flash_custom(Default::default(), Default::default(), Default::default());
     }
 
     /// Flashes the window, allowing various customization parameters.
     pub fn flash_custom(
-        &self,
+        self,
         element: FlashElement,
         duration: FlashDuration,
         frequency: FlashInterval,
@@ -435,7 +435,7 @@ impl WindowHandle {
     }
 
     /// Stops the window from flashing.
-    pub fn flash_stop(&self) {
+    pub fn flash_stop(self) {
         let raw_config = FLASHWINFO {
             cbSize: mem::size_of::<FLASHWINFO>()
                 .try_into()
@@ -451,18 +451,18 @@ impl WindowHandle {
 
     /// Returns the thread ID that created this window.
     #[cfg(feature = "process")]
-    pub fn get_creator_thread_id(&self) -> ThreadId {
+    pub fn get_creator_thread_id(self) -> ThreadId {
         self.get_creator_thread_process_ids().0
     }
 
     /// Returns the process ID that created this window.
     #[cfg(feature = "process")]
-    pub fn get_creator_process_id(&self) -> ProcessId {
+    pub fn get_creator_process_id(self) -> ProcessId {
         self.get_creator_thread_process_ids().1
     }
 
     #[cfg(feature = "process")]
-    fn get_creator_thread_process_ids(&self) -> (ThreadId, ProcessId) {
+    fn get_creator_thread_process_ids(self) -> (ThreadId, ProcessId) {
         use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
         let mut process_id: u32 = 0;
         let thread_id = unsafe { GetWindowThreadProcessId(self.raw_handle, Some(&mut process_id)) };
@@ -493,7 +493,7 @@ impl WindowHandle {
     ///
     /// Windows requires this command to be sent through a window, e.g. using
     /// [`WindowHandle::get_foreground_window`].
-    pub fn set_monitor_power(&self, level: MonitorPower) -> io::Result<()> {
+    pub fn set_monitor_power(self, level: MonitorPower) -> io::Result<()> {
         let result = unsafe {
             SendMessageW(
                 self.raw_handle,
@@ -511,12 +511,12 @@ impl WindowHandle {
         })
     }
 
-    pub(crate) unsafe fn get_user_data_ptr<T>(&self) -> Option<NonNull<T>> {
+    pub(crate) unsafe fn get_user_data_ptr<T>(self) -> Option<NonNull<T>> {
         let ptr_value = unsafe { GetWindowLongPtrW(self.raw_handle, GWLP_USERDATA) };
         NonNull::new(ptr::with_exposed_provenance_mut(ptr_value.cast_unsigned()))
     }
 
-    pub(crate) unsafe fn set_user_data_ptr<T>(&self, ptr: *const T) -> io::Result<()> {
+    pub(crate) unsafe fn set_user_data_ptr<T>(self, ptr: *const T) -> io::Result<()> {
         unsafe { SetLastError(NO_ERROR) };
         let ret_val = unsafe {
             SetWindowLongPtrW(
@@ -541,13 +541,6 @@ impl WindowHandle {
 impl From<WindowHandle> for HWND {
     /// Returns the underlying raw window handle used by [`windows`].
     fn from(value: WindowHandle) -> Self {
-        value.raw_handle
-    }
-}
-
-impl From<&WindowHandle> for HWND {
-    /// Returns the underlying raw window handle used by [`windows`].
-    fn from(value: &WindowHandle) -> Self {
         value.raw_handle
     }
 }
@@ -670,7 +663,7 @@ impl Default for WindowClassAppearance {
 }
 
 pub trait WindowKind {
-    fn handle(&self) -> WindowHandle;
+    fn as_handle(&self) -> WindowHandle;
 }
 
 /// A window based on a [`WindowClass`].
@@ -692,7 +685,7 @@ impl<'class, 'listener> Window<'class, 'listener> {
         listener: WML,
         window_name: &str,
         appearance: WindowAppearance,
-        parent: Option<&WindowHandle>,
+        parent: Option<WindowHandle>,
     ) -> io::Result<Self>
     where
         WML: FnMut(ListenerMessage) -> ListenerAnswer + 'listener,
@@ -783,7 +776,7 @@ impl<'class, 'listener> Window<'class, 'listener> {
 }
 
 impl WindowKind for Window<'_, '_> {
-    fn handle(&self) -> WindowHandle {
+    fn as_handle(&self) -> WindowHandle {
         self.handle
     }
 }
@@ -795,18 +788,6 @@ impl Drop for Window<'_, '_> {
                 DestroyWindow(self.handle.raw_handle).unwrap();
             }
         }
-    }
-}
-
-impl AsRef<WindowHandle> for Window<'_, '_> {
-    fn as_ref(&self) -> &WindowHandle {
-        &self.handle
-    }
-}
-
-impl AsMut<WindowHandle> for Window<'_, '_> {
-    fn as_mut(&mut self) -> &mut WindowHandle {
-        &mut self.handle
     }
 }
 
@@ -1320,7 +1301,7 @@ mod tests {
         let balloon_notification = BalloonNotification::default();
         notification_icon.set_balloon_notification(Some(balloon_notification))?;
 
-        let window_handle = window.handle();
+        let window_handle = window.as_handle();
         assert_eq!(window_handle.get_caption_text(), WINDOW_NAME);
         window_handle.set_caption_text(CAPTION_TEXT)?;
         assert_eq!(window_handle.get_caption_text(), CAPTION_TEXT);

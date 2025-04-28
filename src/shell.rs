@@ -71,6 +71,7 @@ use crate::ui::window::{
     Window,
     WindowClass,
     WindowClassAppearance,
+    WindowKind,
 };
 
 #[allow(dead_code)]
@@ -238,7 +239,7 @@ where
     )?;
     let reg_id = unsafe {
         SHChangeNotifyRegister(
-            HWND::from(window.as_ref()),
+            HWND::from(window.as_handle()),
             SHCNRF_InterruptLevel
                 | SHCNRF_ShellLevel
                 | SHCNRF_NewDelivery

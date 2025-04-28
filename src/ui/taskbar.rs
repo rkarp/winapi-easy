@@ -79,17 +79,13 @@ impl Taskbar {
     /// let window = WindowHandle::get_console_window().expect("Cannot get console window");
     /// let taskbar = Taskbar::new()?;
     ///
-    /// taskbar.set_progress_state(&window, ProgressState::Indeterminate)?;
+    /// taskbar.set_progress_state(window, ProgressState::Indeterminate)?;
     /// thread::sleep(Duration::from_millis(3000));
-    /// taskbar.set_progress_state(&window, ProgressState::NoProgress)?;
+    /// taskbar.set_progress_state(window, ProgressState::NoProgress)?;
     ///
     /// # Result::<(), std::io::Error>::Ok(())
     /// ```
-    pub fn set_progress_state(
-        &self,
-        window: &WindowHandle,
-        state: ProgressState,
-    ) -> io::Result<()> {
+    pub fn set_progress_state(&self, window: WindowHandle, state: ProgressState) -> io::Result<()> {
         let ret_val = unsafe {
             self.taskbar_list_3
                 .SetProgressState(HWND::from(window), state.into())
@@ -100,7 +96,7 @@ impl Taskbar {
     /// Sets the completion amount of the taskbar progress state animation.
     pub fn set_progress_value(
         &self,
-        window: &WindowHandle,
+        window: WindowHandle,
         completed: u64,
         total: u64,
     ) -> io::Result<()> {
