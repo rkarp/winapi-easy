@@ -107,7 +107,7 @@ fn main() -> io::Result<()> {
         visible: true,
     };
     let _ = window.add_notification_icon(notification_icon_options)?;
-    let window_handle = window.handle();
+    let window_handle = window.as_handle();
     window_handle.set_caption_text("My Window")?;
     window_handle.set_show_state(WindowShowState::Show)?;
     let popup = PopupMenu::new()?;
@@ -133,7 +133,7 @@ fn main() -> io::Result<()> {
     )?;
     let loop_callback = || {
         if let Some(message) = listener_data.take() {
-            let window_handle = window.handle();
+            let window_handle = window.as_handle();
             match message {
                 MyMessage::IconLeftClicked(_coords) => {
                     window_handle.set_show_state(WindowShowState::ShowNormal)?;
