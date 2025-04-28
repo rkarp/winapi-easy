@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::io;
+use std::rc::Rc;
 
 use num_enum::{
     FromPrimitive,
@@ -87,10 +88,10 @@ fn main() -> io::Result<()> {
         _ => ListenerAnswer::default(),
     };
 
-    let icon: Icon = Default::default();
+    let icon: Rc<Icon> = Default::default();
     let class_appearance = WindowClassAppearance {
-        background_brush: Some(Brush::BuiltinColor(BuiltinColor::AppWorkspace)),
-        icon: Some(icon.clone()),
+        background_brush: Some(Brush::from(BuiltinColor::AppWorkspace).into()),
+        icon: Some(Rc::clone(&icon)),
         ..Default::default()
     };
     let class: WindowClass = WindowClass::register_new("myclass1", class_appearance)?;
@@ -102,7 +103,7 @@ fn main() -> io::Result<()> {
     let notification_icon_id = NotificationIconId::Simple(0);
     let notification_icon_options = NotificationIconOptions {
         icon_id: notification_icon_id,
-        icon: Some(icon),
+        icon,
         tooltip_text: Some("A tooltip!".to_string()),
         visible: true,
     };
