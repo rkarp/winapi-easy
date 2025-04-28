@@ -8,6 +8,7 @@ use std::fmt::{
 };
 use std::marker::PhantomData;
 use std::ptr::NonNull;
+use std::rc::Rc;
 use std::{
     io,
     mem,
@@ -156,7 +157,6 @@ use crate::ui::messaging::{
 };
 use crate::ui::resource::{
     Brush,
-    BuiltinIcon,
     Cursor,
     Icon,
 };
@@ -601,8 +601,8 @@ impl WindowClass {
 
         let icon_handle = appearance
             .icon
-            .as_ref()
-            .map_or_else(|| Ok(Default::default()), Icon::as_handle)?;
+            .as_deref()
+            .map_or_else(Default::default, Icon::as_handle);
         // No need to reserve extra window memory if we only need a single pointer
         let class_def = WNDCLASSEXW {
             cbSize: mem::size_of::<WNDCLASSEXW>()
@@ -612,11 +612,11 @@ impl WindowClass {
             hIcon: icon_handle,
             hCursor: appearance
                 .cursor
-                .as_ref()
-                .map_or_else(|| Ok(Default::default()), Cursor::as_handle)?,
+                .as_deref()
+                .map_or_else(Default::default, Cursor::as_handle),
             hbrBackground: appearance
                 .background_brush
-                .as_ref()
+                .as_deref()
                 .map_or_else(Default::default, Brush::as_handle),
             lpszClassName: ZeroTerminatedWideString::from_os_str(class_name).as_raw_pcwstr(),
             ..Default::default()
@@ -637,9 +637,9 @@ impl Drop for WindowClass {
 
 #[derive(Clone, Debug)]
 pub struct WindowClassAppearance {
-    pub background_brush: Option<Brush>,
-    pub icon: Option<Icon>,
-    pub cursor: Option<Cursor>,
+    pub background_brush: Option<Rc<Brush>>,
+    pub icon: Option<Rc<Icon>>,
+    pub cursor: Option<Rc<Cursor>>,
 }
 
 impl WindowClassAppearance {
@@ -1004,7 +1004,7 @@ pub struct NotificationIcon {
     id: NotificationIconId,
     window: WindowHandle,
     #[allow(dead_code)]
-    icon: Option<Icon>,
+    icon: Rc<Icon>,
 }
 
 impl NotificationIcon {
@@ -1014,16 +1014,11 @@ impl NotificationIcon {
     fn new(window: WindowHandle, options: NotificationIconOptions) -> io::Result<Self> {
         // For GUID handling maybe look at generating it from the executable path:
         // https://stackoverflow.com/questions/7432319/notifyicondata-guid-problem
-        let chosen_icon_handle = if let Some(icon) = options.icon.as_ref() {
-            icon.as_handle()?
-        } else {
-            BuiltinIcon::default().as_handle()?
-        };
         let call_data = get_notification_call_data(
             window,
             options.icon_id,
             true,
-            Some(chosen_icon_handle),
+            Some(options.icon.as_handle()),
             options.tooltip_text.as_deref(),
             Some(!options.visible),
             None,
@@ -1043,12 +1038,12 @@ impl NotificationIcon {
     }
 
     /// Sets the icon graphics.
-    pub fn set_icon(&mut self, icon: Icon) -> io::Result<()> {
+    pub fn set_icon(&mut self, icon: Rc<Icon>) -> io::Result<()> {
         let call_data = get_notification_call_data(
             self.window,
             self.id,
             false,
-            Some(icon.as_handle()?),
+            Some(icon.as_handle()),
             None,
             None,
             None,
@@ -1057,7 +1052,7 @@ impl NotificationIcon {
             Shell_NotifyIconW(NIM_MODIFY, &call_data)
                 .if_null_to_error_else_drop(|| io::Error::other("Cannot set notification icon"))?;
         };
-        self.icon = Some(icon);
+        self.icon = icon;
         Ok(())
     }
 
@@ -1217,7 +1212,7 @@ impl Default for NotificationIconId {
 #[derive(Eq, PartialEq, Default, Debug)]
 pub struct NotificationIconOptions {
     pub icon_id: NotificationIconId,
-    pub icon: Option<Icon>,
+    pub icon: Rc<Icon>,
     pub tooltip_text: Option<String>,
     pub visible: bool,
 }
@@ -1276,11 +1271,11 @@ mod tests {
         const CAPTION_TEXT: &str = "Testwindow";
 
         let listener = |_| Default::default();
-        let icon: Icon = Default::default();
+        let icon: Rc<Icon> = Default::default();
         let class: WindowClass = WindowClass::register_new(
             CLASS_NAME_PREFIX,
             WindowClassAppearance {
-                icon: Some(icon.clone()),
+                icon: Some(Rc::clone(&icon)),
                 ..Default::default()
             },
         )?;
@@ -1292,7 +1287,7 @@ mod tests {
             None,
         )?;
         let notification_icon_options = NotificationIconOptions {
-            icon: Some(icon),
+            icon,
             tooltip_text: Some("A tooltip!".to_string()),
             visible: false,
             ..Default::default()

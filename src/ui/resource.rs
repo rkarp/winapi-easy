@@ -41,6 +41,8 @@ use windows::Win32::Graphics::Gdi::{
     HBRUSH,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
+    DestroyCursor,
+    DestroyIcon,
     GDI_IMAGE_TYPE,
     HCURSOR,
     HICON,
@@ -72,6 +74,101 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows_missing::MAKEINTRESOURCEW;
 
+pub(crate) trait ImageHandleKind: Copy + Sized {
+    type BuiltinType: Into<u32>;
+    const RESOURCE_TYPE: GDI_IMAGE_TYPE;
+
+    fn from_builtin_loaded(builtin: Self::BuiltinType) -> io::Result<LoadedImage<Self>> {
+        Ok(LoadedImage {
+            handle: Self::from_builtin(builtin)?,
+            shared: true,
+        })
+    }
+
+    fn from_builtin(builtin: Self::BuiltinType) -> io::Result<Self> {
+        Self::get_shared_image_handle(builtin.into())
+    }
+
+    fn get_shared_image_handle(resource_id: u32) -> io::Result<Self> {
+        get_shared_image_handle(resource_id, Self::RESOURCE_TYPE).map(Self::from_untyped_handle)
+    }
+
+    fn from_untyped_handle(handle: HANDLE) -> Self;
+
+    /// Destroys a non-shared image handle.
+    fn destroy(self) -> io::Result<()>;
+}
+
+impl ImageHandleKind for HICON {
+    type BuiltinType = BuiltinIcon;
+    const RESOURCE_TYPE: GDI_IMAGE_TYPE = IMAGE_ICON;
+
+    fn from_untyped_handle(handle: HANDLE) -> Self {
+        Self(handle.0)
+    }
+
+    fn destroy(self) -> io::Result<()> {
+        unsafe {
+            DestroyIcon(self)?;
+        }
+        Ok(())
+    }
+}
+
+impl ImageHandleKind for HCURSOR {
+    type BuiltinType = BuiltinCursor;
+    const RESOURCE_TYPE: GDI_IMAGE_TYPE = IMAGE_CURSOR;
+
+    fn from_untyped_handle(handle: HANDLE) -> Self {
+        Self(handle.0)
+    }
+
+    fn destroy(self) -> io::Result<()> {
+        unsafe {
+            DestroyCursor(self)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Eq, PartialEq, Debug)]
+pub(crate) struct LoadedImage<H: ImageHandleKind> {
+    handle: H,
+    shared: bool,
+}
+
+impl<H: ImageHandleKind> LoadedImage<H> {
+    pub(crate) fn as_handle(&self) -> H {
+        self.handle
+    }
+}
+
+impl<H: ImageHandleKind> Drop for LoadedImage<H> {
+    fn drop(&mut self) {
+        if !self.shared {
+            self.handle
+                .destroy()
+                .expect("Error destroying image handle");
+        }
+    }
+}
+
+impl TryFrom<BuiltinIcon> for LoadedImage<HICON> {
+    type Error = io::Error;
+
+    fn try_from(value: BuiltinIcon) -> Result<Self, Self::Error> {
+        HICON::from_builtin_loaded(value)
+    }
+}
+
+impl TryFrom<BuiltinCursor> for LoadedImage<HCURSOR> {
+    type Error = io::Error;
+
+    fn try_from(value: BuiltinCursor) -> Result<Self, Self::Error> {
+        HCURSOR::from_builtin_loaded(value)
+    }
+}
+
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
 #[repr(u32)]
 pub enum BuiltinIcon {
@@ -84,30 +181,24 @@ pub enum BuiltinIcon {
     Shield = OIC_SHIELD,
 }
 
-impl BuiltinIcon {
-    pub(crate) fn as_handle(&self) -> io::Result<HICON> {
-        let handle = get_shared_image_handle((*self).into(), IMAGE_ICON)?;
-        Ok(HICON(handle.0))
+#[derive(Eq, PartialEq, Debug)]
+pub struct Icon(LoadedImage<HICON>);
+
+impl Icon {
+    pub(crate) fn as_handle(&self) -> HICON {
+        self.0.as_handle()
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Icon {
-    BuiltinIcon(BuiltinIcon),
-    // TODO: Add custom icon variant as `Arc<>` to avoid lifetimes
-}
-
-impl Icon {
-    pub(crate) fn as_handle(&self) -> io::Result<HICON> {
-        match self {
-            Self::BuiltinIcon(builtin_icon) => builtin_icon.as_handle(),
-        }
+impl From<BuiltinIcon> for Icon {
+    fn from(value: BuiltinIcon) -> Self {
+        Self(LoadedImage::try_from(value).unwrap_or_else(|_| unreachable!()))
     }
 }
 
 impl Default for Icon {
     fn default() -> Self {
-        Self::BuiltinIcon(Default::default())
+        Self::from(BuiltinIcon::default())
     }
 }
 
@@ -145,30 +236,24 @@ pub enum BuiltinCursor {
     Up = OCR_UP.0,
 }
 
-impl BuiltinCursor {
-    fn as_handle(&self) -> io::Result<HCURSOR> {
-        let handle = get_shared_image_handle((*self).into(), IMAGE_CURSOR)?;
-        Ok(HCURSOR(handle.0))
+#[derive(Eq, PartialEq, Debug)]
+pub struct Cursor(LoadedImage<HCURSOR>);
+
+impl Cursor {
+    pub(crate) fn as_handle(&self) -> HCURSOR {
+        self.0.as_handle()
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Cursor {
-    BuiltinCursor(BuiltinCursor),
-    // TODO: Add custom Cursor variant as `Arc<>` to avoid lifetimes
-}
-
-impl Cursor {
-    pub(crate) fn as_handle(&self) -> io::Result<HCURSOR> {
-        match self {
-            Self::BuiltinCursor(builtin_cursor) => builtin_cursor.as_handle(),
-        }
+impl From<BuiltinCursor> for Cursor {
+    fn from(value: BuiltinCursor) -> Self {
+        Self(LoadedImage::try_from(value).unwrap_or_else(|_| unreachable!()))
     }
 }
 
 impl Default for Cursor {
     fn default() -> Self {
-        Self::BuiltinCursor(Default::default())
+        Self::from(BuiltinCursor::default())
     }
 }
 
@@ -218,12 +303,12 @@ impl BuiltinColor {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub enum Brush {
+#[derive(Eq, PartialEq, Debug)]
+enum BrushKind {
     BuiltinColor(BuiltinColor),
 }
 
-impl Brush {
+impl BrushKind {
     pub(crate) fn as_handle(&self) -> HBRUSH {
         match self {
             Self::BuiltinColor(builtin_brush) => builtin_brush.as_handle(),
@@ -231,9 +316,24 @@ impl Brush {
     }
 }
 
-impl Default for Brush {
+impl Default for BrushKind {
     fn default() -> Self {
         Self::BuiltinColor(Default::default())
+    }
+}
+
+#[derive(Eq, PartialEq, Default, Debug)]
+pub struct Brush(BrushKind);
+
+impl Brush {
+    pub(crate) fn as_handle(&self) -> HBRUSH {
+        self.0.as_handle()
+    }
+}
+
+impl From<BuiltinColor> for Brush {
+    fn from(value: BuiltinColor) -> Self {
+        Self(BrushKind::BuiltinColor(value))
     }
 }
 
