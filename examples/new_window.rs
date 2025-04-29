@@ -99,7 +99,8 @@ fn main() -> io::Result<()> {
         style: WindowStyle::OverlappedWindow,
         ..Default::default()
     };
-    let mut window = Window::create_new(&class, listener, "mywindow1", window_appearance, None)?;
+    let mut window =
+        Window::create_new(class.into(), listener, "mywindow1", window_appearance, None)?;
     let notification_icon_id = NotificationIconId::Simple(0);
     let notification_icon_options = NotificationIconOptions {
         icon_id: notification_icon_id,

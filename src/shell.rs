@@ -231,7 +231,7 @@ where
         WindowClassAppearance::empty(),
     )?;
     let window = Window::create_new(
-        &window_class,
+        window_class.into(),
         listener,
         "Shell Change Listener",
         Default::default(),

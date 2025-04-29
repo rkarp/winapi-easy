@@ -668,20 +668,21 @@ pub trait WindowKind {
 
 /// A window based on a [`WindowClass`].
 #[derive(Debug)]
-pub struct Window<'class, 'listener> {
+pub struct Window<'listener> {
     handle: WindowHandle,
+    #[allow(dead_code)]
+    class: Rc<WindowClass>,
     #[allow(dead_code)]
     opaque_listener: OpaqueRawBox<'listener>,
     notification_icons: HashMap<NotificationIconId, NotificationIcon>,
-    phantom: PhantomData<&'class ()>,
 }
 
-impl<'class, 'listener> Window<'class, 'listener> {
+impl<'listener> Window<'listener> {
     /// Creates a new window.
     ///
     /// User interaction with the window will result in messages sent to the [`WindowMessageListener`] provided here.
     pub fn create_new<WML>(
-        class: &'class WindowClass,
+        class: Rc<WindowClass>,
         listener: WML,
         window_name: &str,
         appearance: WindowAppearance,
@@ -713,9 +714,9 @@ impl<'class, 'listener> Window<'class, 'listener> {
         }
         Ok(Window {
             handle,
+            class,
             opaque_listener,
             notification_icons: HashMap::new(),
-            phantom: PhantomData,
         })
     }
 
@@ -775,13 +776,13 @@ impl<'class, 'listener> Window<'class, 'listener> {
     }
 }
 
-impl WindowKind for Window<'_, '_> {
+impl WindowKind for Window<'_> {
     fn as_handle(&self) -> WindowHandle {
         self.handle
     }
 }
 
-impl Drop for Window<'_, '_> {
+impl Drop for Window<'_> {
     fn drop(&mut self) {
         unsafe {
             if self.handle.is_window() {
@@ -1280,7 +1281,7 @@ mod tests {
             },
         )?;
         let mut window = Window::create_new(
-            &class,
+            class.into(),
             listener,
             WINDOW_NAME,
             WindowAppearance::default(),
