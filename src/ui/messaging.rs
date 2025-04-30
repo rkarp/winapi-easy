@@ -148,14 +148,14 @@ pub enum ListenerAnswer {
     #[default]
     CallDefaultHandler,
     /// Message processing is finished, skip calling the windows handler.
-    MessageProcessed,
+    StopMessageProcessing,
 }
 
 impl ListenerAnswer {
     fn to_raw_lresult(self) -> Option<LRESULT> {
         match self {
             ListenerAnswer::CallDefaultHandler => None,
-            ListenerAnswer::MessageProcessed => Some(LRESULT(0)),
+            ListenerAnswer::StopMessageProcessing => Some(LRESULT(0)),
         }
     }
 }

@@ -196,7 +196,7 @@ where
                 path_1,
                 path_2,
             });
-            ListenerAnswer::MessageProcessed
+            ListenerAnswer::StopMessageProcessing
         } else {
             ListenerAnswer::default()
         }
