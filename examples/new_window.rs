@@ -7,7 +7,6 @@ use num_enum::{
     IntoPrimitive,
 };
 use winapi_easy::messaging::ThreadMessageLoop;
-use winapi_easy::ui::Point;
 use winapi_easy::ui::menu::{
     MenuItem,
     PopupMenu,
@@ -39,13 +38,6 @@ use winapi_easy::ui::window::{
     WindowStyle,
 };
 
-#[derive(Copy, Clone, Debug)]
-enum MyMessage {
-    IconLeftClicked(Point),
-    IconRightClicked(Point),
-    MenuItem(MenuID),
-}
-
 #[derive(FromPrimitive, IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u32)]
 enum MenuID {
@@ -58,34 +50,18 @@ enum MenuID {
 }
 
 fn main() -> io::Result<()> {
-    let listener_data: Cell<Option<MyMessage>> = None.into();
-    let listener = |message: ListenerMessage| match message.variant {
-        ListenerMessageVariant::MenuCommand { selected_item_id } => {
-            listener_data.replace(Some(MyMessage::MenuItem(selected_item_id.into())));
-            ListenerAnswer::MessageProcessed
+    let listener_data: Cell<Option<ListenerMessage>> = None.into();
+    let listener = |message: ListenerMessage| {
+        let answer;
+        match message.variant {
+            ListenerMessageVariant::WindowDestroy => {
+                ThreadMessageLoop::post_quit_message();
+                answer = ListenerAnswer::CallDefaultHandler
+            }
+            _ => answer = ListenerAnswer::default(),
         }
-        ListenerMessageVariant::WindowDestroy => {
-            ThreadMessageLoop::post_quit_message();
-            ListenerAnswer::CallDefaultHandler
-        }
-        ListenerMessageVariant::NotificationIconSelect { icon_id, xy_coords } => {
-            println!(
-                "Selected notification icon id: {}, coords: ({}, {})",
-                icon_id, xy_coords.x, xy_coords.y
-            );
-            listener_data.replace(Some(MyMessage::IconLeftClicked(xy_coords)));
-            ListenerAnswer::MessageProcessed
-        }
-        ListenerMessageVariant::NotificationIconContextSelect { icon_id, xy_coords } => {
-            println!(
-                "Context-selected notification icon id: {}, coords: ({}, {})",
-                icon_id, xy_coords.x, xy_coords.y
-            );
-            listener_data.replace(Some(MyMessage::IconRightClicked(xy_coords)));
-            ListenerAnswer::MessageProcessed
-        }
-        ListenerMessageVariant::Other => ListenerAnswer::default(),
-        _ => ListenerAnswer::default(),
+        listener_data.replace(Some(message));
+        answer
     };
 
     let icon: Rc<Icon> = Default::default();
@@ -136,44 +112,58 @@ fn main() -> io::Result<()> {
     let loop_callback = || {
         if let Some(message) = listener_data.take() {
             let window_handle = window.as_handle();
-            match message {
-                MyMessage::IconLeftClicked(_coords) => {
+            match message.variant {
+                ListenerMessageVariant::MenuCommand { selected_item_id } => {
+                    match selected_item_id.into() {
+                        MenuID::ShowWindow => {
+                            window_handle.set_show_state(WindowShowState::Show)?;
+                        }
+                        MenuID::HideWindow => {
+                            window_handle.set_show_state(WindowShowState::Hide)?;
+                        }
+                        MenuID::ShowBalloonNotification => {
+                            let notification = BalloonNotification {
+                                title: "A notification",
+                                body: "Lorem ipsum",
+                                ..Default::default()
+                            };
+                            window
+                                .get_notification_icon(notification_icon_id)
+                                .set_balloon_notification(Some(notification))?;
+                        }
+                        MenuID::ShowMessageBox => {
+                            show_message_box(
+                                window_handle,
+                                MessageBoxOptions {
+                                    message: Some("Message"),
+                                    caption: Some("Caption"),
+                                    buttons: Default::default(),
+                                    icon: Some(Default::default()),
+                                    ..Default::default()
+                                },
+                            )?;
+                        }
+                        MenuID::Other(_) => unreachable!(),
+                    }
+                }
+                ListenerMessageVariant::NotificationIconSelect { icon_id, xy_coords } => {
+                    println!(
+                        "Selected notification icon id: {}, coords: ({}, {})",
+                        icon_id, xy_coords.x, xy_coords.y
+                    );
                     window_handle.set_show_state(WindowShowState::ShowNormal)?;
                     window_handle.set_as_foreground()?;
                 }
-                MyMessage::IconRightClicked(coords) => {
+                ListenerMessageVariant::NotificationIconContextSelect { icon_id, xy_coords } => {
+                    println!(
+                        "Context-selected notification icon id: {}, coords: ({}, {})",
+                        icon_id, xy_coords.x, xy_coords.y
+                    );
                     window_handle.set_as_foreground()?;
-                    popup.show_popup_menu(window_handle, coords)?;
+                    popup.show_popup_menu(window_handle, xy_coords)?;
                 }
-                MyMessage::MenuItem(MenuID::ShowWindow) => {
-                    window_handle.set_show_state(WindowShowState::Show)?;
-                }
-                MyMessage::MenuItem(MenuID::HideWindow) => {
-                    window_handle.set_show_state(WindowShowState::Hide)?;
-                }
-                MyMessage::MenuItem(MenuID::ShowBalloonNotification) => {
-                    let notification = BalloonNotification {
-                        title: "A notification",
-                        body: "Lorem ipsum",
-                        ..Default::default()
-                    };
-                    window
-                        .get_notification_icon(notification_icon_id)
-                        .set_balloon_notification(Some(notification))?;
-                }
-                MyMessage::MenuItem(MenuID::ShowMessageBox) => {
-                    show_message_box(
-                        window_handle,
-                        MessageBoxOptions {
-                            message: Some("Message"),
-                            caption: Some("Caption"),
-                            buttons: Default::default(),
-                            icon: Some(Default::default()),
-                            ..Default::default()
-                        },
-                    )?;
-                }
-                MyMessage::MenuItem(_) => panic!(),
+                ListenerMessageVariant::Other => (),
+                _ => (),
             }
         }
         Ok(())
