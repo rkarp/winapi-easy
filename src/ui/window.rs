@@ -7,6 +7,10 @@ use std::fmt::{
     Formatter,
 };
 use std::marker::PhantomData;
+use std::ops::{
+    BitOr,
+    Deref,
+};
 use std::ptr::NonNull;
 use std::rc::Rc;
 use std::{
@@ -16,7 +20,6 @@ use std::{
     vec,
 };
 
-use derive_more::BitOr;
 use num_enum::{
     IntoPrimitive,
     TryFromPrimitive,
@@ -82,6 +85,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     HICON,
     IsWindow,
     IsWindowVisible,
+    LWA_ALPHA,
     RegisterClassExW,
     SC_CLOSE,
     SC_MAXIMIZE,
@@ -101,6 +105,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SW_SHOWNORMAL,
     SendMessageW,
     SetForegroundWindow,
+    SetLayeredWindowAttributes,
     SetWindowLongPtrW,
     SetWindowPlacement,
     SetWindowTextW,
@@ -290,10 +295,7 @@ impl WindowHandle {
     pub fn set_as_foreground(self) -> io::Result<()> {
         unsafe {
             SetForegroundWindow(self.raw_handle).if_null_to_error_else_drop(|| {
-                io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "Cannot bring window to foreground",
-                )
+                io::Error::other("Cannot bring window to foreground")
             })?;
         }
         Ok(())
@@ -447,6 +449,13 @@ impl WindowHandle {
         unsafe {
             let _ = FlashWindowEx(&raw_config);
         };
+    }
+
+    fn internal_set_layered_opacity_alpha(self, alpha: u8) -> io::Result<()> {
+        unsafe {
+            SetLayeredWindowAttributes(self.raw_handle, Default::default(), alpha, LWA_ALPHA)?;
+        }
+        Ok(())
     }
 
     /// Returns the thread ID that created this window.
@@ -662,34 +671,43 @@ impl Default for WindowClassAppearance {
     }
 }
 
-pub trait WindowKind {
-    fn as_handle(&self) -> WindowHandle;
-}
+pub trait WindowSubtype: 'static {}
+
+impl WindowSubtype for () {}
+
+pub enum Layered {}
+
+impl WindowSubtype for Layered {}
+
+pub enum Magnifier {}
+
+impl WindowSubtype for Magnifier {}
 
 /// A window based on a [`WindowClass`].
 #[derive(Debug)]
-pub struct Window<'listener> {
+pub struct Window<WST = ()> {
     handle: WindowHandle,
     #[allow(dead_code)]
     class: Rc<WindowClass>,
     #[allow(dead_code)]
-    opaque_listener: OpaqueRawBox<'listener>,
+    opaque_listener: OpaqueRawBox<'static>,
+    #[allow(dead_code)]
+    parent: Option<OpaqueRawBox<'static>>,
     notification_icons: HashMap<NotificationIconId, NotificationIcon>,
+    phantom: PhantomData<WST>,
 }
 
-impl<'listener> Window<'listener> {
-    /// Creates a new window.
-    ///
-    /// User interaction with the window will result in messages sent to the [`WindowMessageListener`] provided here.
-    pub fn create_new<WML>(
+impl<WST: WindowSubtype> Window<WST> {
+    fn internal_new<WML, PST>(
         class: Rc<WindowClass>,
         listener: WML,
         window_name: &str,
         appearance: WindowAppearance,
-        parent: Option<WindowHandle>,
+        parent: Option<Rc<Window<PST>>>,
     ) -> io::Result<Self>
     where
-        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'listener,
+        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
+        PST: WindowSubtype,
     {
         let h_wnd: HWND = unsafe {
             CreateWindowExW(
@@ -701,7 +719,7 @@ impl<'listener> Window<'listener> {
                 0,
                 CW_USEDEFAULT,
                 0,
-                parent.map(|x| x.raw_handle),
+                parent.as_deref().map(|x| x.raw_handle),
                 None,
                 None,
                 None,
@@ -716,14 +734,20 @@ impl<'listener> Window<'listener> {
             handle,
             class,
             opaque_listener,
+            parent: parent.map(OpaqueRawBox::new),
             notification_icons: HashMap::new(),
+            phantom: PhantomData,
         })
+    }
+
+    pub fn as_handle(&self) -> WindowHandle {
+        self.handle
     }
 
     /// Changes the [`WindowMessageListener`].
     pub fn set_listener<WML>(&mut self, listener: WML) -> io::Result<()>
     where
-        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'listener,
+        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
     {
         let mut opaque_listener = OpaqueRawBox::new(OpaqueClosure::new(listener));
         unsafe {
@@ -776,13 +800,55 @@ impl<'listener> Window<'listener> {
     }
 }
 
-impl WindowKind for Window<'_> {
-    fn as_handle(&self) -> WindowHandle {
-        self.handle
+impl Window<()> {
+    /// Creates a new window.
+    ///
+    /// User interaction with the window will result in messages sent to the [`WindowMessageListener`] provided here.
+    pub fn new<WML, PST: WindowSubtype>(
+        class: Rc<WindowClass>,
+        listener: WML,
+        window_name: &str,
+        appearance: WindowAppearance,
+        parent: Option<Rc<Window<PST>>>,
+    ) -> io::Result<Self>
+    where
+        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
+    {
+        Self::internal_new(class, listener, window_name, appearance, parent)
     }
 }
 
-impl Drop for Window<'_> {
+impl Window<Layered> {
+    /// Creates a new layered window.
+    pub fn new_layered<WML>(
+        class: Rc<WindowClass>,
+        listener: WML,
+        window_name: &str,
+        mut appearance: WindowAppearance,
+    ) -> io::Result<Self>
+    where
+        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
+    {
+        appearance.extended_style =
+            appearance.extended_style | WindowExtendedStyle::Other(WS_EX_LAYERED.0);
+        Self::internal_new::<_, ()>(class, listener, window_name, appearance, None)
+    }
+
+    /// Sets the opacity value for a window using the [`WindowExtendedStyle::Layered`] style.
+    pub fn set_layered_opacity_alpha(self, alpha: u8) -> io::Result<()> {
+        self.handle.internal_set_layered_opacity_alpha(alpha)
+    }
+}
+
+impl<WST> Deref for Window<WST> {
+    type Target = WindowHandle;
+
+    fn deref(&self) -> &Self::Target {
+        &self.handle
+    }
+}
+
+impl<WST> Drop for Window<WST> {
     fn drop(&mut self) {
         unsafe {
             if self.handle.is_window() {
@@ -797,7 +863,7 @@ impl Drop for Window<'_> {
 /// Using combinations is possible with [`std::ops::BitOr`].
 ///
 /// See also: [Microsoft docs](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-styles)
-#[derive(IntoPrimitive, TryFromPrimitive, BitOr, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(IntoPrimitive, TryFromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[non_exhaustive]
 #[repr(u32)]
 pub enum WindowStyle {
@@ -816,6 +882,14 @@ impl Default for WindowStyle {
     }
 }
 
+impl BitOr for WindowStyle {
+    type Output = WindowStyle;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self::Other(u32::from(self) | u32::from(rhs))
+    }
+}
+
 impl From<WindowStyle> for WINDOW_STYLE {
     fn from(value: WindowStyle) -> Self {
         WINDOW_STYLE(value.into())
@@ -827,11 +901,10 @@ impl From<WindowStyle> for WINDOW_STYLE {
 /// Using combinations is possible with [`std::ops::BitOr`].
 ///
 /// See also: [Microsoft docs](https://learn.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles)
-#[derive(IntoPrimitive, TryFromPrimitive, BitOr, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(IntoPrimitive, TryFromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[non_exhaustive]
 #[repr(u32)]
 pub enum WindowExtendedStyle {
-    Layered = WS_EX_LAYERED.0,
     Left = WS_EX_LEFT.0,
     Topmost = WS_EX_TOPMOST.0,
     Transparent = WS_EX_TRANSPARENT.0,
@@ -842,6 +915,14 @@ pub enum WindowExtendedStyle {
 impl Default for WindowExtendedStyle {
     fn default() -> Self {
         Self::Left
+    }
+}
+
+impl BitOr for WindowExtendedStyle {
+    type Output = WindowExtendedStyle;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self::Other(u32::from(self) | u32::from(rhs))
     }
 }
 
@@ -1280,7 +1361,7 @@ mod tests {
                 ..Default::default()
             },
         )?;
-        let mut window = Window::create_new(
+        let mut window: Window = Window::new::<_, ()>(
             class.into(),
             listener,
             WINDOW_NAME,

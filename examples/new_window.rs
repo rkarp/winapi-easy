@@ -33,7 +33,6 @@ use winapi_easy::ui::window::{
     WindowAppearance,
     WindowClass,
     WindowClassAppearance,
-    WindowKind,
     WindowShowState,
     WindowStyle,
 };
@@ -50,8 +49,9 @@ enum MenuID {
 }
 
 fn main() -> io::Result<()> {
-    let listener_data: Cell<Option<ListenerMessage>> = None.into();
-    let listener = |message: ListenerMessage| {
+    let listener_data: Rc<Cell<Option<ListenerMessage>>> = Rc::new(None.into());
+    let listener_data_clone = listener_data.clone();
+    let listener = move |message: ListenerMessage| {
         let answer;
         match message.variant {
             ListenerMessageVariant::WindowDestroy => {
@@ -76,7 +76,7 @@ fn main() -> io::Result<()> {
         ..Default::default()
     };
     let mut window =
-        Window::create_new(class.into(), listener, "mywindow1", window_appearance, None)?;
+        Window::new::<_, ()>(class.into(), listener, "mywindow1", window_appearance, None)?;
     let notification_icon_id = NotificationIconId::Simple(0);
     let notification_icon_options = NotificationIconOptions {
         icon_id: notification_icon_id,
@@ -110,7 +110,7 @@ fn main() -> io::Result<()> {
         None,
     )?;
     let loop_callback = || {
-        if let Some(message) = listener_data.take() {
+        if let Some(message) = listener_data_clone.take() {
             let window_handle = window.as_handle();
             match message.variant {
                 ListenerMessageVariant::MenuCommand { selected_item_id } => {
@@ -152,14 +152,14 @@ fn main() -> io::Result<()> {
                         icon_id, xy_coords.x, xy_coords.y
                     );
                     window_handle.set_show_state(WindowShowState::ShowNormal)?;
-                    window_handle.set_as_foreground()?;
+                    let _ = window_handle.set_as_foreground();
                 }
                 ListenerMessageVariant::NotificationIconContextSelect { icon_id, xy_coords } => {
                     println!(
                         "Context-selected notification icon id: {}, coords: ({}, {})",
                         icon_id, xy_coords.x, xy_coords.y
                     );
-                    window_handle.set_as_foreground()?;
+                    let _ = window_handle.set_as_foreground();
                     popup.show_popup_menu(window_handle, xy_coords)?;
                 }
                 ListenerMessageVariant::Other => (),
