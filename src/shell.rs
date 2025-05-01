@@ -9,6 +9,7 @@ use std::path::{
     Path,
     PathBuf,
 };
+use std::rc::Rc;
 use std::{
     io,
     ptr,
@@ -71,7 +72,6 @@ use crate::ui::window::{
     Window,
     WindowClass,
     WindowClassAppearance,
-    WindowKind,
 };
 
 #[allow(dead_code)]
@@ -141,8 +141,9 @@ pub(crate) fn monitor_path_changes<F>(
 where
     F: FnMut(&PathChangeEvent) -> io::Result<()>,
 {
-    let listener_data: Cell<PathChangeEvent> = Cell::default();
-    let listener = |message: ListenerMessage| {
+    let listener_data: Rc<Cell<PathChangeEvent>> = Cell::default().into();
+    let listener_data_clone = listener_data.clone();
+    let listener = move |message: ListenerMessage| {
         if let ListenerMessageVariant::CustomUserMessage {
             message_id,
             w_param,
@@ -230,7 +231,7 @@ where
         "Shell Change Listener Class",
         WindowClassAppearance::empty(),
     )?;
-    let window = Window::create_new(
+    let window = Window::new::<_, ()>(
         window_class.into(),
         listener,
         "Shell Change Listener",
@@ -263,7 +264,7 @@ where
         },
     };
 
-    ThreadMessageLoop::run_thread_message_loop(|| callback(&listener_data.take()))?;
+    ThreadMessageLoop::run_thread_message_loop(|| callback(&listener_data_clone.take()))?;
     Ok(())
 }
 
