@@ -15,7 +15,23 @@ use windows::Win32::System::Console::{
     FreeConsole,
 };
 use windows::Win32::System::Shutdown::LockWorkStation;
+use windows::Win32::UI::HiDpi::{
+    DPI_AWARENESS_CONTEXT,
+    SetProcessDpiAwarenessContext,
+};
+pub use windows::Win32::UI::HiDpi::{
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE,
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+    DPI_AWARENESS_CONTEXT_SYSTEM_AWARE,
+    DPI_AWARENESS_CONTEXT_UNAWARE,
+    DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED,
+};
+use windows::Win32::UI::Magnification::MagShowSystemCursor;
+use windows::Win32::UI::WindowsAndMessaging::ClipCursor;
 
+use crate::internal::ReturnValue;
+
+pub mod desktop;
 pub mod menu;
 pub mod message_box;
 pub mod messaging;
@@ -43,6 +59,69 @@ impl RectTransform for RECT {
         let data = ptr::from_mut(self).cast::<POINT>();
         unsafe { std::slice::from_raw_parts_mut(data, 2) }
     }
+}
+
+#[must_use]
+pub struct CursorConfinement(());
+
+impl CursorConfinement {
+    /// Globally confines the cursor to a rectangular area on the screen.
+    ///
+    /// The confinement will be automatically released when [`CursorConfinement`] is dropped.
+    pub fn new(bounding_area: Rectangle) -> io::Result<Self> {
+        unsafe {
+            ClipCursor(Some(&bounding_area))?;
+        }
+        Ok(Self(()))
+    }
+
+    pub fn remove() -> io::Result<()> {
+        unsafe {
+            ClipCursor(None)?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for CursorConfinement {
+    fn drop(&mut self) {
+        Self::remove().expect("Releasing cursor clipping should never fail");
+    }
+}
+
+#[must_use]
+pub struct CursorConcealment(());
+
+impl CursorConcealment {
+    /// Globally hides the system cursor.
+    ///
+    /// The cursor will be automatically visible again when [`CursorConcealment`] is dropped.
+    pub fn new() -> io::Result<Self> {
+        unsafe {
+            MagShowSystemCursor(false).if_null_get_last_error_else_drop()?;
+        }
+        Ok(Self(()))
+    }
+
+    pub fn remove() -> io::Result<()> {
+        unsafe {
+            MagShowSystemCursor(true).if_null_get_last_error_else_drop()?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for CursorConcealment {
+    fn drop(&mut self) {
+        Self::remove().expect("Removing cursor hidden state failed");
+    }
+}
+
+pub fn set_dpi_awareness_context(context: DPI_AWARENESS_CONTEXT) -> io::Result<()> {
+    unsafe {
+        SetProcessDpiAwarenessContext(context)?;
+    }
+    Ok(())
 }
 
 /// Creates a console window for the current process if there is none.

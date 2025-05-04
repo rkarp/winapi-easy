@@ -93,7 +93,9 @@ ui = [
     "windows/Win32_Graphics_Gdi",
     "windows/Win32_System_Console",
     "windows/Win32_System_Shutdown",
+    "windows/Win32_UI_HiDpi",
     "windows/Win32_UI_Input_KeyboardAndMouse",
+    "windows/Win32_UI_Magnification",
 ]
 
 [[example]]

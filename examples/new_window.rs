@@ -76,7 +76,8 @@ fn main() -> io::Result<()> {
         ..Default::default()
     };
     let mut window =
-        Window::new::<_, ()>(class.into(), listener, "mywindow1", window_appearance, None)?;
+        Window::new_layered::<_, ()>(class.into(), listener, "mywindow1", window_appearance, None)?;
+    window.set_layered_opacity_alpha(u8::MAX)?;
     let notification_icon_id = NotificationIconId::Simple(0);
     let notification_icon_options = NotificationIconOptions {
         icon_id: notification_icon_id,
@@ -111,7 +112,6 @@ fn main() -> io::Result<()> {
     )?;
     let loop_callback = || {
         if let Some(message) = listener_data_clone.take() {
-            let window_handle = window.as_handle();
             match message.variant {
                 ListenerMessageVariant::MenuCommand { selected_item_id } => {
                     match selected_item_id.into() {
@@ -169,6 +169,5 @@ fn main() -> io::Result<()> {
         Ok(())
     };
     ThreadMessageLoop::run_thread_message_loop(loop_callback)?;
-    //std::thread::sleep_ms(10000);
     Ok(())
 }

@@ -71,20 +71,13 @@ impl ThreadMessageLoop {
     /// Posts a 'quit' message in the thread message loop.
     ///
     /// This will cause [`Self::run_thread_message_loop`] to return.
-    ///
-    /// # Panics
-    ///
-    /// Will panic if the message loop is not running.
     pub fn post_quit_message() {
-        assert!(
-            ThreadMessageLoop::is_loop_running(),
-            "Cannot post quit message because thread message loop is not running"
-        );
         unsafe {
             PostQuitMessage(0);
         }
     }
 
+    #[allow(dead_code)]
     fn is_loop_running() -> bool {
         Self::RUNNING.with(Cell::get)
     }

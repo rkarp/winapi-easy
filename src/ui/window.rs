@@ -1,5 +1,7 @@
 //! UI components related to windows.
 
+use std::any::Any;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{
@@ -33,9 +35,20 @@ use windows::Win32::Foundation::{
     SetLastError,
     WPARAM,
 };
-use windows::Win32::Graphics::Gdi::MapWindowPoints;
+use windows::Win32::Graphics::Gdi::{
+    InvalidateRect,
+    MapWindowPoints,
+};
 use windows::Win32::System::Console::GetConsoleWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetActiveWindow;
+use windows::Win32::UI::Magnification::{
+    MAGTRANSFORM,
+    MS_SHOWMAGNIFIEDCURSOR,
+    MagInitialize,
+    MagSetWindowSource,
+    MagSetWindowTransform,
+    WC_MAGNIFIER,
+};
 use windows::Win32::UI::Shell::{
     NIF_GUID,
     NIF_ICON,
@@ -83,8 +96,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowTextLengthW,
     GetWindowTextW,
     HICON,
+    HWND_BOTTOM,
+    HWND_NOTOPMOST,
+    HWND_TOP,
+    HWND_TOPMOST,
     IsWindow,
     IsWindowVisible,
+    KillTimer,
     LWA_ALPHA,
     RegisterClassExW,
     SC_CLOSE,
@@ -103,11 +121,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SW_SHOWNA,
     SW_SHOWNOACTIVATE,
     SW_SHOWNORMAL,
+    SWP_NOSIZE,
     SendMessageW,
     SetForegroundWindow,
     SetLayeredWindowAttributes,
+    SetTimer,
     SetWindowLongPtrW,
     SetWindowPlacement,
+    SetWindowPos,
     SetWindowTextW,
     ShowWindow,
     UnregisterClassW,
@@ -119,12 +140,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WPF_SETMINPOSITION,
     WS_CHILD,
     WS_CLIPCHILDREN,
+    WS_EX_COMPOSITED,
     WS_EX_LAYERED,
     WS_EX_LEFT,
     WS_EX_TOPMOST,
     WS_EX_TRANSPARENT,
     WS_OVERLAPPED,
     WS_OVERLAPPEDWINDOW,
+    WS_POPUP,
     WS_VISIBLE,
 };
 use windows::core::{
@@ -156,8 +179,10 @@ use crate::string::{
     to_wide_chars_iter,
 };
 use crate::ui::messaging::{
+    CustomUserMessage,
     ListenerAnswer,
     ListenerMessage,
+    RawMessage,
     generic_window_proc,
 };
 use crate::ui::resource::{
@@ -167,28 +192,14 @@ use crate::ui::resource::{
 };
 
 /// A (non-null) handle to a window.
-///
-/// # Multithreading
-///
-/// This handle is not [`Send`] and [`Sync`] because if the window was not created by this thread,
-/// then it is not guaranteed that the handle continues pointing to the same window because the underlying handles
-/// can get invalid or even recycled.
-///
-/// # Mutability
-///
-/// Even though various functions on this type are mutating, they all take non-mut references since
-/// it would be too hard to guarantee exclusive references when window messages are involved. The problem
-/// in that case is that the windows API will call back into Rust code and that code would then need
-/// exclusive references, which would at least make the API rather cumbersome. If an elegant solution
-/// to this problem is found, this API may change.
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub struct WindowHandle {
     raw_handle: HWND,
-    _marker: PhantomData<*mut ()>,
 }
 
-#[cfg(test)]
-static_assertions::assert_not_impl_any!(WindowHandle: Send, Sync);
+// See reasoning: https://docs.rs/hwnd0/0.0.0-2024-01-10/hwnd0/struct.HWND.html
+unsafe impl Send for WindowHandle {}
+unsafe impl Sync for WindowHandle {}
 
 impl WindowHandle {
     /// Returns the console window associated with the current process, if there is one.
@@ -227,20 +238,14 @@ impl WindowHandle {
     }
 
     pub(crate) fn from_non_null(handle: HWND) -> Self {
-        Self {
-            raw_handle: handle,
-            _marker: PhantomData,
-        }
+        Self { raw_handle: handle }
     }
 
     pub(crate) fn from_maybe_null(handle: HWND) -> Option<Self> {
         if handle.is_null() {
             None
         } else {
-            Some(Self {
-                raw_handle: handle,
-                _marker: PhantomData,
-            })
+            Some(Self { raw_handle: handle })
         }
     }
 
@@ -342,6 +347,21 @@ impl WindowHandle {
         Ok(())
     }
 
+    pub fn set_z_position(self, z_position: WindowZPosition) -> io::Result<()> {
+        unsafe {
+            SetWindowPos(
+                self.raw_handle,
+                Some(z_position.to_raw_hwnd()),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOSIZE,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Returns the window's client area rectangle relative to the screen.
     pub fn get_client_area_coords(self) -> io::Result<Rectangle> {
         let mut result_rect: Rectangle = Default::default();
@@ -370,6 +390,12 @@ impl WindowHandle {
             }
         }
         Ok(())
+    }
+
+    pub fn redraw(self) -> io::Result<()> {
+        unsafe {
+            InvalidateRect(Some(self.raw_handle), None, true).if_null_get_last_error_else_drop()
+        }
     }
 
     /// Returns the class name of the window's associated [`WindowClass`].
@@ -456,6 +482,22 @@ impl WindowHandle {
             SetLayeredWindowAttributes(self.raw_handle, Default::default(), alpha, LWA_ALPHA)?;
         }
         Ok(())
+    }
+
+    pub fn set_timer(self, timer_id: usize, interval_ms: u32) -> io::Result<()> {
+        unsafe {
+            SetTimer(Some(self.raw_handle), timer_id, interval_ms, None)
+                .if_null_get_last_error_else_drop()
+        }
+    }
+
+    pub fn kill_timer(self, timer_id: usize) -> io::Result<()> {
+        unsafe { KillTimer(Some(self.raw_handle), timer_id)? }
+        Ok(())
+    }
+
+    pub fn send_user_message(self, message: CustomUserMessage) -> io::Result<()> {
+        RawMessage::from(message).post_to_queue(Some(self))
     }
 
     /// Returns the thread ID that created this window.
@@ -574,6 +616,21 @@ impl Display for TryFromHWNDError {
 
 impl Error for TryFromHWNDError {}
 
+#[derive(Debug)]
+enum WindowClassVariant {
+    Builtin(PCWSTR),
+    Custom(Rc<WindowClass>),
+}
+
+impl WindowClassVariant {
+    fn raw_class_identifier(&self) -> PCWSTR {
+        match self {
+            WindowClassVariant::Builtin(pcwstr) => *pcwstr,
+            WindowClassVariant::Custom(window_class) => window_class.raw_class_identifier(),
+        }
+    }
+}
+
 /// Window class serving as a base for [`Window`].
 #[derive(Debug)]
 pub struct WindowClass {
@@ -684,26 +741,34 @@ pub enum Magnifier {}
 impl WindowSubtype for Magnifier {}
 
 /// A window based on a [`WindowClass`].
+///
+/// # Multithreading
+///
+/// `Window` is not [`Send`] because the window procedure and window destruction calls
+/// must only be called from the creating thread.
 #[derive(Debug)]
 pub struct Window<WST = ()> {
     handle: WindowHandle,
     #[allow(dead_code)]
-    class: Rc<WindowClass>,
+    class: WindowClassVariant,
     #[allow(dead_code)]
-    opaque_listener: OpaqueRawBox<'static>,
+    opaque_listener: Option<OpaqueRawBox<'static>>,
     #[allow(dead_code)]
-    parent: Option<OpaqueRawBox<'static>>,
+    parent: Option<Rc<dyn Any>>,
     notification_icons: HashMap<NotificationIconId, NotificationIcon>,
     phantom: PhantomData<WST>,
 }
 
+#[cfg(test)]
+static_assertions::assert_not_impl_any!(Window: Send);
+
 impl<WST: WindowSubtype> Window<WST> {
     fn internal_new<WML, PST>(
-        class: Rc<WindowClass>,
-        listener: WML,
+        class: WindowClassVariant,
+        listener: Option<WML>,
         window_name: &str,
         appearance: WindowAppearance,
-        parent: Option<Rc<Window<PST>>>,
+        parent: Option<Rc<RefCell<Window<PST>>>>,
     ) -> io::Result<Self>
     where
         WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
@@ -719,22 +784,28 @@ impl<WST: WindowSubtype> Window<WST> {
                 0,
                 CW_USEDEFAULT,
                 0,
-                parent.as_deref().map(|x| x.raw_handle),
+                parent.as_deref().map(|x| x.borrow().raw_handle),
                 None,
                 None,
                 None,
             )?
         };
-        let mut opaque_listener = OpaqueRawBox::new(OpaqueClosure::new(listener));
         let handle = WindowHandle::from_non_null(h_wnd);
-        unsafe {
-            handle.set_user_data_ptr(opaque_listener.as_mut_ptr::<()>())?;
-        }
+
+        let opaque_listener = if let Some(listener) = listener {
+            let mut opaque_listener = OpaqueRawBox::new(OpaqueClosure::new(listener));
+            unsafe {
+                handle.set_user_data_ptr(opaque_listener.as_mut_ptr::<()>())?;
+            }
+            Some(opaque_listener)
+        } else {
+            None
+        };
         Ok(Window {
             handle,
             class,
             opaque_listener,
-            parent: parent.map(OpaqueRawBox::new),
+            parent: parent.map(|x| x as Rc<dyn Any>),
             notification_icons: HashMap::new(),
             phantom: PhantomData,
         })
@@ -804,39 +875,100 @@ impl Window<()> {
     /// Creates a new window.
     ///
     /// User interaction with the window will result in messages sent to the [`WindowMessageListener`] provided here.
-    pub fn new<WML, PST: WindowSubtype>(
+    pub fn new<WML, PST>(
         class: Rc<WindowClass>,
         listener: WML,
         window_name: &str,
         appearance: WindowAppearance,
-        parent: Option<Rc<Window<PST>>>,
+        parent: Option<Rc<RefCell<Window<PST>>>>,
     ) -> io::Result<Self>
     where
         WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
+        PST: WindowSubtype,
     {
-        Self::internal_new(class, listener, window_name, appearance, parent)
+        let class = WindowClassVariant::Custom(class);
+        Self::internal_new(class, Some(listener), window_name, appearance, parent)
     }
 }
 
 impl Window<Layered> {
     /// Creates a new layered window.
-    pub fn new_layered<WML>(
+    pub fn new_layered<WML, PST>(
         class: Rc<WindowClass>,
         listener: WML,
         window_name: &str,
         mut appearance: WindowAppearance,
+        parent: Option<Rc<RefCell<Window<PST>>>>,
     ) -> io::Result<Self>
     where
         WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
+        PST: WindowSubtype,
     {
         appearance.extended_style =
             appearance.extended_style | WindowExtendedStyle::Other(WS_EX_LAYERED.0);
-        Self::internal_new::<_, ()>(class, listener, window_name, appearance, None)
+        let class = WindowClassVariant::Custom(class);
+        Self::internal_new(class, Some(listener), window_name, appearance, parent)
     }
 
     /// Sets the opacity value for a window using the [`WindowExtendedStyle::Layered`] style.
-    pub fn set_layered_opacity_alpha(self, alpha: u8) -> io::Result<()> {
+    pub fn set_layered_opacity_alpha(&self, alpha: u8) -> io::Result<()> {
         self.handle.internal_set_layered_opacity_alpha(alpha)
+    }
+}
+
+impl Window<Magnifier> {
+    pub fn new_magnifier(
+        window_name: &str,
+        mut appearance: WindowAppearance,
+        parent: Rc<RefCell<Window<Layered>>>,
+    ) -> io::Result<Self> {
+        unsafe {
+            MagInitialize().if_null_get_last_error_else_drop()?;
+        }
+        appearance.style =
+            appearance.style | WindowStyle::Other(MS_SHOWMAGNIFIEDCURSOR.cast_unsigned());
+        let class = WindowClassVariant::Builtin(WC_MAGNIFIER);
+        Self::internal_new(
+            class,
+            None::<fn(_) -> _>,
+            window_name,
+            appearance,
+            Some(parent),
+        )
+    }
+
+    pub fn set_magnification_factor(&self, mag_factor: f32) -> io::Result<()> {
+        const NUM_COLS: usize = 3;
+        fn multi_index(matrix: &mut [f32], row: usize, col: usize) -> &mut f32 {
+            &mut matrix[row * NUM_COLS + col]
+        }
+        let mut matrix: MAGTRANSFORM = Default::default();
+        *multi_index(&mut matrix.v, 0, 0) = mag_factor;
+        *multi_index(&mut matrix.v, 1, 1) = mag_factor;
+        *multi_index(&mut matrix.v, 2, 2) = 1.0;
+        unsafe {
+            MagSetWindowTransform(self.raw_handle, &mut matrix).if_null_get_last_error_else_drop()
+        }
+    }
+
+    pub fn set_magnification_source(&self, source: Rectangle) -> io::Result<()> {
+        let _ = unsafe { MagSetWindowSource(self.raw_handle, source).if_null_get_last_error()? };
+        Ok(())
+    }
+
+    pub fn set_lens_use_bitmap_smoothing(&self, use_smoothing: bool) -> io::Result<()> {
+        #[link(
+            name = "magnification.dll",
+            kind = "raw-dylib",
+            modifiers = "+verbatim"
+        )]
+        unsafe extern "system" {
+            fn MagSetLensUseBitmapSmoothing(h_wnd: HWND, use_smoothing: BOOL) -> BOOL;
+        }
+        unsafe {
+            MagSetLensUseBitmapSmoothing(self.raw_handle, use_smoothing.into())
+                .if_null_get_last_error_else_drop()
+        }
     }
 }
 
@@ -871,6 +1003,7 @@ pub enum WindowStyle {
     ClipChildren = WS_CLIPCHILDREN.0,
     Overlapped = WS_OVERLAPPED.0,
     OverlappedWindow = WS_OVERLAPPEDWINDOW.0,
+    Popup = WS_POPUP.0,
     Visible = WS_VISIBLE.0,
     #[num_enum(catch_all)]
     Other(u32),
@@ -905,6 +1038,7 @@ impl From<WindowStyle> for WINDOW_STYLE {
 #[non_exhaustive]
 #[repr(u32)]
 pub enum WindowExtendedStyle {
+    Composited = WS_EX_COMPOSITED.0,
     Left = WS_EX_LEFT.0,
     Topmost = WS_EX_TOPMOST.0,
     Transparent = WS_EX_TRANSPARENT.0,
@@ -1001,12 +1135,31 @@ impl WindowPlacement {
         self.raw_placement.ptMaxPosition = coords;
     }
 
-    pub fn get_restored_position(&self) -> Rectangle {
+    pub fn get_normal_position(&self) -> Rectangle {
         self.raw_placement.rcNormalPosition
     }
 
-    pub fn set_restored_position(&mut self, rectangle: Rectangle) {
+    pub fn set_normal_position(&mut self, rectangle: Rectangle) {
         self.raw_placement.rcNormalPosition = rectangle;
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WindowZPosition {
+    Bottom,
+    NoTopMost,
+    Top,
+    TopMost,
+}
+
+impl WindowZPosition {
+    fn to_raw_hwnd(self) -> HWND {
+        match self {
+            WindowZPosition::Bottom => HWND_BOTTOM,
+            WindowZPosition::NoTopMost => HWND_NOTOPMOST,
+            WindowZPosition::Top => HWND_TOP,
+            WindowZPosition::TopMost => HWND_TOPMOST,
+        }
     }
 }
 
