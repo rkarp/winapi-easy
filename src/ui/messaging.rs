@@ -24,6 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_DESTROY,
     WM_MENUCOMMAND,
     WM_SIZE,
+    WM_TIMER,
 };
 
 use crate::internal::windows_missing::{
@@ -54,11 +55,13 @@ impl ListenerMessage {
     fn from_raw_message(raw_message: RawMessage, window_handle: WindowHandle) -> Self {
         let variant = match raw_message.message {
             value if value >= WM_APP && value <= WM_APP + (u32::from(u8::MAX)) => {
-                ListenerMessageVariant::CustomUserMessage {
-                    message_id: (raw_message.message - WM_APP).try_into().unwrap(),
-                    w_param: raw_message.w_param,
-                    l_param: raw_message.l_param,
-                }
+                ListenerMessageVariant::CustomUserMessage(CustomUserMessage {
+                    message_id: (raw_message.message - WM_APP)
+                        .try_into()
+                        .expect("Message ID should be in u8 range"),
+                    w_param: raw_message.w_param.0,
+                    l_param: raw_message.l_param.0,
+                })
             }
             RawMessage::ID_NOTIFICATION_ICON_MSG => {
                 let icon_id = HIWORD(
@@ -106,6 +109,9 @@ impl ListenerMessage {
                     ListenerMessageVariant::Other
                 }
             }
+            WM_TIMER => ListenerMessageVariant::Timer {
+                timer_id: raw_message.w_param.0,
+            },
             WM_CLOSE => ListenerMessageVariant::WindowClose,
             WM_DESTROY => ListenerMessageVariant::WindowDestroy,
             _ => ListenerMessageVariant::Other,
@@ -133,11 +139,13 @@ pub enum ListenerMessageVariant {
         icon_id: u16,
         xy_coords: Point,
     },
-    CustomUserMessage {
-        message_id: u8,
-        w_param: WPARAM,
-        l_param: LPARAM,
+    Timer {
+        timer_id: usize,
     },
+    /// Message generated from raw message ID values between `WM_APP` and `WM_APP + u8::MAX` exclusive.
+    ///
+    /// Message ID `0` represents the raw value `WM_APP`.
+    CustomUserMessage(CustomUserMessage),
     Other,
 }
 
@@ -182,7 +190,7 @@ impl RawMessage {
     /// Posts a message to the thread message queue and returns immediately.
     ///
     /// If no window is given, the window procedure won't be called by `DispatchMessageW`.
-    fn post_to_queue(&self, window: Option<WindowHandle>) -> io::Result<()> {
+    pub(crate) fn post_to_queue(&self, window: Option<WindowHandle>) -> io::Result<()> {
         unsafe {
             PostMessageW(
                 window.map(Into::into),
@@ -202,6 +210,23 @@ impl RawMessage {
         };
         wakeup_message.post_to_queue(None)
     }
+}
+
+impl From<CustomUserMessage> for RawMessage {
+    fn from(custom_message: CustomUserMessage) -> Self {
+        RawMessage {
+            message: WM_APP + u32::from(custom_message.message_id),
+            w_param: WPARAM(custom_message.w_param),
+            l_param: LPARAM(custom_message.l_param),
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub struct CustomUserMessage {
+    pub message_id: u8,
+    pub w_param: usize,
+    pub l_param: isize,
 }
 
 pub(crate) unsafe extern "system" fn generic_window_proc(

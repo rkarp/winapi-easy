@@ -144,12 +144,7 @@ where
     let listener_data: Rc<Cell<PathChangeEvent>> = Cell::default().into();
     let listener_data_clone = listener_data.clone();
     let listener = move |message: ListenerMessage| {
-        if let ListenerMessageVariant::CustomUserMessage {
-            message_id,
-            w_param,
-            l_param,
-        } = message.variant
-        {
+        if let ListenerMessageVariant::CustomUserMessage(custom_message) = message.variant {
             fn get_path_from_id_list(raw_id_list: ITEMIDLIST) -> PathBuf {
                 let mut raw_path_buffer: ZeroTerminatedWideString =
                     ZeroTerminatedWideString(vec![0; 32000]);
@@ -165,14 +160,18 @@ where
                 raw_path_buffer.to_os_string().into()
             }
 
-            assert_eq!(message_id, 0);
+            // Should be `WM_APP`
+            assert_eq!(custom_message.message_id, 0);
             // See: https://stackoverflow.com/a/72001352
             let mut raw_ppp_idl = ptr::null_mut();
             let mut raw_event = 0;
             let lock = unsafe {
                 SHChangeNotification_Lock(
-                    HANDLE(ptr::with_exposed_provenance_mut(w_param.0)),
-                    l_param.0.try_into().unwrap_or_else(|_| unreachable!()),
+                    HANDLE(ptr::with_exposed_provenance_mut(custom_message.w_param)),
+                    custom_message
+                        .l_param
+                        .try_into()
+                        .unwrap_or_else(|_| unreachable!()),
                     Some(&mut raw_ppp_idl),
                     Some(&mut raw_event),
                 )

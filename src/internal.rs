@@ -124,6 +124,10 @@ impl ReturnValue for i32 {
     const NULL_VALUE: Self = 0;
 }
 
+impl ReturnValue for usize {
+    const NULL_VALUE: Self = 0;
+}
+
 impl ReturnValue for isize {
     const NULL_VALUE: Self = 0;
 }
@@ -396,6 +400,7 @@ impl<T> Drop for RawBox<T> {
     }
 }
 
+/// A box-like struct that hides its concrete type and does not invalidate raw pointers to its data when it is moved.
 #[derive(Debug)]
 pub(crate) struct OpaqueRawBox<'inner> {
     box_ptr: *mut (),
@@ -426,7 +431,9 @@ impl Drop for OpaqueRawBox<'_> {
     }
 }
 
-/// A struct that hides the concrete type of a closure.
+/// A struct that hides the concrete type of a closure but still allows a lifetime.
+/// 
+/// Does not invalidate raw pointers to its closure when moved.
 #[derive(Debug)]
 pub(crate) struct OpaqueClosure<'inner, I, O> {
     raw_boxed_closure: OpaqueRawBox<'inner>,
