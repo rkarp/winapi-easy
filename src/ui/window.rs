@@ -36,8 +36,11 @@ use windows::Win32::Foundation::{
     WPARAM,
 };
 use windows::Win32::Graphics::Gdi::{
+    GetWindowRgn,
     InvalidateRect,
     MapWindowPoints,
+    RGN_ERROR,
+    SetWindowRgn,
 };
 use windows::Win32::System::Console::GetConsoleWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::SetActiveWindow;
@@ -160,6 +163,7 @@ use super::{
     Point,
     RectTransform,
     Rectangle,
+    Region,
 };
 use crate::internal::{
     OpaqueClosure,
@@ -390,6 +394,26 @@ impl WindowHandle {
             }
         }
         Ok(())
+    }
+
+    pub fn get_region(self) -> Option<Region> {
+        let region = Region::from_rect(Default::default());
+        let result = unsafe { GetWindowRgn(self.raw_handle, region.raw_handle) };
+        if result == RGN_ERROR {
+            None
+        } else {
+            Some(region)
+        }
+    }
+
+    /// Sets the window's interaction region.
+    /// 
+    /// Will potentially remove visual styles from the window.
+    pub fn set_region(self, region: Region) -> io::Result<()> {
+        unsafe {
+            SetWindowRgn(self.raw_handle, Some(region.into()), true)
+                .if_null_get_last_error_else_drop()
+        }
     }
 
     pub fn redraw(self) -> io::Result<()> {
