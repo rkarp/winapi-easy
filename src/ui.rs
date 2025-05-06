@@ -10,6 +10,16 @@ use windows::Win32::Foundation::{
     POINT,
     RECT,
 };
+use windows::Win32::Graphics::Gdi::{
+    CombineRgn,
+    CreateRectRgn,
+    GDI_REGION_TYPE,
+    HRGN,
+    RGN_COMBINE_MODE,
+    RGN_COPY,
+    RGN_DIFF,
+    RGN_ERROR,
+};
 use windows::Win32::System::Console::{
     AllocConsole,
     FreeConsole,
@@ -58,6 +68,61 @@ impl RectTransform for RECT {
     fn as_point_array_mut(&mut self) -> &mut [POINT] {
         let data = ptr::from_mut(self).cast::<POINT>();
         unsafe { std::slice::from_raw_parts_mut(data, 2) }
+    }
+}
+
+impl ReturnValue for GDI_REGION_TYPE {
+    const NULL_VALUE: Self = RGN_ERROR;
+}
+
+/// A (non-null) handle to a region.
+#[derive(Eq, PartialEq, Debug)]
+pub struct Region {
+    raw_handle: HRGN,
+}
+
+impl Region {
+    pub fn from_rect(rect: Rectangle) -> Self {
+        let raw_handle = unsafe { CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom) };
+        Self::from_non_null(raw_handle)
+    }
+
+    pub(crate) fn from_non_null(handle: HRGN) -> Self {
+        Self { raw_handle: handle }
+    }
+
+    pub fn duplicate(&self) -> io::Result<Self> {
+        self.combine(None, RGN_COPY)
+    }
+
+    pub fn and_not_in(&self, other: &Region) -> io::Result<Self> {
+        self.combine(Some(other), RGN_DIFF)
+    }
+
+    fn combine(&self, other: Option<&Region>, mode: RGN_COMBINE_MODE) -> io::Result<Self> {
+        let dest = Self::from_rect(Default::default());
+        unsafe {
+            CombineRgn(
+                Some(dest.raw_handle),
+                Some(self.raw_handle),
+                other.map(|x| x.raw_handle),
+                mode,
+            )
+            .if_null_get_last_error_else_drop()?;
+        }
+        Ok(dest)
+    }
+}
+
+impl From<Region> for HRGN {
+    fn from(value: Region) -> Self {
+        value.raw_handle
+    }
+}
+
+impl From<&Region> for HRGN {
+    fn from(value: &Region) -> Self {
+        value.raw_handle
     }
 }
 
