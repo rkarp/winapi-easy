@@ -47,7 +47,6 @@ use windows::Win32::UI::Input::KeyboardAndMouse::SetActiveWindow;
 use windows::Win32::UI::Magnification::{
     MAGTRANSFORM,
     MS_SHOWMAGNIFIEDCURSOR,
-    MagInitialize,
     MagSetWindowSource,
     MagSetWindowTransform,
     WC_MAGNIFIER,
@@ -164,6 +163,7 @@ use super::{
     RectTransform,
     Rectangle,
     Region,
+    init_magnifier,
 };
 use crate::internal::{
     OpaqueClosure,
@@ -407,7 +407,7 @@ impl WindowHandle {
     }
 
     /// Sets the window's interaction region.
-    /// 
+    ///
     /// Will potentially remove visual styles from the window.
     pub fn set_region(self, region: Region) -> io::Result<()> {
         unsafe {
@@ -946,9 +946,7 @@ impl Window<Magnifier> {
         mut appearance: WindowAppearance,
         parent: Rc<RefCell<Window<Layered>>>,
     ) -> io::Result<Self> {
-        unsafe {
-            MagInitialize().if_null_get_last_error_else_drop()?;
-        }
+        init_magnifier()?;
         appearance.style =
             appearance.style | WindowStyle::Other(MS_SHOWMAGNIFIEDCURSOR.cast_unsigned());
         let class = WindowClassVariant::Builtin(WC_MAGNIFIER);
