@@ -1,5 +1,6 @@
 //! UI functionality.
 
+use std::sync::Mutex;
 use std::{
     io,
     ptr,
@@ -36,8 +37,13 @@ pub use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_UNAWARE,
     DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED,
 };
-use windows::Win32::UI::Magnification::MagShowSystemCursor;
+use windows::Win32::UI::Magnification::{
+    MagInitialize,
+    MagSetFullscreenTransform,
+    MagShowSystemCursor,
+};
 use windows::Win32::UI::WindowsAndMessaging::ClipCursor;
+use windows::core::BOOL;
 
 use crate::internal::ReturnValue;
 
@@ -126,6 +132,7 @@ impl From<&Region> for HRGN {
     }
 }
 
+#[derive(Debug)]
 #[must_use]
 pub struct CursorConfinement(());
 
@@ -154,6 +161,7 @@ impl Drop for CursorConfinement {
     }
 }
 
+#[derive(Debug)]
 #[must_use]
 pub struct CursorConcealment(());
 
@@ -179,6 +187,46 @@ impl CursorConcealment {
 impl Drop for CursorConcealment {
     fn drop(&mut self) {
         Self::remove().expect("Removing cursor hidden state failed");
+    }
+}
+
+fn init_magnifier() -> io::Result<()> {
+    static MAGNIFIER_INITIALIZED: Mutex<bool> = const { Mutex::new(false) };
+
+    let mut initialized = MAGNIFIER_INITIALIZED.lock().unwrap();
+    if *initialized {
+        Ok(())
+    } else {
+        let result = unsafe { MagInitialize().if_null_get_last_error_else_drop() };
+        *initialized = true;
+        result
+    }
+}
+
+pub fn set_fullscreen_magnification(mag_factor: f32, offset: Point) -> io::Result<()> {
+    init_magnifier()?;
+    unsafe {
+        MagSetFullscreenTransform(mag_factor, offset.x, offset.y).if_null_get_last_error_else_drop()
+    }
+}
+
+pub fn remove_fullscreen_magnification() -> io::Result<()> {
+    set_fullscreen_magnification(1.0, Point { x: 0, y: 0 })
+}
+
+pub fn set_fullscreen_magnification_use_bitmap_smoothing(use_smoothing: bool) -> io::Result<()> {
+    #[link(
+        name = "magnification.dll",
+        kind = "raw-dylib",
+        modifiers = "+verbatim"
+    )]
+    unsafe extern "system" {
+        fn MagSetFullscreenUseBitmapSmoothing(use_smoothing: BOOL) -> BOOL;
+    }
+
+    init_magnifier()?;
+    unsafe {
+        MagSetFullscreenUseBitmapSmoothing(use_smoothing.into()).if_null_get_last_error_else_drop()
     }
 }
 
