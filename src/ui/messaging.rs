@@ -27,16 +27,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_TIMER,
 };
 
+use crate::internal::catch_unwind_and_abort;
 use crate::internal::windows_missing::{
     GET_X_LPARAM,
     GET_Y_LPARAM,
     HIWORD,
     LOWORD,
     NIN_KEYSELECT,
-};
-use crate::internal::{
-    OpaqueClosure,
-    catch_unwind_and_abort,
 };
 use crate::messaging::ThreadMessageLoop;
 use crate::ui::menu::MenuHandle;
@@ -168,7 +165,7 @@ impl ListenerAnswer {
     }
 }
 
-pub(crate) type WmlOpaqueClosure<'a> = OpaqueClosure<'a, ListenerMessage, ListenerAnswer>;
+pub(crate) type WmlOpaqueClosure<'a> = Box<dyn FnMut(ListenerMessage) -> ListenerAnswer + 'a>;
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct RawMessage {
@@ -256,7 +253,7 @@ pub(crate) unsafe extern "system" fn generic_window_proc(
                 // Many messages won't go through the thread message loop, so we need to notify it.
                 // No chance of an infinite loop here since the window procedure won't be called for messages with no associated windows.
                 RawMessage::post_loop_wakeup_message().unwrap();
-                unsafe { listener_ptr.as_mut() }.to_closure()(listener_message).to_raw_lresult()
+                (unsafe { listener_ptr.as_mut().as_mut() })(listener_message).to_raw_lresult()
             },
         );
 

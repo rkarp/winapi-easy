@@ -382,11 +382,17 @@ pub(crate) fn catch_unwind_and_abort<F: FnOnce() -> R, R>(f: F) -> R {
 /// A box-like struct that does not invalidate raw pointers to its data when it is moved.
 #[derive(Debug)]
 #[repr(transparent)]
-pub(crate) struct RawBox<T>(*mut T);
+pub(crate) struct RawBox<T: ?Sized>(*mut T);
 
 impl<T> RawBox<T> {
     pub(crate) fn new(value: T) -> Self {
-        Self(Box::into_raw(Box::new(value)))
+        Self::from_box(Box::new(value))
+    }
+}
+
+impl<T: ?Sized> RawBox<T> {
+    pub(crate) fn from_box(value: Box<T>) -> Self {
+        Self(Box::into_raw(value))
     }
 
     pub(crate) fn as_mut_ptr(&mut self) -> *mut T {
@@ -394,9 +400,15 @@ impl<T> RawBox<T> {
     }
 }
 
-impl<T> Drop for RawBox<T> {
+impl<T: ?Sized> Drop for RawBox<T> {
     fn drop(&mut self) {
         let _ = unsafe { Box::from_raw(self.0) };
+    }
+}
+
+impl<T: ?Sized> From<Box<T>> for RawBox<T> {
+    fn from(value: Box<T>) -> Self {
+        Self::from_box(value)
     }
 }
 
@@ -432,7 +444,7 @@ impl Drop for OpaqueRawBox<'_> {
 }
 
 /// A struct that hides the concrete type of a closure but still allows a lifetime.
-/// 
+///
 /// Does not invalidate raw pointers to its closure when moved.
 #[derive(Debug)]
 pub(crate) struct OpaqueClosure<'inner, I, O> {
