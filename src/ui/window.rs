@@ -166,8 +166,7 @@ use super::{
     init_magnifier,
 };
 use crate::internal::{
-    OpaqueClosure,
-    OpaqueRawBox,
+    RawBox,
     ReturnValue,
     custom_err_with_code,
     with_sync_closure_to_callback2,
@@ -187,6 +186,7 @@ use crate::ui::messaging::{
     ListenerAnswer,
     ListenerMessage,
     RawMessage,
+    WmlOpaqueClosure,
     generic_window_proc,
 };
 use crate::ui::resource::{
@@ -770,13 +770,12 @@ impl WindowSubtype for Magnifier {}
 ///
 /// `Window` is not [`Send`] because the window procedure and window destruction calls
 /// must only be called from the creating thread.
-#[derive(Debug)]
 pub struct Window<WST = ()> {
     handle: WindowHandle,
     #[allow(dead_code)]
     class: WindowClassVariant,
     #[allow(dead_code)]
-    opaque_listener: Option<OpaqueRawBox<'static>>,
+    opaque_listener: Option<RawBox<WmlOpaqueClosure<'static>>>,
     #[allow(dead_code)]
     parent: Option<Rc<dyn Any>>,
     notification_icons: HashMap<NotificationIconId, NotificationIcon>,
@@ -817,10 +816,7 @@ impl<WST: WindowSubtype> Window<WST> {
         let handle = WindowHandle::from_non_null(h_wnd);
 
         let opaque_listener = if let Some(listener) = listener {
-            let mut opaque_listener = OpaqueRawBox::new(OpaqueClosure::new(listener));
-            unsafe {
-                handle.set_user_data_ptr(opaque_listener.as_mut_ptr::<()>())?;
-            }
+            let opaque_listener = unsafe { Self::set_listener_internal(handle, listener) }?;
             Some(opaque_listener)
         } else {
             None
@@ -844,12 +840,27 @@ impl<WST: WindowSubtype> Window<WST> {
     where
         WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
     {
-        let mut opaque_listener = OpaqueRawBox::new(OpaqueClosure::new(listener));
-        unsafe {
-            self.handle
-                .set_user_data_ptr(opaque_listener.as_mut_ptr::<()>())?;
-        }
+        unsafe { Self::set_listener_internal(self.handle, listener) }?;
         Ok(())
+    }
+
+    /// Internally sets the listener
+    ///
+    /// # Safety
+    ///
+    /// The returned value must not be dropped while the window callback may still be active.
+    unsafe fn set_listener_internal<WML>(
+        window_handle: WindowHandle,
+        listener: WML,
+    ) -> io::Result<RawBox<WmlOpaqueClosure<'static>>>
+    where
+        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
+    {
+        let mut opaque_listener = RawBox::new(Box::new(listener) as WmlOpaqueClosure);
+        unsafe {
+            window_handle.set_user_data_ptr::<WmlOpaqueClosure>(opaque_listener.as_mut_ptr())?;
+        }
+        Ok(opaque_listener)
     }
 
     /// Adds a new notification icon.
