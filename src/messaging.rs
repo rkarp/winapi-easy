@@ -13,7 +13,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::BOOL;
 
-use crate::internal::ReturnValue;
+use crate::internal::{
+    CustomAutoDrop,
+    ReturnValue,
+};
 
 /// Windows thread message loop functions.
 ///
@@ -40,6 +43,21 @@ impl ThreadMessageLoop {
     where
         F: FnMut() -> io::Result<()>,
     {
+        Self::run_thread_message_loop_internal(|_msg| loop_callback(), true, None)
+    }
+
+    pub(crate) fn run_thread_message_loop_internal<F>(
+        mut loop_msg_callback: F,
+        dispatch_to_wnd_proc: bool,
+        filter_message_id: Option<u32>,
+    ) -> io::Result<()>
+    where
+        F: FnMut(&MSG) -> io::Result<()>,
+    {
+        let _auto_unset_running = CustomAutoDrop {
+            value: (),
+            drop_fn: |()| Self::RUNNING.set(false),
+        };
         Self::RUNNING.with(|running| {
             assert!(
                 !running.get(),
@@ -47,25 +65,40 @@ impl ThreadMessageLoop {
             );
             running.set(true);
         });
-        let mut msg: MSG = Default::default();
         loop {
-            unsafe {
-                GetMessageW(&mut msg, None, 0, 0)
-                    .if_eq_to_error(BOOL(-1), io::Error::last_os_error)?;
+            match Self::process_single_thread_message(dispatch_to_wnd_proc, filter_message_id)? {
+                ThreadMessageProcessingResult::Success(msg) => {
+                    if !dispatch_to_wnd_proc || Self::ENABLE_CALLBACK_ONCE.with(Cell::take) {
+                        loop_msg_callback(&msg)?;
+                    }
+                }
+                ThreadMessageProcessingResult::Quit => {
+                    break Ok(());
+                }
             }
-            if msg.message == WM_QUIT {
-                Self::RUNNING.with(|running| running.set(false));
-                break;
-            }
+        }
+    }
+
+    pub(crate) fn process_single_thread_message(
+        dispatch_to_wnd_proc: bool,
+        filter_message_id: Option<u32>,
+    ) -> io::Result<ThreadMessageProcessingResult> {
+        let filter_message_id = filter_message_id.unwrap_or(0);
+        let mut msg: MSG = Default::default();
+        unsafe {
+            GetMessageW(&mut msg, None, filter_message_id, filter_message_id)
+                .if_eq_to_error(BOOL(-1), io::Error::last_os_error)?;
+        }
+        if msg.message == WM_QUIT {
+            return Ok(ThreadMessageProcessingResult::Quit);
+        }
+        if dispatch_to_wnd_proc {
             unsafe {
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
-            if Self::ENABLE_CALLBACK_ONCE.with(Cell::take) {
-                loop_callback()?;
-            }
         }
-        Ok(())
+        Ok(ThreadMessageProcessingResult::Success(msg))
     }
 
     /// Posts a 'quit' message in the thread message loop.
@@ -78,7 +111,13 @@ impl ThreadMessageLoop {
     }
 
     #[allow(dead_code)]
-    fn is_loop_running() -> bool {
+    pub(crate) fn is_loop_running() -> bool {
         Self::RUNNING.with(Cell::get)
     }
+}
+
+#[must_use]
+pub(crate) enum ThreadMessageProcessingResult {
+    Success(MSG),
+    Quit,
 }
