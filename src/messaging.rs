@@ -80,6 +80,7 @@ impl ThreadMessageLoop {
         dispatch_to_wnd_proc: bool,
         filter_message_id: Option<u32>,
     ) -> io::Result<ThreadMessageProcessingResult> {
+        // Warning: Message filtering will also filter out `WM_QUIT` messages if posted via `PostThreadMessageW`.
         let filter_message_id = filter_message_id.unwrap_or(0);
         let mut msg: MSG = Default::default();
         unsafe {
@@ -105,6 +106,11 @@ impl ThreadMessageLoop {
         unsafe {
             PostQuitMessage(0);
         }
+    }
+
+    #[cfg(feature = "process")]
+    pub fn post_thread_quit_message(thread_id: crate::process::ThreadId) -> io::Result<()> {
+        thread_id.post_quit_message()
     }
 
     #[allow(dead_code)]

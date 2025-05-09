@@ -48,6 +48,10 @@ use windows::Win32::System::Threading::{
     THREAD_MODE_BACKGROUND_END,
     THREAD_PRIORITY,
 };
+use windows::Win32::UI::WindowsAndMessaging::{
+    PostThreadMessageW,
+    WM_QUIT,
+};
 
 #[rustversion::before(1.87)]
 use crate::internal::std_unstable::CastUnsigned;
@@ -290,6 +294,11 @@ impl ThreadId {
     /// Returns the current thread ID.
     pub fn current() -> Self {
         Self(unsafe { GetCurrentThreadId() })
+    }
+
+    pub fn post_quit_message(self) -> io::Result<()> {
+        unsafe { PostThreadMessageW(self.0, WM_QUIT, Default::default(), Default::default())? }
+        Ok(())
     }
 }
 
