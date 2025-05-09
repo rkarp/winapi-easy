@@ -16,14 +16,13 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     RegisterHotKey,
     UnregisterHotKey,
 };
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetMessageW,
-    MSG,
-    WM_HOTKEY,
-};
-use windows::core::BOOL;
+use windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY;
 
 use crate::input::KeyboardKey;
+use crate::messaging::{
+    ThreadMessageLoop,
+    ThreadMessageProcessingResult,
+};
 
 /// A group of global hotkeys that can be listened for.
 ///
@@ -161,21 +160,18 @@ where
     type Item = io::Result<ID>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut message: MSG = Default::default();
-        let getmsg_result = unsafe { GetMessageW(&mut message, None, WM_HOTKEY, WM_HOTKEY) };
-        match getmsg_result {
-            BOOL(-1) => Some(Err(io::Error::from(windows::core::Error::from_win32()))),
-            BOOL(0) => None, // WM_QUIT
-            _ => {
-                self.id_assocs
-                    .get(
-                        &message.wParam.0.try_into().expect(
+        ThreadMessageLoop::process_single_thread_message(false, Some(WM_HOTKEY))
+            .map(|value| match value {
+                ThreadMessageProcessingResult::Success(message) => {
+                    self.id_assocs
+                        .get(&message.wParam.0.try_into().expect(
                             "ID from GetMessageW should be in range for ID map integer type",
-                        ),
-                    )
-                    .map(|user_id| Ok(*user_id))
-            }
-        }
+                        ))
+                        .copied()
+                }
+                ThreadMessageProcessingResult::Quit => None,
+            })
+            .transpose()
     }
 }
 
