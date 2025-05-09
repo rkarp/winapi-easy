@@ -160,16 +160,24 @@ where
     type Item = io::Result<ID>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        ThreadMessageLoop::process_single_thread_message(false, Some(WM_HOTKEY))
-            .map(|value| match value {
+        ThreadMessageLoop::process_single_thread_message(false, None)
+            .and_then(|value| match value {
                 ThreadMessageProcessingResult::Success(message) => {
-                    self.id_assocs
-                        .get(&message.wParam.0.try_into().expect(
-                            "ID from GetMessageW should be in range for ID map integer type",
+                    if message.message == WM_HOTKEY {
+                        Ok(self
+                            .id_assocs
+                            .get(&message.wParam.0.try_into().expect(
+                                "ID from GetMessageW should be in range for ID map integer type",
+                            ))
+                            .copied())
+                    } else {
+                        Err(io::Error::new(
+                            io::ErrorKind::ResourceBusy,
+                            "Messages other than `WM_HOTKEY` are not allowed on hotkey threads",
                         ))
-                        .copied()
+                    }
                 }
-                ThreadMessageProcessingResult::Quit => None,
+                ThreadMessageProcessingResult::Quit => Ok(None),
             })
             .transpose()
     }
