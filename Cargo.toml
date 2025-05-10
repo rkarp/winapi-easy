@@ -124,7 +124,7 @@ required-features = ["media"]
 
 [[example]]
 name = "magnifier_control"
-required-features = ["ui"]
+required-features = ["input", "process", "ui"]
 
 [[example]]
 name = "new_window"
