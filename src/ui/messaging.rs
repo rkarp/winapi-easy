@@ -35,7 +35,6 @@ use crate::internal::windows_missing::{
     LOWORD,
     NIN_KEYSELECT,
 };
-use crate::messaging::ThreadMessageLoop;
 use crate::ui::menu::MenuHandle;
 use crate::ui::{
     Point,
@@ -247,9 +246,6 @@ pub(crate) unsafe extern "system" fn generic_window_proc(
         let listener_result = unsafe { window.get_user_data_ptr::<WmlOpaqueClosure>() }.and_then(
             |mut listener_ptr| {
                 let listener_message = ListenerMessage::from_raw_message(raw_message, window);
-                if !matches!(listener_message.variant, ListenerMessageVariant::Other) {
-                    ThreadMessageLoop::ENABLE_CALLBACK_ONCE.with(|x| x.set(true));
-                }
                 // Many messages won't go through the thread message loop, so we need to notify it.
                 // No chance of an infinite loop here since the window procedure won't be called for messages with no associated windows.
                 RawMessage::post_loop_wakeup_message().unwrap();
