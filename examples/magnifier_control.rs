@@ -1,18 +1,31 @@
-//! An example magnifier app that will automatically magnify the Windows "Calculator" window if it is active.
+//! An example magnifier app that will automatically magnify the foreground window on hotkey Ctrl + Alt + Shift + F.
 //!
 //! Exit via notification icon command.
 use std::cell::{
     Cell,
     RefCell,
 };
-use std::io;
 use std::rc::Rc;
+use std::sync::{
+    Mutex,
+    OnceLock,
+};
+use std::{
+    io,
+    thread,
+};
 
 use num_enum::{
     FromPrimitive,
     IntoPrimitive,
 };
+use winapi_easy::input::KeyboardKey;
+use winapi_easy::input::hotkeys::{
+    GlobalHotkeySet,
+    Modifier,
+};
 use winapi_easy::messaging::ThreadMessageLoop;
+use winapi_easy::process::ThreadId;
 use winapi_easy::ui::desktop::MonitorHandle;
 use winapi_easy::ui::menu::{
     MenuItem,
@@ -44,6 +57,7 @@ use winapi_easy::ui::window::{
 };
 use winapi_easy::ui::{
     CursorConcealment,
+    CursorConfinement,
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE,
     Point,
     Rectangle,
@@ -59,6 +73,20 @@ enum MenuID {
 }
 
 fn main() -> io::Result<()> {
+    let target_window_setting: Mutex<Option<WindowHandle>> = Default::default();
+    let hotkey_thread_id: OnceLock<ThreadId> = OnceLock::new();
+    thread::scope(|scope| {
+        let hotkey_thread =
+            scope.spawn(|| hotkey_set_target_window(&target_window_setting, &hotkey_thread_id));
+        main_thread(&target_window_setting)?;
+        if let Some(thread_id) = hotkey_thread_id.get() {
+            thread_id.post_quit_message()?;
+        }
+        hotkey_thread.join().unwrap()
+    })
+}
+
+fn main_thread(target_window_setting: &Mutex<Option<WindowHandle>>) -> io::Result<()> {
     set_dpi_awareness_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE)?;
 
     let monitor = MonitorHandle::from_window(WindowHandle::get_desktop_window()?);
@@ -134,10 +162,9 @@ fn main() -> io::Result<()> {
     let popup = PopupMenu::new()?;
     popup.insert_menu_item(MenuItem::Text("Exit"), MenuID::Exit.into(), None)?;
 
-    // Class name used by Calculator app
-    let source_window_class_name = "ApplicationFrameWindow";
     let mut magnifier_active = false;
     let mut cursor_hider: Option<CursorConcealment> = None;
+    let mut cursor_confinement: Option<CursorConfinement> = None;
 
     let loop_callback = || {
         if let Some(message) = listener_data_clone.take() {
@@ -155,7 +182,11 @@ fn main() -> io::Result<()> {
                 ListenerMessageVariant::Timer { timer_id: 0 } => {
                     let disable;
                     if let Some(foreground_window) = WindowHandle::get_foreground_window() {
-                        if foreground_window.get_class_name()? == source_window_class_name {
+                        if target_window_setting
+                            .lock()
+                            .unwrap()
+                            .is_some_and(|target_window| target_window == foreground_window)
+                        {
                             if !magnifier_active {
                                 cursor_hider = Some(CursorConcealment::new()?);
                                 host_window_handle.set_show_state(WindowShowState::Show)?;
@@ -176,6 +207,7 @@ fn main() -> io::Result<()> {
                             magnifier_window
                                 .set_magnification_factor(scaling_result.max_scale_factor as f32)?;
                             magnifier_window.set_magnification_source(source_window_rect)?;
+                            cursor_confinement = Some(CursorConfinement::new(source_window_rect)?);
                             disable = false;
                         } else {
                             disable = true;
@@ -185,6 +217,7 @@ fn main() -> io::Result<()> {
                     };
                     if disable && magnifier_active {
                         cursor_hider = None;
+                        cursor_confinement = None;
                         host_window_handle.set_z_position(WindowZPosition::Bottom)?;
                         host_window_handle.set_show_state(WindowShowState::Hide)?;
                         magnifier_active = false;
@@ -197,6 +230,31 @@ fn main() -> io::Result<()> {
         Ok(())
     };
     ThreadMessageLoop::run_thread_message_loop(loop_callback)?;
+    Ok(())
+}
+
+fn hotkey_set_target_window(
+    target_window_setting: &Mutex<Option<WindowHandle>>,
+    hotkey_thread_id: &OnceLock<ThreadId>,
+) -> io::Result<()> {
+    hotkey_thread_id.get_or_init(|| ThreadId::current());
+    let hotkey_def = GlobalHotkeySet::new().add_hotkey(
+        0,
+        Modifier::Ctrl + Modifier::Alt + Modifier::Shift + KeyboardKey::F,
+    );
+    for event in hotkey_def.listen_for_hotkeys()? {
+        if event? == 0 {
+            let foreground_window = WindowHandle::get_foreground_window();
+            let mut target_window_setting_lock = target_window_setting.lock().unwrap();
+            if target_window_setting_lock.is_some() {
+                *target_window_setting_lock = None;
+            } else {
+                *target_window_setting_lock = foreground_window;
+            }
+        } else {
+            unreachable!()
+        }
+    }
     Ok(())
 }
 
