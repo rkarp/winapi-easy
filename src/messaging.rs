@@ -26,7 +26,6 @@ pub enum ThreadMessageLoop {}
 impl ThreadMessageLoop {
     thread_local! {
         static RUNNING: Cell<bool> = const { Cell::new(false) };
-        pub(crate) static ENABLE_CALLBACK_ONCE: Cell<bool> = const { Cell::new(false) };
     }
 
     /// Runs the Windows thread message loop.
@@ -68,9 +67,7 @@ impl ThreadMessageLoop {
         loop {
             match Self::process_single_thread_message(dispatch_to_wnd_proc, filter_message_id)? {
                 ThreadMessageProcessingResult::Success(msg) => {
-                    if !dispatch_to_wnd_proc || Self::ENABLE_CALLBACK_ONCE.with(Cell::take) {
-                        loop_msg_callback(&msg)?;
-                    }
+                    loop_msg_callback(&msg)?;
                 }
                 ThreadMessageProcessingResult::Quit => {
                     break Ok(());
