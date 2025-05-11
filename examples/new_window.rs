@@ -1,4 +1,7 @@
-use std::cell::Cell;
+use std::cell::{
+    Cell,
+    RefCell,
+};
 use std::io;
 use std::rc::Rc;
 
@@ -8,8 +11,9 @@ use num_enum::{
 };
 use winapi_easy::messaging::ThreadMessageLoop;
 use winapi_easy::ui::menu::{
-    MenuItem,
-    PopupMenu,
+    SubMenu,
+    SubMenuItem,
+    TextMenuItem,
 };
 use winapi_easy::ui::message_box::{
     MessageBoxOptions,
@@ -40,6 +44,7 @@ use winapi_easy::ui::window::{
 #[derive(FromPrimitive, IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u32)]
 enum MenuID {
+    None,
     HideWindow,
     ShowWindow,
     ShowBalloonNotification,
@@ -89,32 +94,50 @@ fn main() -> io::Result<()> {
     let window_handle = window.as_handle();
     window_handle.set_caption_text("My Window")?;
     window_handle.set_show_state(WindowShowState::Show)?;
-    let popup = PopupMenu::new()?;
+    let mut popup = SubMenu::new()?;
     popup.insert_menu_item(
-        MenuItem::Text("Show window"),
-        MenuID::ShowWindow.into(),
+        SubMenuItem::Text(TextMenuItem::default_with_text(
+            MenuID::ShowWindow.into(),
+            "Show window",
+        )),
         None,
     )?;
     popup.insert_menu_item(
-        MenuItem::Text("Hide window"),
-        MenuID::HideWindow.into(),
+        SubMenuItem::Text(TextMenuItem::default_with_text(
+            MenuID::HideWindow.into(),
+            "Hide window",
+        )),
         None,
     )?;
     popup.insert_menu_item(
-        MenuItem::Text("Show balloon notification"),
-        MenuID::ShowBalloonNotification.into(),
+        SubMenuItem::Text(TextMenuItem::default_with_text(
+            MenuID::ShowBalloonNotification.into(),
+            "Show balloon notification",
+        )),
         None,
     )?;
-    popup.insert_menu_item(
-        MenuItem::Text("Show message box"),
+    let messsage_box_item = SubMenuItem::Text(TextMenuItem::default_with_text(
         MenuID::ShowMessageBox.into(),
+        "Show message box",
+    ));
+    popup.insert_menu_item(messsage_box_item.clone(), None)?;
+    let mut submenu = SubMenu::new()?;
+    submenu.insert_menu_item(messsage_box_item, None)?;
+    let submenu = Rc::new(RefCell::new(submenu));
+    popup.insert_menu_item(
+        SubMenuItem::Text(TextMenuItem {
+            sub_menu: Some(submenu),
+            ..TextMenuItem::default_with_text(MenuID::None.into(), "Submenu")
+        }),
         None,
     )?;
+
     let loop_callback = || {
         if let Some(message) = listener_data_clone.take() {
             match message.variant {
                 ListenerMessageVariant::MenuCommand { selected_item_id } => {
                     match selected_item_id.into() {
+                        MenuID::None => (),
                         MenuID::ShowWindow => {
                             window_handle.set_show_state(WindowShowState::Show)?;
                         }
@@ -160,7 +183,7 @@ fn main() -> io::Result<()> {
                         icon_id, xy_coords.x, xy_coords.y
                     );
                     let _ = window_handle.set_as_foreground();
-                    popup.show_popup_menu(window_handle, xy_coords)?;
+                    popup.show_menu(window_handle, xy_coords)?;
                 }
                 ListenerMessageVariant::Other => (),
                 _ => (),

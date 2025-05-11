@@ -1375,11 +1375,8 @@ impl Drop for NotificationIcon {
     fn drop(&mut self) {
         let call_data =
             get_notification_call_data(self.window, self.id, false, None, None, None, None);
-        unsafe {
-            Shell_NotifyIconW(NIM_DELETE, &call_data)
-                .if_null_to_error_else_drop(|| io::Error::other("Cannot remove notification icon"))
-                .unwrap();
-        }
+        // Ignore seemingly unavoidable random errors here
+        let _ = unsafe { Shell_NotifyIconW(NIM_DELETE, &call_data) };
     }
 }
 
