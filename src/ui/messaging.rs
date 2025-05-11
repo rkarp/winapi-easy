@@ -20,6 +20,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SIZE_MINIMIZED,
     WM_APP,
     WM_CLOSE,
+    WM_COMMAND,
     WM_CONTEXTMENU,
     WM_DESTROY,
     WM_MENUCOMMAND,
@@ -86,6 +87,14 @@ impl ListenerMessage {
                         ListenerMessageVariant::NotificationIconContextSelect { icon_id, xy_coords }
                     }
                     _ => ListenerMessageVariant::Other,
+                }
+            }
+            WM_COMMAND if HIWORD(u32::try_from(raw_message.w_param.0).unwrap()) == 0 => {
+                // Not preferable since unly u16 IDs are supported
+                ListenerMessageVariant::MenuCommand {
+                    selected_item_id: u32::from(LOWORD(
+                        u32::try_from(raw_message.w_param.0).unwrap(),
+                    )),
                 }
             }
             WM_MENUCOMMAND => {

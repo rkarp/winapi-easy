@@ -23,6 +23,7 @@ use windows::core::{
 };
 
 pub(crate) trait ToWideString: AsRef<OsStr> + Sized {
+    /// Converts to a zero-terminated wide string.
     fn to_wide_string(&self) -> Vec<u16> {
         to_wide_chars_iter(self).collect()
     }
@@ -63,6 +64,10 @@ impl ZeroTerminatedWideString {
 
     pub(crate) fn as_raw_pcwstr(&self) -> PCWSTR {
         PCWSTR::from_raw(self.0.as_ptr())
+    }
+
+    pub(crate) fn as_raw_pwstr(&mut self) -> PWSTR {
+        PWSTR::from_raw(self.0.as_mut_ptr())
     }
 }
 

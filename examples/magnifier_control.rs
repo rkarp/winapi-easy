@@ -28,8 +28,9 @@ use winapi_easy::messaging::ThreadMessageLoop;
 use winapi_easy::process::ThreadId;
 use winapi_easy::ui::desktop::MonitorHandle;
 use winapi_easy::ui::menu::{
-    MenuItem,
-    PopupMenu,
+    SubMenu,
+    SubMenuItem,
+    TextMenuItem,
 };
 use winapi_easy::ui::messaging::{
     ListenerAnswer,
@@ -159,8 +160,11 @@ fn main_thread(target_window_setting: &Mutex<Option<WindowHandle>>) -> io::Resul
     magnifier_window.set_lens_use_bitmap_smoothing(true)?;
     magnifier_window.set_show_state(WindowShowState::Show)?;
 
-    let popup = PopupMenu::new()?;
-    popup.insert_menu_item(MenuItem::Text("Exit"), MenuID::Exit.into(), None)?;
+    let mut popup = SubMenu::new()?;
+    popup.insert_menu_item(
+        SubMenuItem::Text(TextMenuItem::default_with_text(MenuID::Exit.into(), "Exit")),
+        None,
+    )?;
 
     let mut magnifier_active = false;
     let mut cursor_hider: Option<CursorConcealment> = None;
@@ -177,7 +181,7 @@ fn main_thread(target_window_setting: &Mutex<Option<WindowHandle>>) -> io::Resul
                 }
                 ListenerMessageVariant::NotificationIconContextSelect { xy_coords, .. } => {
                     let _ = host_window_handle.set_as_foreground();
-                    popup.show_popup_menu(host_window_handle, xy_coords)?;
+                    popup.show_menu(host_window_handle, xy_coords)?;
                 }
                 ListenerMessageVariant::Timer { timer_id: 0 } => {
                     let disable;
