@@ -41,13 +41,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EVENT_SYSTEM_MINIMIZESTART,
     EVENT_SYSTEM_MOVESIZEEND,
     EVENT_SYSTEM_MOVESIZESTART,
-    HCBT_ACTIVATE,
     HHOOK,
     KBDLLHOOKSTRUCT,
     MSLLHOOKSTRUCT,
     SetWindowsHookExW,
     UnhookWindowsHookEx,
-    WH_CBT,
     WH_KEYBOARD_LL,
     WH_MOUSE_LL,
     WINDOWS_HOOK_ID,
@@ -84,19 +82,52 @@ use crate::internal::{
 use crate::messaging::ThreadMessageLoop;
 use crate::ui::window::WindowHandle;
 
+/// Deployed low level input hook.
+///
+/// The hook will be removed when this struct is dropped.
+#[must_use]
+pub struct LowLevelInputHook<HT: HookType, F> {
+    #[allow(dead_code)]
+    handle: HookHandle<HT::ClosureStore, F, HHOOK>,
+}
+
+impl<HT: HookType, F> LowLevelInputHook<HT, F> {
+    fn new<const ID: IdType>(user_callback: F) -> io::Result<Self>
+    where
+        F: FnMut(HT::Message) -> HookReturnValue,
+    {
+        let handle = HT::add_hook_internal::<ID, _>(user_callback)?;
+        Ok(Self { handle })
+    }
+}
+
 /// A global mouse or keyboard hook.
 ///
 /// This hook can be used to listen to mouse (with [`LowLevelMouseHook`]) or keyboard (with [`LowLevelKeyboardHook`]) events,
 /// no matter which application or window they occur in.
-pub trait LowLevelInputHook: HookType + Copy {
+pub trait LowLevelInputHookType: HookType + Copy {
     fn run_hook<F>(user_callback: F) -> io::Result<()>
     where
-        F: FnMut(Self::Message) -> HookReturnValue + Send,
+        F: FnMut(Self::Message) -> HookReturnValue,
     {
         // Always using ID 0 only works with ThreadLocalRawClosureStore
         let _handle = Self::add_hook::<0, _>(user_callback)?;
         ThreadMessageLoop::run_thread_message_loop(|| Ok(()))?;
         Ok(())
+    }
+
+    /// Adds a new hook with the given ID.
+    ///
+    /// A [`ThreadMessageLoop`] must be run separately for `user_callback` to receive events.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if a Hook with the given ID already exists for this thread.
+    fn add_hook<const ID: IdType, F>(user_callback: F) -> io::Result<LowLevelInputHook<Self, F>>
+    where
+        F: FnMut(Self::Message) -> HookReturnValue,
+    {
+        LowLevelInputHook::new::<ID>(user_callback)
     }
 }
 
@@ -110,7 +141,7 @@ impl HookType for LowLevelMouseHook {
     type ClosureStore = ThreadLocalRawClosureStore;
 }
 
-impl LowLevelInputHook for LowLevelMouseHook {}
+impl LowLevelInputHookType for LowLevelMouseHook {}
 
 /// The keyboard variant of [`LowLevelInputHook`].
 #[derive(Copy, Clone, Debug)]
@@ -122,7 +153,7 @@ impl HookType for LowLevelKeyboardHook {
     type ClosureStore = ThreadLocalRawClosureStore;
 }
 
-impl LowLevelInputHook for LowLevelKeyboardHook {}
+impl LowLevelInputHookType for LowLevelKeyboardHook {}
 
 /// Decoded mouse message.
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -210,39 +241,6 @@ pub enum LowLevelKeyboardAction {
     Other(u32),
 }
 
-/// Computer-based training (CBT) application hook.
-///
-/// Only usable from a DLL.
-#[derive(Copy, Clone, Debug)]
-pub(crate) enum CbtHook {}
-
-impl HookType for CbtHook {
-    const TYPE_ID: WINDOWS_HOOK_ID = WH_CBT;
-    type Message = CbtMessage;
-    type ClosureStore = ThreadLocalRawClosureStore;
-}
-
-/// Computer-based training (CBT) application hook message.
-#[non_exhaustive]
-#[derive(PartialEq, Debug)]
-pub(crate) enum CbtMessage {
-    // A window is about to be activated.
-    WindowActivate(WindowHandle),
-    Other,
-}
-
-impl FromRawLowLevelMessage for CbtMessage {
-    unsafe fn from_raw_message(value: RawLowLevelMessage) -> Self {
-        match value.n_code {
-            HCBT_ACTIVATE => CbtMessage::WindowActivate(
-                WindowHandle::try_from(HWND(ptr::with_exposed_provenance_mut(value.w_param)))
-                    .unwrap_or_else(|_| unreachable!()),
-            ),
-            _ => CbtMessage::Other,
-        }
-    }
-}
-
 /// A value indicating what action should be taken after returning from the user callback
 /// in [`LowLevelInputHook::run_hook`].
 #[derive(Copy, Clone, PartialEq, Eq, Default, Debug)]
@@ -271,7 +269,7 @@ mod private {
     impl StoredClosurePtr {
         fn from_closure<F, I, O>(value: *mut F) -> Self
         where
-            F: FnMut(I) -> O + Send,
+            F: FnMut(I) -> O,
         {
             StoredClosurePtr(value.cast::<c_void>())
         }
@@ -283,7 +281,7 @@ mod private {
         /// Unsafe both because any type is supported and because an arbitrary lifetime can be generated.
         unsafe fn to_closure<'a, F, I, O>(self) -> &'a mut F
         where
-            F: FnMut(I) -> O + Send,
+            F: FnMut(I) -> O,
         {
             unsafe { &mut *(self.0.cast::<F>()) }
         }
@@ -301,6 +299,16 @@ mod private {
             F: FnMut(I) -> O + Send;
     }
 
+    pub trait RawThreadClosureStore: RawClosureStore {
+        unsafe fn get_thread_raw_closure<'a, F, I, O>(id: IdType) -> Option<&'a mut F>
+        where
+            F: FnMut(I) -> O;
+
+        fn set_thread_raw_closure<F, I, O>(id: IdType, user_callback: Option<*mut F>)
+        where
+            F: FnMut(I) -> O;
+    }
+
     pub enum ThreadLocalRawClosureStore {}
 
     impl ThreadLocalRawClosureStore {
@@ -309,12 +317,10 @@ mod private {
         thread_local! {
             static RAW_CLOSURE: RefCell<HashMap<IdType, StoredClosurePtr>> = RefCell::new(HashMap::new());
         }
-    }
 
-    impl RawClosureStore for ThreadLocalRawClosureStore {
-        unsafe fn get_raw_closure<'a, F, I, O>(id: IdType) -> Option<&'a mut F>
+        pub(crate) unsafe fn get_thread_raw_closure<'a, F, I, O>(id: IdType) -> Option<&'a mut F>
         where
-            F: FnMut(I) -> O + Send,
+            F: FnMut(I) -> O,
         {
             let unwrapped_closure: Option<StoredClosurePtr> =
                 Self::RAW_CLOSURE.with(|cell| cell.borrow_mut().get(&id).copied());
@@ -322,9 +328,11 @@ mod private {
             closure
         }
 
-        fn set_raw_closure<F, I, O>(id: IdType, maybe_user_callback: Option<*mut F>)
-        where
-            F: FnMut(I) -> O + Send,
+        pub(crate) fn set_thread_raw_closure<F, I, O>(
+            id: IdType,
+            maybe_user_callback: Option<*mut F>,
+        ) where
+            F: FnMut(I) -> O,
         {
             Self::RAW_CLOSURE.with(|cell| {
                 let mut map_ref = cell.borrow_mut();
@@ -335,6 +343,38 @@ mod private {
                     map_ref.remove(&id);
                 }
             });
+        }
+    }
+
+    impl RawClosureStore for ThreadLocalRawClosureStore {
+        unsafe fn get_raw_closure<'a, F, I, O>(id: IdType) -> Option<&'a mut F>
+        where
+            F: FnMut(I) -> O,
+        {
+            unsafe { Self::get_thread_raw_closure(id) }
+        }
+
+        fn set_raw_closure<F, I, O>(id: IdType, maybe_user_callback: Option<*mut F>)
+        where
+            F: FnMut(I) -> O,
+        {
+            Self::set_thread_raw_closure(id, maybe_user_callback);
+        }
+    }
+
+    impl RawThreadClosureStore for ThreadLocalRawClosureStore {
+        unsafe fn get_thread_raw_closure<'a, F, I, O>(id: IdType) -> Option<&'a mut F>
+        where
+            F: FnMut(I) -> O,
+        {
+            unsafe { Self::get_thread_raw_closure(id) }
+        }
+
+        fn set_thread_raw_closure<F, I, O>(id: IdType, maybe_user_callback: Option<*mut F>)
+        where
+            F: FnMut(I) -> O,
+        {
+            Self::set_thread_raw_closure(id, maybe_user_callback);
         }
     }
 
@@ -392,6 +432,7 @@ mod private {
 
     #[derive(Copy, Clone, Debug)]
     pub struct RawLowLevelMessage {
+        #[allow(dead_code)]
         pub n_code: u32,
         pub w_param: usize,
         pub l_param: isize,
@@ -404,14 +445,14 @@ mod private {
     pub trait HookType: Sized {
         const TYPE_ID: WINDOWS_HOOK_ID;
         type Message: FromRawLowLevelMessage;
-        type ClosureStore: RawClosureStore;
+        type ClosureStore: RawThreadClosureStore;
 
         /// Registers a hook and returns a handle for auto-drop.
-        fn add_hook<const ID: IdType, F>(
+        fn add_hook_internal<const ID: IdType, F>(
             user_callback: F,
         ) -> io::Result<HookHandle<Self::ClosureStore, F, HHOOK>>
         where
-            F: FnMut(Self::Message) -> HookReturnValue + Send,
+            F: FnMut(Self::Message) -> HookReturnValue,
         {
             unsafe extern "system" fn internal_callback<const ID: IdType, HT, F>(
                 n_code: i32,
@@ -420,7 +461,7 @@ mod private {
             ) -> LRESULT
             where
                 HT: HookType,
-                F: FnMut(HT::Message) -> HookReturnValue + Send,
+                F: FnMut(HT::Message) -> HookReturnValue,
             {
                 if n_code < 0 {
                     unsafe { return CallNextHookEx(None, n_code, w_param, l_param) }
@@ -433,7 +474,7 @@ mod private {
                     };
                     let message = unsafe { HT::Message::from_raw_message(raw_message) };
                     let maybe_closure: Option<&mut F> =
-                        unsafe { HT::ClosureStore::get_raw_closure(ID) };
+                        unsafe { HT::ClosureStore::get_thread_raw_closure(ID) };
                     if let Some(closure) = maybe_closure {
                         closure(message)
                     } else {
@@ -451,7 +492,7 @@ mod private {
                 }
             }
             let mut user_callback = RawBox::new(user_callback);
-            Self::ClosureStore::set_raw_closure(ID, Some(user_callback.as_mut_ptr()));
+            Self::ClosureStore::set_thread_raw_closure(ID, Some(user_callback.as_mut_ptr()));
             let handle = unsafe {
                 SetWindowsHookExW(
                     Self::TYPE_ID,
@@ -620,28 +661,49 @@ impl ReturnValue for HWINEVENTHOOK {
 }
 
 /// A hook for various UI events.
-#[derive(Debug)]
-pub enum WinEventHook {}
+///
+/// The hook will be removed when this struct is dropped.
+#[must_use]
+pub struct WinEventHook<F> {
+    #[allow(dead_code)]
+    handle: HookHandle<ThreadLocalRawClosureStore, F, HWINEVENTHOOK>,
+}
 
-impl WinEventHook {
-    pub fn run_hook<F>(user_callback: F) -> io::Result<()>
-    where
-        F: FnMut(WinEventMessage) + Send,
-    {
+impl<F> WinEventHook<F>
+where
+    F: FnMut(WinEventMessage),
+{
+    /// Adds a new hook with the given ID.
+    ///
+    /// A [`ThreadMessageLoop`] must be run separately for `user_callback` to receive events.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if a Hook with the given ID already exists for this thread.
+    pub fn new<const ID: IdType>(user_callback: F) -> io::Result<Self> {
+        let handle = Self::add_hook_internal::<ID>(user_callback)?;
+        Ok(Self { handle })
+    }
+
+    /// Runs a new hook with ID `0` on a new thread message loop ([`ThreadMessageLoop`]).
+    ///
+    /// This will block the current thread to process messages.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if a Hook with ID `0` already exists for this thread
+    /// or if the thread message loop lock is already acquired.
+    pub fn run_hook_loop(user_callback: F) -> io::Result<()> {
         // Always using ID 0 only works with ThreadLocalRawClosureStore
-        let _handle = Self::add_hook::<0, ThreadLocalRawClosureStore, _>(user_callback)?;
+        let _handle = Self::new::<0>(user_callback)?;
         ThreadMessageLoop::run_thread_message_loop(|| Ok(()))?;
         Ok(())
     }
 
-    fn add_hook<const ID: IdType, RCS, F>(
+    fn add_hook_internal<const ID: IdType>(
         user_callback: F,
-    ) -> io::Result<HookHandle<RCS, F, HWINEVENTHOOK>>
-    where
-        RCS: RawClosureStore,
-        F: FnMut(WinEventMessage) + Send,
-    {
-        unsafe extern "system" fn internal_callback<const ID: IdType, RCS, F>(
+    ) -> io::Result<HookHandle<ThreadLocalRawClosureStore, F, HWINEVENTHOOK>> {
+        unsafe extern "system" fn internal_callback<const ID: IdType, F>(
             _h_win_event_hook: HWINEVENTHOOK,
             event_id: u32,
             hwnd: HWND,
@@ -650,13 +712,13 @@ impl WinEventHook {
             _id_event_thread: u32,
             _dwms_event_time: u32,
         ) where
-            RCS: RawClosureStore,
-            F: FnMut(WinEventMessage) + Send,
+            F: FnMut(WinEventMessage),
         {
             let call = move || {
                 let message =
                     unsafe { WinEventMessage::from_raw_event(event_id, hwnd, id_object, id_child) };
-                let maybe_closure: Option<&mut F> = unsafe { RCS::get_raw_closure(ID) };
+                let maybe_closure: Option<&mut F> =
+                    unsafe { ThreadLocalRawClosureStore::get_thread_raw_closure(ID) };
                 if let Some(closure) = maybe_closure {
                     closure(message);
                 } else {
@@ -666,13 +728,13 @@ impl WinEventHook {
             catch_unwind_and_abort(call);
         }
         let mut user_callback = RawBox::new(user_callback);
-        RCS::set_raw_closure(ID, Some(user_callback.as_mut_ptr()));
+        ThreadLocalRawClosureStore::set_thread_raw_closure(ID, Some(user_callback.as_mut_ptr()));
         let handle = unsafe {
             SetWinEventHook(
                 EVENT_MIN,
                 EVENT_SYSTEM_END,
                 None,
-                Some(internal_callback::<ID, RCS, F>),
+                Some(internal_callback::<ID, F>),
                 0,
                 0,
                 WINEVENT_OUTOFCONTEXT,
@@ -761,27 +823,23 @@ mod tests {
                 LPARAM::default(),
             )?
         };
-        let _mouse_handle = LowLevelMouseHook::add_hook::<ID1, _>(mouse_callback)?;
-        let _keyboard_handle = LowLevelKeyboardHook::add_hook::<ID2, _>(keyboard_callback)?;
+        let _mouse_handle = LowLevelMouseHook::add_hook_internal::<ID1, _>(mouse_callback)?;
+        let _keyboard_handle =
+            LowLevelKeyboardHook::add_hook_internal::<ID2, _>(keyboard_callback)?;
         ThreadMessageLoop::run_thread_message_loop(|| Ok(()))?;
         Ok(())
     }
 
+    #[cfg(feature = "process")]
     #[test]
     fn win_event_hook_and_unhook() -> windows::core::Result<()> {
+        use crate::process::ThreadId;
         let mut counter = 0;
         let callback = |_message: WinEventMessage| {
             counter += 1;
         };
-        unsafe {
-            PostThreadMessageW(
-                GetCurrentThreadId(),
-                WM_QUIT,
-                WPARAM::default(),
-                LPARAM::default(),
-            )?
-        };
-        let _hook_handle = WinEventHook::add_hook::<0, ThreadLocalRawClosureStore, _>(callback)?;
+        ThreadId::current().post_quit_message()?;
+        let _hook_handle = WinEventHook::new::<0>(callback)?;
         ThreadMessageLoop::run_thread_message_loop(|| Ok(()))?;
         Ok(())
     }
