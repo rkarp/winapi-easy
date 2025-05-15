@@ -1,7 +1,12 @@
 //! Messaging and message loops.
 
-use std::cell::Cell;
+use std::cell::{
+    Cell,
+    RefCell,
+};
+use std::collections::HashMap;
 use std::io;
+use std::rc::Rc;
 
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW,
@@ -13,19 +18,46 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::BOOL;
 
-use crate::internal::{
-    CustomAutoDrop,
-    ReturnValue,
-};
+use crate::internal::ReturnValue;
 
-/// Windows thread message loop functions.
-///
-/// This type is not meant to be instantiated.
-pub enum ThreadMessageLoop {}
+pub(crate) type ListenerFn<'a> = Box<dyn FnMut(MSG) -> io::Result<()> + 'a>;
 
-impl ThreadMessageLoop {
+/// Windows thread message loop context.
+pub struct ThreadMessageLoop<'a> {
+    pub(crate) listeners: Rc<RefCell<HashMap<u32, ListenerFn<'a>>>>,
+}
+
+impl ThreadMessageLoop<'_> {
     thread_local! {
         static RUNNING: Cell<bool> = const { Cell::new(false) };
+    }
+
+    /// Creates a new thread message context.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if a thread message context already exists for the current thread.
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        assert!(
+            !Self::RUNNING.get(),
+            "Multiple message loop contexts per thread are not allowed"
+        );
+        Self::RUNNING.set(true);
+        Self {
+            listeners: Rc::new(HashMap::new().into()),
+        }
+    }
+
+    pub fn run(&mut self) -> io::Result<()> {
+        self.run_with(|| Ok(()))
+    }
+
+    pub fn run_with<F>(&mut self, mut loop_callback: F) -> io::Result<()>
+    where
+        F: FnMut() -> io::Result<()>,
+    {
+        self.run_thread_message_loop_internal(|_| loop_callback(), true, None)
     }
 
     /// Runs the Windows thread message loop.
@@ -42,10 +74,11 @@ impl ThreadMessageLoop {
     where
         F: FnMut() -> io::Result<()>,
     {
-        Self::run_thread_message_loop_internal(|_msg| loop_callback(), true, None)
+        Self::new().run_thread_message_loop_internal(|_msg| loop_callback(), true, None)
     }
 
     pub(crate) fn run_thread_message_loop_internal<F>(
+        &mut self,
         mut loop_msg_callback: F,
         dispatch_to_wnd_proc: bool,
         filter_message_id: Option<u32>,
@@ -53,19 +86,12 @@ impl ThreadMessageLoop {
     where
         F: FnMut(&MSG) -> io::Result<()>,
     {
-        let _auto_unset_running = CustomAutoDrop {
-            value: (),
-            drop_fn: |()| Self::RUNNING.set(false),
-        };
-        Self::RUNNING.with(|running| {
-            assert!(
-                !running.get(),
-                "Cannot run two thread message loops on the same thread"
-            );
-            running.set(true);
-        });
         loop {
-            match Self::process_single_thread_message(dispatch_to_wnd_proc, filter_message_id)? {
+            match Self::process_single_thread_message(
+                self,
+                dispatch_to_wnd_proc,
+                filter_message_id,
+            )? {
                 ThreadMessageProcessingResult::Success(msg) => {
                     loop_msg_callback(&msg)?;
                 }
@@ -77,6 +103,7 @@ impl ThreadMessageLoop {
     }
 
     pub(crate) fn process_single_thread_message(
+        &mut self,
         dispatch_to_wnd_proc: bool,
         filter_message_id: Option<u32>,
     ) -> io::Result<ThreadMessageProcessingResult> {
@@ -89,6 +116,9 @@ impl ThreadMessageLoop {
         }
         if msg.message == WM_QUIT {
             return Ok(ThreadMessageProcessingResult::Quit);
+        }
+        if let Some(listener) = self.listeners.borrow_mut().get_mut(&msg.message) {
+            listener(msg)?;
         }
         if dispatch_to_wnd_proc {
             unsafe {
@@ -112,10 +142,11 @@ impl ThreadMessageLoop {
     pub fn post_thread_quit_message(thread_id: crate::process::ThreadId) -> io::Result<()> {
         thread_id.post_quit_message()
     }
+}
 
-    #[allow(dead_code)]
-    pub(crate) fn is_loop_running() -> bool {
-        Self::RUNNING.with(Cell::get)
+impl Drop for ThreadMessageLoop<'_> {
+    fn drop(&mut self) {
+        Self::RUNNING.set(false);
     }
 }
 
