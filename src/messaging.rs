@@ -1,12 +1,7 @@
 //! Messaging and message loops.
 
-use std::cell::{
-    Cell,
-    RefCell,
-};
-use std::collections::HashMap;
+use std::cell::Cell;
 use std::io;
-use std::rc::Rc;
 
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW,
@@ -20,14 +15,33 @@ use windows::core::BOOL;
 
 use crate::internal::ReturnValue;
 
-pub(crate) type ListenerFn<'a> = Box<dyn FnMut(MSG) -> io::Result<()> + 'a>;
+pub type RawThreadMessage = MSG;
 
-/// Windows thread message loop context.
-pub struct ThreadMessageLoop<'a> {
-    pub(crate) listeners: Rc<RefCell<HashMap<u32, ListenerFn<'a>>>>,
+#[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
+pub enum ThreadMessage {
+    #[cfg(feature = "input")]
+    Hotkey(u8),
+    Other(RawThreadMessage),
 }
 
-impl ThreadMessageLoop<'_> {
+impl From<RawThreadMessage> for ThreadMessage {
+    fn from(raw_message: RawThreadMessage) -> Self {
+        match raw_message.message {
+            #[cfg(feature = "input")]
+            windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY => Self::Hotkey(
+                crate::input::hotkey::HotkeyId::try_from(raw_message.wParam.0)
+                    .expect("Hotkey ID outside of valid range"),
+            ),
+            _ => Self::Other(raw_message),
+        }
+    }
+}
+
+/// Windows thread message loop context.
+pub struct ThreadMessageLoop(());
+
+impl ThreadMessageLoop {
     thread_local! {
         static RUNNING: Cell<bool> = const { Cell::new(false) };
     }
@@ -44,37 +58,21 @@ impl ThreadMessageLoop<'_> {
             "Multiple message loop contexts per thread are not allowed"
         );
         Self::RUNNING.set(true);
-        Self {
-            listeners: Rc::new(HashMap::new().into()),
-        }
+        Self(())
     }
 
     pub fn run(&mut self) -> io::Result<()> {
-        self.run_with(|| Ok(()))
-    }
-
-    pub fn run_with<F>(&mut self, mut loop_callback: F) -> io::Result<()>
-    where
-        F: FnMut() -> io::Result<()>,
-    {
-        self.run_thread_message_loop_internal(|_| loop_callback(), true, None)
+        self.run_with(|_| Ok(()))
     }
 
     /// Runs the Windows thread message loop.
     ///
-    /// The user defined callback that will only be called after every user handled message.
-    /// This allows using local variables and `Result` propagation.
-    ///
-    /// Only a single message loop may be running per thread.
-    ///
-    /// # Panics
-    ///
-    /// Will panic if the message loop is already running.
-    pub fn run_thread_message_loop<F>(mut loop_callback: F) -> io::Result<()>
+    /// The user defined callback will be called on every message except `WM_QUIT`.
+    pub fn run_with<F>(&mut self, loop_callback: F) -> io::Result<()>
     where
-        F: FnMut() -> io::Result<()>,
+        F: FnMut(ThreadMessage) -> io::Result<()>,
     {
-        Self::new().run_thread_message_loop_internal(|_msg| loop_callback(), true, None)
+        self.run_thread_message_loop_internal(loop_callback, true, None)
     }
 
     pub(crate) fn run_thread_message_loop_internal<F>(
@@ -84,7 +82,7 @@ impl ThreadMessageLoop<'_> {
         filter_message_id: Option<u32>,
     ) -> io::Result<()>
     where
-        F: FnMut(&MSG) -> io::Result<()>,
+        F: FnMut(ThreadMessage) -> io::Result<()>,
     {
         loop {
             match Self::process_single_thread_message(
@@ -93,7 +91,7 @@ impl ThreadMessageLoop<'_> {
                 filter_message_id,
             )? {
                 ThreadMessageProcessingResult::Success(msg) => {
-                    loop_msg_callback(&msg)?;
+                    loop_msg_callback(ThreadMessage::from(msg))?;
                 }
                 ThreadMessageProcessingResult::Quit => {
                     break Ok(());
@@ -116,9 +114,6 @@ impl ThreadMessageLoop<'_> {
         }
         if msg.message == WM_QUIT {
             return Ok(ThreadMessageProcessingResult::Quit);
-        }
-        if let Some(listener) = self.listeners.borrow_mut().get_mut(&msg.message) {
-            listener(msg)?;
         }
         if dispatch_to_wnd_proc {
             unsafe {
@@ -144,7 +139,7 @@ impl ThreadMessageLoop<'_> {
     }
 }
 
-impl Drop for ThreadMessageLoop<'_> {
+impl Drop for ThreadMessageLoop {
     fn drop(&mut self) {
         Self::RUNNING.set(false);
     }

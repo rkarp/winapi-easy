@@ -1,14 +1,10 @@
 //! Global hotkeys.
 
-use std::cell::{
-    Cell,
-    RefCell,
-};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::io;
 use std::marker::PhantomData;
 use std::ops::Add;
-use std::rc::Rc;
 
 use num_enum::IntoPrimitive;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -21,14 +17,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     RegisterHotKey,
     UnregisterHotKey,
 };
-use windows::Win32::UI::WindowsAndMessaging::{
-    MSG,
-    WM_HOTKEY,
-};
 
 use crate::input::KeyboardKey;
 use crate::messaging::{
-    ListenerFn,
+    ThreadMessage,
     ThreadMessageLoop,
 };
 
@@ -39,58 +31,36 @@ pub type HotkeyId = u8;
 /// # Multithreading
 ///
 /// This type is not [`Send`] and [`Sync`] because the hotkeys are registered only to the current thread.
-pub struct GlobalHotkeySet<'a> {
-    hotkey_defs: Rc<RefCell<HashMap<HotkeyId, HotkeyDef>>>,
-    message_loop_listeners: Rc<RefCell<HashMap<u32, ListenerFn<'a>>>>,
+pub struct GlobalHotkeySet {
+    hotkey_defs: HashMap<HotkeyId, HotkeyDef>,
     _marker: PhantomData<*mut ()>,
 }
 
 #[cfg(test)]
 static_assertions::assert_not_impl_any!(GlobalHotkeySet: Send, Sync);
 
-impl<'a> GlobalHotkeySet<'a> {
+impl GlobalHotkeySet {
     thread_local! {
         static RUNNING: Cell<bool> = const { Cell::new(false) };
     }
 
     /// Registers a new hotkey set with the system.
     ///
-    /// The listener will be called on matching hotkey events if the given [`ThreadMessageLoop`] is running.
-    ///
     /// # Panics
     ///
     /// Will panic if more than 1 instance is created per thread.
-    pub fn new<F>(message_loop: &mut ThreadMessageLoop<'a>, mut listener: F) -> io::Result<Self>
-    where
-        F: FnMut(HotkeyId) -> io::Result<()> + 'a,
-    {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
         assert!(
             !Self::RUNNING.get(),
             "Only one hotkey set may be active per thread"
         );
         Self::RUNNING.set(true);
-        let hotkey_defs: Rc<RefCell<HashMap<_, _>>> = Default::default();
-        let message_loop_listener = {
-            let hotkey_defs = hotkey_defs.clone();
-            move |raw_message: MSG| {
-                assert_eq!(raw_message.message, WM_HOTKEY);
-                if let Ok(hotkey_id) = u8::try_from(raw_message.wParam.0) {
-                    if hotkey_defs.borrow().contains_key(&hotkey_id) {
-                        return listener(hotkey_id);
-                    }
-                }
-                Ok(())
-            }
-        };
-        let message_loop_listeners = message_loop.listeners.clone();
-        message_loop_listeners
-            .borrow_mut()
-            .insert(WM_HOTKEY, Box::new(message_loop_listener));
-        Ok(Self {
+        let hotkey_defs = Default::default();
+        Self {
             hotkey_defs,
-            message_loop_listeners,
             _marker: PhantomData,
-        })
+        }
     }
 
     /// Adds a hotkey.
@@ -101,22 +71,28 @@ impl<'a> GlobalHotkeySet<'a> {
         KC: Into<KeyCombination>,
     {
         let new_def = HotkeyDef::new(user_id, key_combination.into())?;
-        self.hotkey_defs.borrow_mut().insert(user_id, new_def);
+        self.hotkey_defs.insert(user_id, new_def);
         Ok(())
     }
 
-    pub fn listen_for_hotkeys_on(self, message_loop: &mut ThreadMessageLoop) -> io::Result<()> {
-        message_loop.run_thread_message_loop_internal(|_| Ok(()), false, None)
+    pub fn listen_for_hotkeys<F>(&mut self, mut listener: F) -> io::Result<()>
+    where
+        F: FnMut(HotkeyId) -> io::Result<()>,
+    {
+        let message_listener = |message| {
+            if let ThreadMessage::Hotkey(hotkey_id) = message {
+                assert!(self.hotkey_defs.contains_key(&hotkey_id));
+                listener(hotkey_id)
+            } else {
+                Ok(())
+            }
+        };
+        ThreadMessageLoop::new().run_thread_message_loop_internal(message_listener, false, None)
     }
 }
 
-impl Drop for GlobalHotkeySet<'_> {
+impl Drop for GlobalHotkeySet {
     fn drop(&mut self) {
-        let _ = self
-            .message_loop_listeners
-            .borrow_mut()
-            .remove(&WM_HOTKEY)
-            .expect("Listener should exist when dropping");
         Self::RUNNING.set(false);
     }
 }
@@ -245,7 +221,7 @@ mod tests {
     #[test]
     fn create_hotkey_listener() -> io::Result<()> {
         let mut message_loop = ThreadMessageLoop::new();
-        let mut hotkeys = GlobalHotkeySet::new(&mut message_loop, |_| Ok(()))?;
+        let mut hotkeys = GlobalHotkeySet::new();
         hotkeys.add_hotkey(
             0,
             Modifier::Ctrl + Modifier::Alt + Modifier::Shift + KeyboardKey::Oem1,

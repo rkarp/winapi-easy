@@ -65,7 +65,12 @@ fn main() -> io::Result<()> {
             }
             _ => answer = ListenerAnswer::default(),
         }
-        listener_data.replace(Some(message));
+        match message.variant {
+            ListenerMessageVariant::Other => (),
+            _ => {
+                let _old_value = listener_data.replace(Some(message));
+            }
+        }
         answer
     };
 
@@ -132,7 +137,7 @@ fn main() -> io::Result<()> {
         None,
     )?;
 
-    let loop_callback = || {
+    let loop_callback = |_| {
         if let Some(message) = listener_data_clone.take() {
             match message.variant {
                 ListenerMessageVariant::MenuCommand { selected_item_id } => {
@@ -191,6 +196,6 @@ fn main() -> io::Result<()> {
         }
         Ok(())
     };
-    ThreadMessageLoop::run_thread_message_loop(loop_callback)?;
+    ThreadMessageLoop::new().run_with(loop_callback)?;
     Ok(())
 }
