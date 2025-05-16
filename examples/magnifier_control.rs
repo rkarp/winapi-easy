@@ -12,6 +12,11 @@ use num_enum::{
     FromPrimitive,
     IntoPrimitive,
 };
+use winapi_easy::hooking::{
+    WinEventHook,
+    WinEventKind,
+    WinEventMessage,
+};
 use winapi_easy::input::KeyboardKey;
 use winapi_easy::input::hotkey::{
     GlobalHotkeySet,
@@ -69,6 +74,7 @@ enum MenuID {
 #[derive(FromPrimitive, IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u8)]
 enum UserMessageId {
+    ForegroundWindowChanged,
     TargetWindowChanged,
     #[num_enum(catch_all)]
     Other(u8),
@@ -123,48 +129,39 @@ fn main() -> io::Result<()> {
         visible: true,
     })?;
 
-    let monitor = MonitorHandle::from_window(WindowHandle::get_desktop_window()?);
-    let monitor_info = monitor.info()?;
-
-    let host_class: WindowClass = WindowClass::register_new(
-        "MagnifierHostclass",
-        WindowClassAppearance {
-            background_brush: Some(Brush::from(BuiltinColor::InfoBlack).into()),
-            icon: Some(Rc::clone(&icon)),
-            ..Default::default()
-        },
-    )?;
-
-    let host_control_window = Window::new_layered::<_, ()>(
-        host_class.into(),
-        |_| Default::default(),
-        "MagnifierHost",
-        WindowAppearance {
-            style: WindowStyle::Popup,
-            extended_style: WindowExtendedStyle::Transparent,
-        },
-        None,
-    )?;
+    let host_control_window = {
+        let host_class: WindowClass = WindowClass::register_new(
+            "MagnifierHostclass",
+            WindowClassAppearance {
+                background_brush: Some(Brush::from(BuiltinColor::InfoBlack).into()),
+                icon: Some(Rc::clone(&icon)),
+                ..Default::default()
+            },
+        )?;
+        Window::new_layered::<_, ()>(
+            host_class.into(),
+            |_| Default::default(),
+            "MagnifierHost",
+            WindowAppearance {
+                style: WindowStyle::Popup,
+                extended_style: WindowExtendedStyle::Transparent,
+            },
+            None,
+        )?
+    };
     let host_control_window_handle = *host_control_window;
 
     host_control_window_handle.set_caption_text("Magnifier")?;
-
-    {
-        let mut placement = host_control_window_handle.get_placement()?;
-        placement.set_show_state(WindowShowState::Hide);
-        placement.set_normal_position(monitor_info.monitor_area);
-        host_control_window_handle.set_placement(&placement)?;
-    }
     host_control_window.set_layered_opacity_alpha(u8::MAX)?;
 
-    let host_window = Rc::new(RefCell::new(host_control_window));
-
-    let magnifier_window_appearance = WindowAppearance {
-        style: WindowStyle::Child | WindowStyle::Visible,
-        extended_style: Default::default(),
-    };
-    let magnifier_window =
-        Window::new_magnifier("MagnifierView", magnifier_window_appearance, host_window)?;
+    let magnifier_window = Window::new_magnifier(
+        "MagnifierView",
+        WindowAppearance {
+            style: WindowStyle::Child | WindowStyle::Visible,
+            extended_style: Default::default(),
+        },
+        Rc::new(RefCell::new(host_control_window)),
+    )?;
     magnifier_window.set_lens_use_bitmap_smoothing(true)?;
     magnifier_window.set_show_state(WindowShowState::Show)?;
 
@@ -176,6 +173,27 @@ fn main() -> io::Result<()> {
 
     let mut magnifier_state = MagnifierState::default();
     let target_window_setting: Cell<Option<WindowHandle>> = Default::default();
+
+    let set_magnifier_control =
+        |magnifier_state: &mut MagnifierState, enable: bool| -> io::Result<()> {
+            if magnifier_state.magnifier_active != enable {
+                if enable {
+                    magnifier_state.cursor_hider = Some(CursorConcealment::new()?);
+                    host_control_window_handle.set_show_state(WindowShowState::Show)?;
+                    // Possible Windows bug: The topmost setting may stop working if another window of the process
+                    // was set as the foreground window. As a workaround we reset it first.
+                    host_control_window_handle.set_z_position(WindowZPosition::NoTopMost)?;
+                    host_control_window_handle.set_z_position(WindowZPosition::TopMost)?;
+                } else {
+                    magnifier_state.cursor_hider = None;
+                    magnifier_state.cursor_confinement = None;
+                    host_control_window_handle.set_z_position(WindowZPosition::Bottom)?;
+                    host_control_window_handle.set_show_state(WindowShowState::Hide)?;
+                }
+                magnifier_state.magnifier_active = enable;
+            }
+            Ok(())
+        };
 
     let mut message_loop = ThreadMessageLoop::new();
     let _hotkeys = {
@@ -204,26 +222,26 @@ fn main() -> io::Result<()> {
         hotkeys
     };
 
+    let _win_event_hook = {
+        let win_event_listener = |event: WinEventMessage| match event.event_kind {
+            WinEventKind::ForegroundWindowChanged
+            | WinEventKind::WindowUnminimized
+            | WinEventKind::WindowMinimized
+            | WinEventKind::WindowMoveEnd => {
+                main_window
+                    .send_user_message(CustomUserMessage {
+                        message_id: UserMessageId::ForegroundWindowChanged.into(),
+                        ..Default::default()
+                    })
+                    .unwrap();
+            }
+            _ => (),
+        };
+        WinEventHook::new::<0>(win_event_listener)
+    };
+
     let loop_callback = || {
         if let Some(message) = listener_data_clone.take() {
-            let set_magnifier_control =
-                |magnifier_state: &mut MagnifierState, enable: bool| -> io::Result<()> {
-                    if magnifier_state.magnifier_active != enable {
-                        if enable {
-                            magnifier_state.cursor_hider = Some(CursorConcealment::new()?);
-                            host_control_window_handle.set_show_state(WindowShowState::Show)?;
-                            host_control_window_handle.set_z_position(WindowZPosition::TopMost)?;
-                        } else {
-                            magnifier_state.cursor_hider = None;
-                            magnifier_state.cursor_confinement = None;
-                            host_control_window_handle.set_z_position(WindowZPosition::Bottom)?;
-                            host_control_window_handle.set_show_state(WindowShowState::Hide)?;
-                        }
-                        magnifier_state.magnifier_active = enable;
-                    }
-                    Ok(())
-                };
-
             match message.variant {
                 ListenerMessageVariant::MenuCommand { selected_item_id } => {
                     match selected_item_id.into() {
@@ -236,43 +254,66 @@ fn main() -> io::Result<()> {
                     popup.show_menu(*main_window, xy_coords)?;
                 }
                 ListenerMessageVariant::Timer { timer_id: 0 } => {
-                    if let Some(foreground_window) = WindowHandle::get_foreground_window() {
-                        if target_window_setting
-                            .get()
-                            .is_some_and(|target_window| target_window == foreground_window)
-                        {
-                            set_magnifier_control(&mut magnifier_state, true)?;
-                            let source_window_rect = foreground_window.get_client_area_coords()?;
-                            let scaling_result = ScalingResult::from_rects(
-                                source_window_rect,
-                                monitor_info.monitor_area,
-                            );
-                            {
-                                let mut placement = magnifier_window.get_placement()?;
-                                placement
-                                    .set_normal_position(scaling_result.max_scaled_rect_centered());
-                                magnifier_window.set_placement(&placement)?;
-                            }
-                            magnifier_window
-                                .set_magnification_factor(scaling_result.max_scale_factor as f32)?;
-                            magnifier_window.set_magnification_source(source_window_rect)?;
-                            magnifier_state.cursor_confinement =
-                                Some(CursorConfinement::new(source_window_rect)?);
-                        } else {
-                            set_magnifier_control(&mut magnifier_state, false)?;
-                        }
-                    } else {
-                        set_magnifier_control(&mut magnifier_state, false)?;
-                    };
+                    magnifier_window.redraw()?;
+                    if let Some(confinement) = &magnifier_state.cursor_confinement {
+                        confinement.reapply()?;
+                    }
                 }
                 ListenerMessageVariant::CustomUserMessage(custom_message) => {
-                    if custom_message.message_id == UserMessageId::TargetWindowChanged.into() {
-                        if let Some(_window_handle) = target_window_setting.get() {
-                            main_window.set_timer(0, 1000 / 60)?;
-                        } else {
-                            set_magnifier_control(&mut magnifier_state, false)?;
-                            let _ = main_window.kill_timer(0);
+                    let mut reinit_magnifier = || -> io::Result<()> {
+                        let maybe_foreground_window = WindowHandle::get_foreground_window();
+                        match maybe_foreground_window {
+                            Some(foreground_window)
+                                if maybe_foreground_window == target_window_setting.get() =>
+                            {
+                                set_magnifier_control(&mut magnifier_state, true)?;
+
+                                let monitor_info =
+                                    MonitorHandle::from_window(foreground_window).info()?;
+                                {
+                                    let mut placement =
+                                        host_control_window_handle.get_placement()?;
+                                    placement.set_normal_position(monitor_info.monitor_area);
+                                    host_control_window_handle.set_placement(&placement)?;
+                                }
+                                let source_window_rect =
+                                    foreground_window.get_client_area_coords()?;
+                                let scaling_result = ScalingResult::from_rects(
+                                    source_window_rect,
+                                    monitor_info.monitor_area,
+                                );
+                                {
+                                    let mut placement = magnifier_window.get_placement()?;
+                                    placement.set_normal_position(
+                                        scaling_result.max_scaled_rect_centered(),
+                                    );
+                                    magnifier_window.set_placement(&placement)?;
+                                }
+                                magnifier_window.set_magnification_factor(
+                                    scaling_result.max_scale_factor as f32,
+                                )?;
+                                magnifier_window.set_magnification_source(source_window_rect)?;
+                                magnifier_state.cursor_confinement =
+                                    Some(CursorConfinement::new(source_window_rect)?);
+                            }
+                            _ => set_magnifier_control(&mut magnifier_state, false)?,
                         }
+                        Ok(())
+                    };
+                    match UserMessageId::from(custom_message.message_id) {
+                        UserMessageId::ForegroundWindowChanged => {
+                            reinit_magnifier()?;
+                        }
+                        UserMessageId::TargetWindowChanged => {
+                            if let Some(_window_handle) = target_window_setting.get() {
+                                reinit_magnifier()?;
+                                main_window.set_timer(0, 1000 / 60)?;
+                            } else {
+                                set_magnifier_control(&mut magnifier_state, false)?;
+                                let _ = main_window.kill_timer(0);
+                            }
+                        }
+                        UserMessageId::Other(_) => unreachable!(),
                     }
                 }
                 ListenerMessageVariant::Other => (),
