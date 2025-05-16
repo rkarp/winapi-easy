@@ -134,17 +134,29 @@ impl From<&Region> for HRGN {
 
 #[derive(Debug)]
 #[must_use]
-pub struct CursorConfinement(());
+pub struct CursorConfinement(Rectangle);
 
 impl CursorConfinement {
     /// Globally confines the cursor to a rectangular area on the screen.
     ///
     /// The confinement will be automatically released when [`CursorConfinement`] is dropped.
     pub fn new(bounding_area: Rectangle) -> io::Result<Self> {
+        Self::apply(bounding_area)?;
+        Ok(Self(bounding_area))
+    }
+
+    /// Reapply the corsor clipping.
+    ///
+    /// This can be necessary since some operations automatically unclip the cursor.
+    pub fn reapply(&self) -> io::Result<()> {
+        Self::apply(self.0)
+    }
+
+    fn apply(bounding_area: Rectangle) -> io::Result<()> {
         unsafe {
             ClipCursor(Some(&bounding_area))?;
         }
-        Ok(Self(()))
+        Ok(())
     }
 
     pub fn remove() -> io::Result<()> {
