@@ -110,7 +110,7 @@ pub trait LowLevelInputHookType: HookType + Copy {
     {
         // Always using ID 0 only works with ThreadLocalRawClosureStore
         let _handle = Self::add_hook::<0, _>(user_callback)?;
-        ThreadMessageLoop::run_thread_message_loop(|| Ok(()))?;
+        ThreadMessageLoop::new().run()?;
         Ok(())
     }
 
@@ -694,7 +694,7 @@ where
     pub fn run_hook_loop(user_callback: F) -> io::Result<()> {
         // Always using ID 0 only works with ThreadLocalRawClosureStore
         let _handle = Self::new::<0>(user_callback)?;
-        ThreadMessageLoop::run_thread_message_loop(|| Ok(()))?;
+        ThreadMessageLoop::new().run()?;
         Ok(())
     }
 
@@ -824,7 +824,7 @@ mod tests {
         let _mouse_handle = LowLevelMouseHook::add_hook_internal::<ID1, _>(mouse_callback)?;
         let _keyboard_handle =
             LowLevelKeyboardHook::add_hook_internal::<ID2, _>(keyboard_callback)?;
-        ThreadMessageLoop::run_thread_message_loop(|| Ok(()))?;
+        ThreadMessageLoop::new().run()?;
         Ok(())
     }
 
@@ -838,7 +838,7 @@ mod tests {
         };
         ThreadId::current().post_quit_message()?;
         let _hook_handle = WinEventHook::new::<0>(callback)?;
-        ThreadMessageLoop::run_thread_message_loop(|| Ok(()))?;
+        ThreadMessageLoop::new().run()?;
         Ok(())
     }
 }

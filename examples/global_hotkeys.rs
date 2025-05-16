@@ -12,7 +12,6 @@ use winapi_easy::input::{
     GenericKey,
     KeyboardKey,
 };
-use winapi_easy::messaging::ThreadMessageLoop;
 use winapi_easy::ui::lock_workstation;
 use winapi_easy::ui::window::{
     MonitorPower,
@@ -60,8 +59,7 @@ fn main() -> io::Result<()> {
         }
         Ok(())
     };
-    let mut message_loop = ThreadMessageLoop::new();
-    let mut hotkeys = GlobalHotkeySet::new(&mut message_loop, listener)?;
+    let mut hotkeys = GlobalHotkeySet::new();
     hotkeys.add_hotkey(
         Action::MonitorOff.into(),
         Modifier::Ctrl + Modifier::Shift + KeyboardKey::Oem1,
@@ -75,6 +73,6 @@ fn main() -> io::Result<()> {
         Action::VolumeDown.into(),
         Modifier::Win + KeyboardKey::PgDown,
     )?;
-    hotkeys.listen_for_hotkeys_on(&mut message_loop)?;
+    hotkeys.listen_for_hotkeys(listener)?;
     Ok(())
 }

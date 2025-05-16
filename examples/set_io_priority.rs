@@ -9,7 +9,6 @@ use winapi_easy::input::hotkey::{
     GlobalHotkeySet,
     Modifier,
 };
-use winapi_easy::messaging::ThreadMessageLoop;
 use winapi_easy::process::{
     IoPriority,
     Process,
@@ -39,8 +38,7 @@ fn main() -> io::Result<()> {
         foreground_process.set_io_priority(prio_target)?;
         Ok(())
     };
-    let mut message_loop = ThreadMessageLoop::new();
-    let mut hotkeys = GlobalHotkeySet::new(&mut message_loop, listener)?;
+    let mut hotkeys = GlobalHotkeySet::new();
     hotkeys.add_hotkey(
         Action::VeryLowPrio.into(),
         Modifier::Ctrl + Modifier::Alt + KeyboardKey::PgDown,
@@ -49,6 +47,6 @@ fn main() -> io::Result<()> {
         Action::NormalPrio.into(),
         Modifier::Ctrl + Modifier::Alt + KeyboardKey::PgUp,
     )?;
-    hotkeys.listen_for_hotkeys_on(&mut message_loop)?;
+    hotkeys.listen_for_hotkeys(listener)?;
     Ok(())
 }

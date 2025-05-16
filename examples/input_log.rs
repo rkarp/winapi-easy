@@ -29,6 +29,6 @@ fn main() -> io::Result<()> {
     };
     let _keyboard_hook = LowLevelKeyboardHook::add_hook::<1, _>(keyboard_callback)?;
 
-    ThreadMessageLoop::run_thread_message_loop(|| Ok(()))?;
+    ThreadMessageLoop::new().run()?;
     Ok(())
 }
