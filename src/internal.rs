@@ -521,44 +521,6 @@ pub(crate) mod windows_missing {
     }
 }
 
-pub(crate) mod std_unstable {
-    pub trait CastSigned<T> {
-        fn cast_signed(self) -> T;
-    }
-
-    impl CastSigned<i16> for u16 {
-        #[allow(clippy::cast_possible_wrap)]
-        fn cast_signed(self) -> i16 {
-            self as i16
-        }
-    }
-
-    impl CastSigned<i32> for u32 {
-        #[allow(clippy::cast_possible_wrap)]
-        fn cast_signed(self) -> i32 {
-            self as i32
-        }
-    }
-
-    pub trait CastUnsigned<T> {
-        fn cast_unsigned(self) -> T;
-    }
-
-    impl CastUnsigned<u16> for i16 {
-        #[allow(clippy::cast_sign_loss)]
-        fn cast_unsigned(self) -> u16 {
-            self as u16
-        }
-    }
-
-    impl CastUnsigned<u32> for i32 {
-        #[allow(clippy::cast_sign_loss)]
-        fn cast_unsigned(self) -> u32 {
-            self as u32
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

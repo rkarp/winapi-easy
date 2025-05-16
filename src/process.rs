@@ -53,8 +53,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_QUIT,
 };
 
-#[rustversion::before(1.87)]
-use crate::internal::std_unstable::CastUnsigned;
 use crate::internal::{
     AutoClose,
     ReturnValue,

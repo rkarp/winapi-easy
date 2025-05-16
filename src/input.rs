@@ -159,8 +159,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::internal::ReturnValue;
-#[rustversion::before(1.87)]
-use crate::internal::std_unstable::CastUnsigned;
 
 pub mod hotkey;
 

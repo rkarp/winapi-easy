@@ -52,8 +52,6 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::WM_APP;
 
 use crate::com::ComTaskMemory;
-#[rustversion::before(1.87)]
-use crate::internal::std_unstable::CastUnsigned;
 use crate::internal::{
     CustomAutoDrop,
     ReturnValue,

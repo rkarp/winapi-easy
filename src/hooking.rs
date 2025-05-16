@@ -71,8 +71,6 @@ use crate::input::{
     MouseButton,
     MouseScrollEvent,
 };
-#[rustversion::before(1.87)]
-use crate::internal::std_unstable::CastSigned;
 use crate::internal::windows_missing::HIWORD;
 use crate::internal::{
     RawBox,
