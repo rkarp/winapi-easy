@@ -1,7 +1,4 @@
-use std::cell::{
-    Cell,
-    RefCell,
-};
+use std::cell::RefCell;
 use std::io;
 use std::rc::Rc;
 
@@ -9,7 +6,10 @@ use num_enum::{
     FromPrimitive,
     IntoPrimitive,
 };
-use winapi_easy::messaging::ThreadMessageLoop;
+use winapi_easy::messaging::{
+    ThreadMessage,
+    ThreadMessageLoop,
+};
 use winapi_easy::ui::menu::{
     SubMenu,
     SubMenuItem,
@@ -54,9 +54,7 @@ enum MenuID {
 }
 
 fn main() -> io::Result<()> {
-    let listener_data: Rc<Cell<Option<ListenerMessage>>> = Rc::new(None.into());
-    let listener_data_clone = listener_data.clone();
-    let listener = move |message: ListenerMessage| {
+    let listener = move |message: &ListenerMessage| {
         let answer;
         match message.variant {
             ListenerMessageVariant::WindowDestroy => {
@@ -64,12 +62,6 @@ fn main() -> io::Result<()> {
                 answer = ListenerAnswer::CallDefaultHandler
             }
             _ => answer = ListenerAnswer::default(),
-        }
-        match message.variant {
-            ListenerMessageVariant::Other => (),
-            _ => {
-                let _old_value = listener_data.replace(Some(message));
-            }
         }
         answer
     };
@@ -85,8 +77,13 @@ fn main() -> io::Result<()> {
         style: WindowStyle::OverlappedWindow,
         ..Default::default()
     };
-    let mut window =
-        Window::new_layered::<_, ()>(class.into(), listener, "mywindow1", window_appearance, None)?;
+    let mut window = Window::new_layered::<_, ()>(
+        class.into(),
+        Some(listener),
+        "mywindow1",
+        window_appearance,
+        None,
+    )?;
     window.set_layered_opacity_alpha(u8::MAX)?;
     let notification_icon_id = NotificationIconId::Simple(0);
     let notification_icon_options = NotificationIconOptions {
@@ -137,9 +134,11 @@ fn main() -> io::Result<()> {
         None,
     )?;
 
-    let loop_callback = |_| {
-        if let Some(message) = listener_data_clone.take() {
-            match message.variant {
+    let loop_callback = |thread_message| match thread_message {
+        ThreadMessage::WindowProc(window_message)
+            if window_message.window_handle == window_handle =>
+        {
+            match window_message.variant {
                 ListenerMessageVariant::MenuCommand { selected_item_id } => {
                     match selected_item_id.into() {
                         MenuID::None => (),
@@ -190,11 +189,12 @@ fn main() -> io::Result<()> {
                     let _ = window_handle.set_as_foreground();
                     popup.show_menu(window_handle, xy_coords)?;
                 }
-                ListenerMessageVariant::Other => (),
                 _ => (),
             }
+            Ok(())
         }
-        Ok(())
+        ThreadMessage::Other(_) => Ok(()),
+        _ => Ok(()),
     };
     ThreadMessageLoop::new().run_with(loop_callback)?;
     Ok(())

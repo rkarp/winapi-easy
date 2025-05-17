@@ -141,7 +141,7 @@ where
 {
     let listener_data: Rc<Cell<PathChangeEvent>> = Cell::default().into();
     let listener_data_clone = listener_data.clone();
-    let listener = move |message: ListenerMessage| {
+    let listener = move |message: &ListenerMessage| {
         if let ListenerMessageVariant::CustomUserMessage(custom_message) = message.variant {
             fn get_path_from_id_list(raw_id_list: ITEMIDLIST) -> PathBuf {
                 let mut raw_path_buffer: ZeroTerminatedWideString =
@@ -230,7 +230,7 @@ where
     )?;
     let window = Window::new::<_, ()>(
         window_class.into(),
-        listener,
+        Some(listener),
         "Shell Change Listener",
         Default::default(),
         None,
