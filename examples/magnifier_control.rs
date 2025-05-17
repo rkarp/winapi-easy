@@ -44,6 +44,7 @@ use winapi_easy::ui::resource::{
     Icon,
 };
 use winapi_easy::ui::window::{
+    DefaultWmlType,
     NotificationIconId,
     NotificationIconOptions,
     Window,
@@ -93,9 +94,7 @@ struct MagnifierState {
 fn main() -> io::Result<()> {
     set_dpi_awareness_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE)?;
 
-    let listener_data: Rc<Cell<Option<ListenerMessage>>> = Rc::new(None.into());
-    let listener_data_clone = listener_data.clone();
-    let listener = move |message: ListenerMessage| {
+    let listener = move |message: &ListenerMessage| {
         let answer;
         match message.variant {
             ListenerMessageVariant::WindowDestroy => {
@@ -103,12 +102,6 @@ fn main() -> io::Result<()> {
                 answer = ListenerAnswer::CallDefaultHandler
             }
             _ => answer = ListenerAnswer::default(),
-        }
-        match message.variant {
-            ListenerMessageVariant::Other => (),
-            _ => {
-                let _old_value = listener_data.replace(Some(message));
-            }
         }
         answer
     };
@@ -124,7 +117,7 @@ fn main() -> io::Result<()> {
             },
         )?
         .into(),
-        listener,
+        Some(listener),
         "MainWindow",
         Default::default(),
         None,
@@ -146,9 +139,9 @@ fn main() -> io::Result<()> {
                 ..Default::default()
             },
         )?;
-        Window::new_layered::<_, ()>(
+        Window::new_layered::<DefaultWmlType, ()>(
             host_class.into(),
-            |_| Default::default(),
+            None,
             "MagnifierHost",
             WindowAppearance {
                 style: WindowStyle::Popup,
@@ -231,6 +224,87 @@ fn main() -> io::Result<()> {
     };
 
     let loop_callback = |thread_message| match thread_message {
+        ThreadMessage::WindowProc(window_message)
+            if window_message.window_handle == *main_window =>
+        {
+            match window_message.variant {
+                ListenerMessageVariant::MenuCommand { selected_item_id } => {
+                    match selected_item_id.into() {
+                        MenuID::Exit => main_window.send_command(WindowCommand::Close)?,
+                        MenuID::Other(_) => unreachable!(),
+                    }
+                }
+                ListenerMessageVariant::NotificationIconContextSelect { xy_coords, .. } => {
+                    let _ = main_window.set_as_foreground();
+                    popup.show_menu(*main_window, xy_coords)?;
+                }
+                ListenerMessageVariant::Timer { timer_id: 0 } => {
+                    magnifier_window.redraw()?;
+                    if let Some(confinement) = &magnifier_state.cursor_confinement {
+                        confinement.reapply()?;
+                    }
+                }
+                ListenerMessageVariant::CustomUserMessage(custom_message) => {
+                    let mut reinit_magnifier = || -> io::Result<()> {
+                        let maybe_foreground_window = WindowHandle::get_foreground_window();
+                        match maybe_foreground_window {
+                            Some(foreground_window)
+                                if maybe_foreground_window == target_window_setting.get() =>
+                            {
+                                set_magnifier_control(&mut magnifier_state, true)?;
+
+                                let monitor_info =
+                                    MonitorHandle::from_window(foreground_window).info()?;
+                                {
+                                    let mut placement =
+                                        host_control_window_handle.get_placement()?;
+                                    placement.set_normal_position(monitor_info.monitor_area);
+                                    host_control_window_handle.set_placement(&placement)?;
+                                }
+                                let source_window_rect =
+                                    foreground_window.get_client_area_coords()?;
+                                let scaling_result = ScalingResult::from_rects(
+                                    source_window_rect,
+                                    monitor_info.monitor_area,
+                                );
+                                {
+                                    let mut placement = magnifier_window.get_placement()?;
+                                    placement.set_normal_position(
+                                        scaling_result.max_scaled_rect_centered(),
+                                    );
+                                    magnifier_window.set_placement(&placement)?;
+                                }
+                                magnifier_window.set_magnification_factor(
+                                    scaling_result.max_scale_factor as f32,
+                                )?;
+                                magnifier_window.set_magnification_source(source_window_rect)?;
+                                magnifier_state.cursor_confinement =
+                                    Some(CursorConfinement::new(source_window_rect)?);
+                            }
+                            _ => set_magnifier_control(&mut magnifier_state, false)?,
+                        }
+                        Ok(())
+                    };
+                    match UserMessageId::from(custom_message.message_id) {
+                        UserMessageId::ForegroundWindowChanged => {
+                            reinit_magnifier()?;
+                        }
+                        UserMessageId::TargetWindowChanged => {
+                            if let Some(_window_handle) = target_window_setting.get() {
+                                reinit_magnifier()?;
+                                main_window.set_timer(0, 1000 / 60)?;
+                            } else {
+                                set_magnifier_control(&mut magnifier_state, false)?;
+                                let _ = main_window.kill_timer(0);
+                            }
+                        }
+                        UserMessageId::Other(_) => unreachable!(),
+                    }
+                }
+                _ => (),
+            }
+            Ok(())
+        }
         ThreadMessage::Hotkey(hotkey_id) => {
             if hotkey_id == 0 {
                 let foreground_window = WindowHandle::get_foreground_window();
@@ -248,89 +322,7 @@ fn main() -> io::Result<()> {
                 unreachable!()
             }
         }
-        ThreadMessage::Other(_) => {
-            if let Some(message) = listener_data_clone.take() {
-                match message.variant {
-                    ListenerMessageVariant::MenuCommand { selected_item_id } => {
-                        match selected_item_id.into() {
-                            MenuID::Exit => main_window.send_command(WindowCommand::Close)?,
-                            MenuID::Other(_) => unreachable!(),
-                        }
-                    }
-                    ListenerMessageVariant::NotificationIconContextSelect { xy_coords, .. } => {
-                        let _ = main_window.set_as_foreground();
-                        popup.show_menu(*main_window, xy_coords)?;
-                    }
-                    ListenerMessageVariant::Timer { timer_id: 0 } => {
-                        magnifier_window.redraw()?;
-                        if let Some(confinement) = &magnifier_state.cursor_confinement {
-                            confinement.reapply()?;
-                        }
-                    }
-                    ListenerMessageVariant::CustomUserMessage(custom_message) => {
-                        let mut reinit_magnifier = || -> io::Result<()> {
-                            let maybe_foreground_window = WindowHandle::get_foreground_window();
-                            match maybe_foreground_window {
-                                Some(foreground_window)
-                                    if maybe_foreground_window == target_window_setting.get() =>
-                                {
-                                    set_magnifier_control(&mut magnifier_state, true)?;
-
-                                    let monitor_info =
-                                        MonitorHandle::from_window(foreground_window).info()?;
-                                    {
-                                        let mut placement =
-                                            host_control_window_handle.get_placement()?;
-                                        placement.set_normal_position(monitor_info.monitor_area);
-                                        host_control_window_handle.set_placement(&placement)?;
-                                    }
-                                    let source_window_rect =
-                                        foreground_window.get_client_area_coords()?;
-                                    let scaling_result = ScalingResult::from_rects(
-                                        source_window_rect,
-                                        monitor_info.monitor_area,
-                                    );
-                                    {
-                                        let mut placement = magnifier_window.get_placement()?;
-                                        placement.set_normal_position(
-                                            scaling_result.max_scaled_rect_centered(),
-                                        );
-                                        magnifier_window.set_placement(&placement)?;
-                                    }
-                                    magnifier_window.set_magnification_factor(
-                                        scaling_result.max_scale_factor as f32,
-                                    )?;
-                                    magnifier_window
-                                        .set_magnification_source(source_window_rect)?;
-                                    magnifier_state.cursor_confinement =
-                                        Some(CursorConfinement::new(source_window_rect)?);
-                                }
-                                _ => set_magnifier_control(&mut magnifier_state, false)?,
-                            }
-                            Ok(())
-                        };
-                        match UserMessageId::from(custom_message.message_id) {
-                            UserMessageId::ForegroundWindowChanged => {
-                                reinit_magnifier()?;
-                            }
-                            UserMessageId::TargetWindowChanged => {
-                                if let Some(_window_handle) = target_window_setting.get() {
-                                    reinit_magnifier()?;
-                                    main_window.set_timer(0, 1000 / 60)?;
-                                } else {
-                                    set_magnifier_control(&mut magnifier_state, false)?;
-                                    let _ = main_window.kill_timer(0);
-                                }
-                            }
-                            UserMessageId::Other(_) => unreachable!(),
-                        }
-                    }
-                    ListenerMessageVariant::Other => (),
-                    _ => (),
-                }
-            }
-            Ok(())
-        }
+        ThreadMessage::Other(_) => Ok(()),
         _ => Ok(()),
     };
     ThreadMessageLoop::new().run_with(loop_callback)?;

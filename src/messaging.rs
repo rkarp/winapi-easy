@@ -13,13 +13,19 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::BOOL;
 
+#[cfg(feature = "input")]
+pub use crate::input::hotkey::HotkeyId;
 use crate::internal::ReturnValue;
+#[cfg(feature = "ui")]
+pub use crate::ui::messaging::ListenerMessage;
 
 pub type RawThreadMessage = MSG;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum ThreadMessage {
+    #[cfg(feature = "ui")]
+    WindowProc(ListenerMessage),
     #[cfg(feature = "input")]
     Hotkey(u8),
     Other(RawThreadMessage),
@@ -28,10 +34,18 @@ pub enum ThreadMessage {
 impl From<RawThreadMessage> for ThreadMessage {
     fn from(raw_message: RawThreadMessage) -> Self {
         match raw_message.message {
+            #[cfg(feature = "ui")]
+            crate::ui::messaging::RawMessage::ID_WINDOW_PROC_MSG => {
+                let listener_message = unsafe {
+                    Box::from_raw(std::ptr::with_exposed_provenance_mut::<ListenerMessage>(
+                        raw_message.wParam.0,
+                    ))
+                };
+                Self::WindowProc(*listener_message)
+            }
             #[cfg(feature = "input")]
             windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY => Self::Hotkey(
-                crate::input::hotkey::HotkeyId::try_from(raw_message.wParam.0)
-                    .expect("Hotkey ID outside of valid range"),
+                HotkeyId::try_from(raw_message.wParam.0).expect("Hotkey ID outside of valid range"),
             ),
             _ => Self::Other(raw_message),
         }

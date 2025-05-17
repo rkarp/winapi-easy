@@ -49,7 +49,10 @@ pub struct ListenerMessage {
 }
 
 impl ListenerMessage {
-    fn from_raw_message(raw_message: RawMessage, window_handle: WindowHandle) -> Self {
+    fn from_known_raw_message(
+        raw_message: RawMessage,
+        window_handle: WindowHandle,
+    ) -> Option<Self> {
         let variant = match raw_message.message {
             value if value >= WM_APP && value <= WM_APP + (u32::from(u8::MAX)) => {
                 ListenerMessageVariant::CustomUserMessage(CustomUserMessage {
@@ -59,6 +62,7 @@ impl ListenerMessage {
                     w_param: raw_message.w_param.0,
                     l_param: raw_message.l_param.0,
                 })
+                .into()
             }
             RawMessage::ID_NOTIFICATION_ICON_MSG => {
                 let icon_id = HIWORD(
@@ -80,13 +84,14 @@ impl ListenerMessage {
                 match event_code {
                     // NIN_SELECT only happens with left clicks. Space will produce 1x NIN_KEYSELECT, Enter 2x NIN_KEYSELECT.
                     NIN_SELECT | NIN_KEYSELECT => {
-                        ListenerMessageVariant::NotificationIconSelect { icon_id, xy_coords }
+                        ListenerMessageVariant::NotificationIconSelect { icon_id, xy_coords }.into()
                     }
                     // Works both with mouse right click and the context menu key.
                     WM_CONTEXTMENU => {
                         ListenerMessageVariant::NotificationIconContextSelect { icon_id, xy_coords }
+                            .into()
                     }
-                    _ => ListenerMessageVariant::Other,
+                    _ => None,
                 }
             }
             WM_COMMAND if HIWORD(u32::try_from(raw_message.w_param.0).unwrap()) == 0 => {
@@ -96,6 +101,7 @@ impl ListenerMessage {
                         u32::try_from(raw_message.w_param.0).unwrap(),
                     )),
                 }
+                .into()
             }
             WM_MENUCOMMAND => {
                 let menu_handle = MenuHandle::from_maybe_null(HMENU(
@@ -105,26 +111,27 @@ impl ListenerMessage {
                 let selected_item_id = menu_handle
                     .get_item_id(raw_message.w_param.0.try_into().unwrap())
                     .unwrap();
-                ListenerMessageVariant::MenuCommand { selected_item_id }
+                ListenerMessageVariant::MenuCommand { selected_item_id }.into()
             }
             WM_SIZE => {
                 if raw_message.w_param.0 == SIZE_MINIMIZED.try_into().unwrap() {
-                    ListenerMessageVariant::WindowMinimized
+                    ListenerMessageVariant::WindowMinimized.into()
                 } else {
-                    ListenerMessageVariant::Other
+                    None
                 }
             }
             WM_TIMER => ListenerMessageVariant::Timer {
                 timer_id: raw_message.w_param.0,
-            },
-            WM_CLOSE => ListenerMessageVariant::WindowClose,
-            WM_DESTROY => ListenerMessageVariant::WindowDestroy,
-            _ => ListenerMessageVariant::Other,
+            }
+            .into(),
+            WM_CLOSE => ListenerMessageVariant::WindowClose.into(),
+            WM_DESTROY => ListenerMessageVariant::WindowDestroy.into(),
+            _ => None,
         };
-        ListenerMessage {
+        variant.map(|variant| ListenerMessage {
             window_handle,
             variant,
-        }
+        })
     }
 }
 
@@ -151,7 +158,6 @@ pub enum ListenerMessageVariant {
     ///
     /// Message ID `0` represents the raw value `WM_APP`.
     CustomUserMessage(CustomUserMessage),
-    Other,
 }
 
 /// Indicates what should be done after the [`WindowMessageListener`] is done processing the message.
@@ -173,7 +179,7 @@ impl ListenerAnswer {
     }
 }
 
-pub(crate) type WmlOpaqueClosure<'a> = Box<dyn FnMut(ListenerMessage) -> ListenerAnswer + 'a>;
+pub(crate) type WmlOpaqueClosure<'a> = Box<dyn FnMut(&ListenerMessage) -> ListenerAnswer + 'a>;
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct RawMessage {
@@ -189,8 +195,9 @@ impl RawMessage {
     /// that won't conflict with messages from predefined Windows control classes.
     const STR_MSG_RANGE_START: u32 = 0xC000;
 
-    pub(crate) const ID_APP_WAKEUP_MSG: u32 = Self::STR_MSG_RANGE_START - 1;
-    pub(crate) const ID_NOTIFICATION_ICON_MSG: u32 = Self::STR_MSG_RANGE_START - 2;
+    pub(crate) const ID_WINDOW_PROC_MSG: u32 = Self::STR_MSG_RANGE_START - 1;
+    pub(crate) const ID_APP_WAKEUP_MSG: u32 = Self::STR_MSG_RANGE_START - 2;
+    pub(crate) const ID_NOTIFICATION_ICON_MSG: u32 = Self::STR_MSG_RANGE_START - 3;
 
     /// Posts a message to the thread message queue and returns immediately.
     ///
@@ -207,6 +214,17 @@ impl RawMessage {
         Ok(())
     }
 
+    fn post_window_proc_message(listener_message: ListenerMessage) -> io::Result<()> {
+        let ptr_usize = Box::into_raw(Box::new(listener_message)).expose_provenance();
+        let window_proc_message = RawMessage {
+            message: Self::ID_WINDOW_PROC_MSG,
+            w_param: WPARAM(ptr_usize),
+            l_param: LPARAM(0),
+        };
+        window_proc_message.post_to_queue(None)
+    }
+
+    #[allow(dead_code)]
     fn post_loop_wakeup_message() -> io::Result<()> {
         let wakeup_message = RawMessage {
             message: Self::ID_APP_WAKEUP_MSG,
@@ -250,17 +268,26 @@ pub(crate) unsafe extern "system" fn generic_window_proc(
             l_param,
         };
 
+        let listener_message = ListenerMessage::from_known_raw_message(raw_message, window);
         // When creating a window, the custom data for the loop is not set yet
         // before the first call to this function
         let listener_result = unsafe { window.get_user_data_ptr::<WmlOpaqueClosure>() }.and_then(
             |mut listener_ptr| {
-                let listener_message = ListenerMessage::from_raw_message(raw_message, window);
-                // Many messages won't go through the thread message loop, so we need to notify it.
-                // No chance of an infinite loop here since the window procedure won't be called for messages with no associated windows.
-                RawMessage::post_loop_wakeup_message().unwrap();
-                (unsafe { listener_ptr.as_mut().as_mut() })(listener_message).to_raw_lresult()
+                if let Some(known_listener_message) = &listener_message {
+                    (unsafe { listener_ptr.as_mut().as_mut() })(known_listener_message)
+                        .to_raw_lresult()
+                } else {
+                    ListenerAnswer::default().to_raw_lresult()
+                }
             },
         );
+        if let Some(known_listener_message) = listener_message {
+            // Many messages won't go through the thread message loop at all, so we need to notify it.
+            // No chance of an infinite loop here since the window procedure won't be called for messages with no associated windows.
+            // Also note that the window procedure may be called multiple times while the thread message loop is blocked (waiting).
+            RawMessage::post_window_proc_message(known_listener_message)
+                .expect("Cannot send internal window procedure message");
+        }
 
         if let Some(l_result) = listener_result {
             l_result

@@ -278,7 +278,10 @@ impl SubMenu {
     /// Shows the popup menu at the given coordinates.
     ///
     /// The coordinates can for example be retrieved from the window message handler, see
-    /// [`crate::ui::messaging::WindowMessageListener::handle_notification_icon_context_select`]
+    /// [`crate::ui::messaging::ListenerMessageVariant::NotificationIconContextSelect`]
+    ///
+    /// The given window needs to be the foreground window for the menu to show
+    /// (use [`WindowHandle::set_as_foreground`]).
     pub fn show_menu(&self, window: WindowHandle, coords: Point) -> io::Result<()> {
         unsafe {
             TrackPopupMenu(

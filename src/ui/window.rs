@@ -301,6 +301,8 @@ impl WindowHandle {
     }
 
     /// Brings the window to the foreground.
+    ///
+    /// May interfere with the Z-position of other windows created by this process.
     pub fn set_as_foreground(self) -> io::Result<()> {
         unsafe {
             SetForegroundWindow(self.raw_handle).if_null_to_error_else_drop(|| {
@@ -752,6 +754,8 @@ impl Default for WindowClassAppearance {
     }
 }
 
+pub type DefaultWmlType = fn(&ListenerMessage) -> ListenerAnswer;
+
 pub trait WindowSubtype: 'static {}
 
 impl WindowSubtype for () {}
@@ -794,7 +798,7 @@ impl<WST: WindowSubtype> Window<WST> {
         parent: Option<Rc<RefCell<Window<PST>>>>,
     ) -> io::Result<Self>
     where
-        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
+        WML: FnMut(&ListenerMessage) -> ListenerAnswer + 'static,
         PST: WindowSubtype,
     {
         let h_wnd: HWND = unsafe {
@@ -838,7 +842,7 @@ impl<WST: WindowSubtype> Window<WST> {
     /// Changes the [`WindowMessageListener`].
     pub fn set_listener<WML>(&mut self, listener: WML) -> io::Result<()>
     where
-        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
+        WML: FnMut(&ListenerMessage) -> ListenerAnswer + 'static,
     {
         unsafe { Self::set_listener_internal(self.handle, listener) }?;
         Ok(())
@@ -854,7 +858,7 @@ impl<WST: WindowSubtype> Window<WST> {
         listener: WML,
     ) -> io::Result<RawBox<WmlOpaqueClosure<'static>>>
     where
-        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
+        WML: FnMut(&ListenerMessage) -> ListenerAnswer + 'static,
     {
         let mut opaque_listener = RawBox::new(Box::new(listener) as WmlOpaqueClosure);
         unsafe {
@@ -909,43 +913,49 @@ impl<WST: WindowSubtype> Window<WST> {
 impl Window<()> {
     /// Creates a new window.
     ///
-    /// User interaction with the window will result in messages sent to the [`WindowMessageListener`] provided here.
+    /// User interaction with the window will result in messages sent to the window message listener provided here.
+    ///
+    /// # Generics
+    ///
+    /// Note that you can use [`DefaultWmlType`] for the `WML` type parameter when not providing a listener.
     pub fn new<WML, PST>(
         class: Rc<WindowClass>,
-        listener: WML,
+        listener: Option<WML>,
         window_name: &str,
         appearance: WindowAppearance,
         parent: Option<Rc<RefCell<Window<PST>>>>,
     ) -> io::Result<Self>
     where
-        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
+        WML: FnMut(&ListenerMessage) -> ListenerAnswer + 'static,
         PST: WindowSubtype,
     {
         let class = WindowClassVariant::Custom(class);
-        Self::internal_new(class, Some(listener), window_name, appearance, parent)
+        Self::internal_new(class, listener, window_name, appearance, parent)
     }
 }
 
 impl Window<Layered> {
     /// Creates a new layered window.
+    ///
+    /// This is analogous to [`Window::new`].
     pub fn new_layered<WML, PST>(
         class: Rc<WindowClass>,
-        listener: WML,
+        listener: Option<WML>,
         window_name: &str,
         mut appearance: WindowAppearance,
         parent: Option<Rc<RefCell<Window<PST>>>>,
     ) -> io::Result<Self>
     where
-        WML: FnMut(ListenerMessage) -> ListenerAnswer + 'static,
+        WML: FnMut(&ListenerMessage) -> ListenerAnswer + 'static,
         PST: WindowSubtype,
     {
         appearance.extended_style =
             appearance.extended_style | WindowExtendedStyle::Other(WS_EX_LAYERED.0);
         let class = WindowClassVariant::Custom(class);
-        Self::internal_new(class, Some(listener), window_name, appearance, parent)
+        Self::internal_new(class, listener, window_name, appearance, parent)
     }
 
-    /// Sets the opacity value for a window using the [`WindowExtendedStyle::Layered`] style.
+    /// Sets the opacity value for a layered window.
     pub fn set_layered_opacity_alpha(&self, alpha: u8) -> io::Result<()> {
         self.handle.internal_set_layered_opacity_alpha(alpha)
     }
@@ -963,7 +973,7 @@ impl Window<Magnifier> {
         let class = WindowClassVariant::Builtin(WC_MAGNIFIER);
         Self::internal_new(
             class,
-            None::<fn(_) -> _>,
+            None::<DefaultWmlType>,
             window_name,
             appearance,
             Some(parent),
@@ -1535,7 +1545,6 @@ mod tests {
         const WINDOW_NAME: &str = "mywindow1";
         const CAPTION_TEXT: &str = "Testwindow";
 
-        let listener = |_| Default::default();
         let icon: Rc<Icon> = Default::default();
         let class: WindowClass = WindowClass::register_new(
             CLASS_NAME_PREFIX,
@@ -1544,9 +1553,9 @@ mod tests {
                 ..Default::default()
             },
         )?;
-        let mut window: Window = Window::new::<_, ()>(
+        let mut window = Window::new::<DefaultWmlType, ()>(
             class.into(),
-            listener,
+            None,
             WINDOW_NAME,
             WindowAppearance::default(),
             None,
