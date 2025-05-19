@@ -1,10 +1,7 @@
 //! An example magnifier app that will automatically magnify the foreground window on hotkey Ctrl + Alt + Shift + F.
 //!
 //! Exit via notification icon command.
-use std::cell::{
-    Cell,
-    RefCell,
-};
+use std::cell::RefCell;
 use std::io;
 use std::rc::Rc;
 
@@ -85,10 +82,23 @@ enum UserMessageId {
 }
 
 #[derive(Default, Debug)]
+struct MagnifierOptions {
+    target_window_setting: Option<WindowHandle>,
+}
+
+#[derive(Default, Debug)]
 struct MagnifierState {
     magnifier_active: bool,
     cursor_hider: Option<CursorConcealment>,
     cursor_confinement: Option<CursorConfinement>,
+}
+
+#[derive(FromPrimitive, IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[repr(u8)]
+enum HotkeyId {
+    SetTargetWindow,
+    #[num_enum(catch_all)]
+    Other(u8),
 }
 
 fn main() -> io::Result<()> {
@@ -172,38 +182,10 @@ fn main() -> io::Result<()> {
         None,
     )?;
 
+    let mut magnifier_options = MagnifierOptions::default();
     let mut magnifier_state = MagnifierState::default();
-    let target_window_setting: Cell<Option<WindowHandle>> = Default::default();
 
-    let set_magnifier_control =
-        |magnifier_state: &mut MagnifierState, enable: bool| -> io::Result<()> {
-            if magnifier_state.magnifier_active != enable {
-                if enable {
-                    magnifier_state.cursor_hider = Some(CursorConcealment::new()?);
-                    host_control_window_handle.set_show_state(WindowShowState::Show)?;
-                    // Possible Windows bug: The topmost setting may stop working if another window of the process
-                    // was set as the foreground window. As a workaround we reset it first.
-                    host_control_window_handle.set_z_position(WindowZPosition::NoTopMost)?;
-                    host_control_window_handle.set_z_position(WindowZPosition::TopMost)?;
-                } else {
-                    magnifier_state.cursor_hider = None;
-                    magnifier_state.cursor_confinement = None;
-                    host_control_window_handle.set_z_position(WindowZPosition::Bottom)?;
-                    host_control_window_handle.set_show_state(WindowShowState::Hide)?;
-                }
-                magnifier_state.magnifier_active = enable;
-            }
-            Ok(())
-        };
-
-    let _hotkeys = {
-        let mut hotkeys = GlobalHotkeySet::new();
-        hotkeys.add_hotkey(
-            0,
-            Modifier::Ctrl + Modifier::Alt + Modifier::Shift + KeyboardKey::F,
-        )?;
-        hotkeys
-    };
+    let _hotkeys = setup_hotkeys()?;
 
     let _win_event_hook = {
         let win_event_listener = |event: WinEventMessage| match event.event_kind {
@@ -227,6 +209,28 @@ fn main() -> io::Result<()> {
         ThreadMessage::WindowProc(window_message)
             if window_message.window_handle == *main_window =>
         {
+            let set_magnifier_control = |magnifier_state: &mut MagnifierState,
+                                         enable: bool|
+             -> io::Result<()> {
+                if magnifier_state.magnifier_active != enable {
+                    if enable {
+                        magnifier_state.cursor_hider = Some(CursorConcealment::new()?);
+                        host_control_window_handle.set_show_state(WindowShowState::Show)?;
+                        // Possible Windows bug: The topmost setting may stop working if another window of the process
+                        // was set as the foreground window. As a workaround we reset it first.
+                        host_control_window_handle.set_z_position(WindowZPosition::NoTopMost)?;
+                        host_control_window_handle.set_z_position(WindowZPosition::TopMost)?;
+                    } else {
+                        magnifier_state.cursor_hider = None;
+                        magnifier_state.cursor_confinement = None;
+                        host_control_window_handle.set_z_position(WindowZPosition::Bottom)?;
+                        host_control_window_handle.set_show_state(WindowShowState::Hide)?;
+                    }
+                    magnifier_state.magnifier_active = enable;
+                }
+                Ok(())
+            };
+
             match window_message.variant {
                 ListenerMessageVariant::MenuCommand { selected_item_id } => {
                     match selected_item_id.into() {
@@ -249,7 +253,8 @@ fn main() -> io::Result<()> {
                         let maybe_foreground_window = WindowHandle::get_foreground_window();
                         match maybe_foreground_window {
                             Some(foreground_window)
-                                if maybe_foreground_window == target_window_setting.get() =>
+                                if maybe_foreground_window
+                                    == magnifier_options.target_window_setting =>
                             {
                                 set_magnifier_control(&mut magnifier_state, true)?;
 
@@ -290,7 +295,7 @@ fn main() -> io::Result<()> {
                             reinit_magnifier()?;
                         }
                         UserMessageId::TargetWindowChanged => {
-                            if let Some(_window_handle) = target_window_setting.get() {
+                            if let Some(_window_handle) = magnifier_options.target_window_setting {
                                 reinit_magnifier()?;
                                 main_window.set_timer(0, 1000 / 60)?;
                             } else {
@@ -306,12 +311,12 @@ fn main() -> io::Result<()> {
             Ok(())
         }
         ThreadMessage::Hotkey(hotkey_id) => {
-            if hotkey_id == 0 {
+            if let HotkeyId::SetTargetWindow = HotkeyId::from(hotkey_id) {
                 let foreground_window = WindowHandle::get_foreground_window();
-                if target_window_setting.get().is_some() {
-                    target_window_setting.set(None);
+                if magnifier_options.target_window_setting.is_some() {
+                    magnifier_options.target_window_setting = None;
                 } else {
-                    target_window_setting.set(foreground_window);
+                    magnifier_options.target_window_setting = foreground_window;
                 }
                 main_window.send_user_message(CustomUserMessage {
                     message_id: UserMessageId::TargetWindowChanged.into(),
@@ -327,6 +332,15 @@ fn main() -> io::Result<()> {
     };
     ThreadMessageLoop::new().run_with(loop_callback)?;
     Ok(())
+}
+
+fn setup_hotkeys() -> io::Result<GlobalHotkeySet> {
+    let mut hotkeys = GlobalHotkeySet::new();
+    hotkeys.add_hotkey(
+        HotkeyId::SetTargetWindow.into(),
+        Modifier::Ctrl + Modifier::Alt + Modifier::Shift + KeyboardKey::F,
+    )?;
+    Ok(hotkeys)
 }
 
 #[derive(Debug)]
