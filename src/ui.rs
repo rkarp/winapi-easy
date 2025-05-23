@@ -42,7 +42,14 @@ use windows::Win32::UI::Magnification::{
     MagSetFullscreenTransform,
     MagShowSystemCursor,
 };
-use windows::Win32::UI::WindowsAndMessaging::ClipCursor;
+use windows::Win32::UI::WindowsAndMessaging::{
+    ClipCursor,
+    GetSystemMetrics,
+    SM_CXVIRTUALSCREEN,
+    SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN,
+    SM_YVIRTUALSCREEN,
+};
 use windows::core::BOOL;
 
 use crate::internal::ReturnValue;
@@ -199,6 +206,19 @@ impl CursorConcealment {
 impl Drop for CursorConcealment {
     fn drop(&mut self) {
         Self::remove().expect("Removing cursor hidden state failed");
+    }
+}
+
+pub fn get_virtual_screen_rect() -> Rectangle {
+    let left = unsafe { GetSystemMetrics(SM_XVIRTUALSCREEN) };
+    let top = unsafe { GetSystemMetrics(SM_YVIRTUALSCREEN) };
+    let width = unsafe { GetSystemMetrics(SM_CXVIRTUALSCREEN) };
+    let height = unsafe { GetSystemMetrics(SM_CYVIRTUALSCREEN) };
+    Rectangle {
+        left,
+        top,
+        right: left + width,
+        bottom: top + height,
     }
 }
 

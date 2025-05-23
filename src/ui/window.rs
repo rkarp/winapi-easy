@@ -145,6 +145,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_EX_COMPOSITED,
     WS_EX_LAYERED,
     WS_EX_LEFT,
+    WS_EX_NOACTIVATE,
     WS_EX_TOPMOST,
     WS_EX_TRANSPARENT,
     WS_OVERLAPPED,
@@ -350,6 +351,16 @@ impl WindowHandle {
     /// Sets the window's show state and positions.
     pub fn set_placement(self, placement: &WindowPlacement) -> io::Result<()> {
         unsafe { SetWindowPlacement(self.raw_handle, &placement.raw_placement)? };
+        Ok(())
+    }
+
+    pub fn modify_placement_with<F>(self, f: F) -> io::Result<()>
+    where
+        F: FnOnce(&mut WindowPlacement) -> io::Result<()>,
+    {
+        let mut placement = self.get_placement()?;
+        f(&mut placement)?;
+        self.set_placement(&placement)?;
         Ok(())
     }
 
@@ -793,7 +804,7 @@ impl<WST: WindowSubtype> Window<WST> {
     fn internal_new<WML, PST>(
         class: WindowClassVariant,
         listener: Option<WML>,
-        window_name: &str,
+        caption_text: &str,
         appearance: WindowAppearance,
         parent: Option<Rc<RefCell<Window<PST>>>>,
     ) -> io::Result<Self>
@@ -805,7 +816,7 @@ impl<WST: WindowSubtype> Window<WST> {
             CreateWindowExW(
                 appearance.extended_style.into(),
                 class.raw_class_identifier(),
-                ZeroTerminatedWideString::from_os_str(window_name).as_raw_pcwstr(),
+                ZeroTerminatedWideString::from_os_str(caption_text).as_raw_pcwstr(),
                 appearance.style.into(),
                 CW_USEDEFAULT,
                 0,
@@ -921,7 +932,7 @@ impl Window<()> {
     pub fn new<WML, PST>(
         class: Rc<WindowClass>,
         listener: Option<WML>,
-        window_name: &str,
+        caption_text: &str,
         appearance: WindowAppearance,
         parent: Option<Rc<RefCell<Window<PST>>>>,
     ) -> io::Result<Self>
@@ -930,7 +941,7 @@ impl Window<()> {
         PST: WindowSubtype,
     {
         let class = WindowClassVariant::Custom(class);
-        Self::internal_new(class, listener, window_name, appearance, parent)
+        Self::internal_new(class, listener, caption_text, appearance, parent)
     }
 }
 
@@ -941,7 +952,7 @@ impl Window<Layered> {
     pub fn new_layered<WML, PST>(
         class: Rc<WindowClass>,
         listener: Option<WML>,
-        window_name: &str,
+        caption_text: &str,
         mut appearance: WindowAppearance,
         parent: Option<Rc<RefCell<Window<PST>>>>,
     ) -> io::Result<Self>
@@ -952,7 +963,7 @@ impl Window<Layered> {
         appearance.extended_style =
             appearance.extended_style | WindowExtendedStyle::Other(WS_EX_LAYERED.0);
         let class = WindowClassVariant::Custom(class);
-        Self::internal_new(class, listener, window_name, appearance, parent)
+        Self::internal_new(class, listener, caption_text, appearance, parent)
     }
 
     /// Sets the opacity value for a layered window.
@@ -963,7 +974,7 @@ impl Window<Layered> {
 
 impl Window<Magnifier> {
     pub fn new_magnifier(
-        window_name: &str,
+        caption_text: &str,
         mut appearance: WindowAppearance,
         parent: Rc<RefCell<Window<Layered>>>,
     ) -> io::Result<Self> {
@@ -974,7 +985,7 @@ impl Window<Magnifier> {
         Self::internal_new(
             class,
             None::<DefaultWmlType>,
-            window_name,
+            caption_text,
             appearance,
             Some(parent),
         )
@@ -1083,6 +1094,7 @@ impl From<WindowStyle> for WINDOW_STYLE {
 pub enum WindowExtendedStyle {
     Composited = WS_EX_COMPOSITED.0,
     Left = WS_EX_LEFT.0,
+    NoActivate = WS_EX_NOACTIVATE.0,
     Topmost = WS_EX_TOPMOST.0,
     Transparent = WS_EX_TRANSPARENT.0,
     #[num_enum(catch_all)]

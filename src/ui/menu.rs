@@ -246,19 +246,56 @@ impl SubMenu {
         Ok(())
     }
 
-    /// Modifies a menu item using the given closure.
+    /// Modifies a menu item at the given index using the given closure.
     ///
     /// # Panics
     ///
     /// Will panic if the given index is out of bounds.
-    pub fn modify_menu_item(
+    pub fn modify_menu_item_by_index(
         &mut self,
         index: u32,
         modify_fn: impl FnOnce(&mut SubMenuItem) -> io::Result<()>,
     ) -> io::Result<()> {
         let item = &mut self.items[usize::try_from(index).unwrap()];
-        modify_fn(item)?;
-        self.handle.modify_submenu_item(item, index)?;
+        let mut modified_item = item.clone();
+        modify_fn(&mut modified_item)?;
+        self.handle.modify_submenu_item(&modified_item, index)?;
+        *item = modified_item;
+        Ok(())
+    }
+
+    /// Modifies all text menu items with the given ID using the given closure.
+    ///
+    /// Will do nothing if no item with a matching ID is found.
+    pub fn modify_text_menu_items_by_id(
+        &mut self,
+        id: u32,
+        mut modify_fn: impl FnMut(&mut TextMenuItem) -> io::Result<()>,
+    ) -> io::Result<()> {
+        let indexes: Vec<_> = (0..)
+            .zip(&self.items)
+            .filter_map(|(index, item)| match item {
+                SubMenuItem::Text(text_menu_item) => {
+                    if text_menu_item.id == id {
+                        Some(index)
+                    } else {
+                        None
+                    }
+                }
+                SubMenuItem::Separator => None,
+            })
+            .collect();
+        let mut internal_modify_fn = |item: &mut SubMenuItem| {
+            if let SubMenuItem::Text(item) = item {
+                modify_fn(item)?;
+            } else {
+                unreachable!()
+            };
+            Ok(())
+        };
+        for index in indexes {
+            self.modify_menu_item_by_index(index, &mut internal_modify_fn)?;
+        }
         Ok(())
     }
 
@@ -411,7 +448,7 @@ mod tests {
             None,
         )?;
         menu.insert_menu_item(SubMenuItem::Separator, None)?;
-        menu.modify_menu_item(0, |item| {
+        menu.modify_menu_item_by_index(0, |item| {
             if let SubMenuItem::Text(item) = item {
                 item.disabled = true;
                 Ok(())
@@ -419,7 +456,7 @@ mod tests {
                 panic!()
             }
         })?;
-        menu.modify_menu_item(1, |item| {
+        menu.modify_menu_item_by_index(1, |item| {
             *item = SubMenuItem::Text(TextMenuItem::default_with_text(TEST_ID2, "text2"));
             Ok(())
         })?;
