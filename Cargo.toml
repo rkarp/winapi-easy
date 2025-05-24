@@ -123,7 +123,7 @@ name = "list_audio_devices"
 required-features = ["media"]
 
 [[example]]
-name = "magnifier_control"
+name = "magnifier"
 required-features = ["hooking", "input", "ui"]
 
 [[example]]
