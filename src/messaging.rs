@@ -65,7 +65,7 @@ impl ThreadMessageLoop {
     /// # Panics
     ///
     /// Will panic if a thread message context already exists for the current thread.
-    #[allow(clippy::new_without_default)]
+    #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
         assert!(
             !Self::RUNNING.get(),
@@ -114,6 +114,7 @@ impl ThreadMessageLoop {
         }
     }
 
+    #[expect(clippy::unused_self)]
     pub(crate) fn process_single_thread_message(
         &mut self,
         dispatch_to_wnd_proc: bool,
@@ -123,7 +124,7 @@ impl ThreadMessageLoop {
         let filter_message_id = filter_message_id.unwrap_or(0);
         let mut msg: MSG = Default::default();
         unsafe {
-            GetMessageW(&mut msg, None, filter_message_id, filter_message_id)
+            GetMessageW(&raw mut msg, None, filter_message_id, filter_message_id)
                 .if_eq_to_error(BOOL(-1), io::Error::last_os_error)?;
         }
         if msg.message == WM_QUIT {
@@ -131,8 +132,8 @@ impl ThreadMessageLoop {
         }
         if dispatch_to_wnd_proc {
             unsafe {
-                let _ = TranslateMessage(&msg);
-                DispatchMessageW(&msg);
+                let _ = TranslateMessage(&raw const msg);
+                DispatchMessageW(&raw const msg);
             }
         }
         Ok(ThreadMessageProcessingResult::Success(msg))

@@ -18,7 +18,7 @@ use num_enum::{
     FromPrimitive,
     IntoPrimitive,
 };
-#[allow(clippy::wildcard_imports)]
+#[expect(clippy::wildcard_imports)]
 use private::*;
 use windows::Win32::Foundation::{
     HWND,
@@ -85,7 +85,7 @@ use crate::ui::window::WindowHandle;
 /// The hook will be removed when this struct is dropped.
 #[must_use]
 pub struct LowLevelInputHook<HT: HookType, F> {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     handle: HookHandle<HT::ClosureStore, F, HHOOK>,
 }
 
@@ -255,7 +255,7 @@ pub enum HookReturnValue {
 }
 
 mod private {
-    #[allow(clippy::wildcard_imports)]
+    #[expect(clippy::wildcard_imports)]
     use super::*;
 
     #[derive(Clone, Copy, Debug)]
@@ -430,7 +430,7 @@ mod private {
 
     #[derive(Copy, Clone, Debug)]
     pub struct RawLowLevelMessage {
-        #[allow(dead_code)]
+        #[expect(dead_code)]
         pub n_code: u32,
         pub w_param: usize,
         pub l_param: isize,
@@ -663,7 +663,7 @@ impl ReturnValue for HWINEVENTHOOK {
 /// The hook will be removed when this struct is dropped.
 #[must_use]
 pub struct WinEventHook<F> {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     handle: HookHandle<ThreadLocalRawClosureStore, F, HWINEVENTHOOK>,
 }
 
@@ -765,9 +765,9 @@ pub enum WinEventKind {
 pub struct WinEventMessage {
     pub event_kind: WinEventKind,
     pub window_handle: Option<WindowHandle>,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     object_id: i32,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     child_id: i32,
 }
 

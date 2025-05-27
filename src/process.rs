@@ -129,7 +129,7 @@ impl Process {
                 ProcessIoPriority,
                 (&raw mut raw_io_priority).cast::<c_void>(),
                 u32::try_from(mem::size_of::<i32>()).unwrap_or_else(|_| unreachable!()),
-                &mut return_length,
+                &raw mut return_length,
             )
         };
         ret_val.0.if_non_null_to_error(|| {
@@ -158,7 +158,7 @@ impl Process {
         ProcessId(id)
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn from_non_null(handle: HANDLE) -> Self {
         Self {
             handle: handle.into(),
@@ -258,7 +258,7 @@ impl Thread {
         ThreadId(id)
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn from_non_null(handle: HANDLE) -> Self {
         Self {
             handle: handle.into(),
@@ -321,12 +321,12 @@ impl ThreadInfo {
 
         let mut thread_entry = get_empty_thread_entry();
         unsafe {
-            Thread32First(snapshot.entity, &mut thread_entry)?;
+            Thread32First(snapshot.entity, &raw mut thread_entry)?;
         }
         result.push(Self::from_raw(thread_entry));
         loop {
             let mut thread_entry = get_empty_thread_entry();
-            let next_ret_val = unsafe { Thread32Next(snapshot.entity, &mut thread_entry) };
+            let next_ret_val = unsafe { Thread32Next(snapshot.entity, &raw mut thread_entry) };
             if next_ret_val.is_ok() {
                 result.push(Self::from_raw(thread_entry));
             } else {
@@ -414,7 +414,7 @@ pub enum IoPriority {
 
 /// A handle to a module (EXE or DLL).
 pub struct ModuleHandle {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     raw_handle: HMODULE,
 }
 
@@ -423,7 +423,7 @@ impl ModuleHandle {
     pub fn get_current() -> io::Result<Self> {
         let raw_handle = unsafe {
             let mut h_module: HMODULE = Default::default();
-            GetModuleHandleExW(0, None, &mut h_module)?;
+            GetModuleHandleExW(0, None, &raw mut h_module)?;
             h_module.if_null_get_last_error()?
         };
         Ok(ModuleHandle { raw_handle })

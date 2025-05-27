@@ -10,7 +10,7 @@ use num_enum::{
     FromPrimitive,
     IntoPrimitive,
 };
-#[allow(clippy::wildcard_imports)]
+#[expect(clippy::wildcard_imports)]
 use private::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState,
@@ -212,7 +212,7 @@ impl GenericKey for KeyboardKey {}
 impl GenericKey for MouseButton {}
 
 mod private {
-    #[allow(clippy::wildcard_imports)]
+    #[expect(clippy::wildcard_imports)]
     use super::*;
 
     pub trait GenericKeyInternal: Copy + Into<i32> {
@@ -502,7 +502,7 @@ pub enum MouseScrollEvent {
 }
 
 impl MouseScrollEvent {
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_truncation)]
     pub const WHEEL_DELTA: i16 = WHEEL_DELTA as _;
 
     /// Globally sends a single scroll event.

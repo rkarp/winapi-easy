@@ -7,7 +7,7 @@ use winapi_easy::ui::window::{
 };
 
 #[derive(Debug)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 struct WindowInfo {
     caption: String,
     class_name: String,

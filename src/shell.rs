@@ -72,7 +72,7 @@ use crate::ui::window::{
     WindowClassAppearance,
 };
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) struct PathChangeEvent {
     pub event: FsChangeEvent,
@@ -130,7 +130,7 @@ pub(crate) struct MonitoredPath<'a> {
     pub recursive: bool,
 }
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) fn monitor_path_changes<F>(
     monitored_paths: &[MonitoredPath],
     event_type: FsChangeEvent,
@@ -149,7 +149,7 @@ where
                 unsafe {
                     // Unclear if paths > MAX_PATH are even supported here
                     SHGetPathFromIDListEx(
-                        &raw_id_list,
+                        &raw const raw_id_list,
                         raw_path_buffer.0.as_mut_slice(),
                         Default::default(),
                     )
@@ -170,8 +170,8 @@ where
                         .l_param
                         .try_into()
                         .unwrap_or_else(|_| unreachable!()),
-                    Some(&mut raw_ppp_idl),
-                    Some(&mut raw_event),
+                    Some(&raw mut raw_ppp_idl),
+                    Some(&raw mut raw_event),
                 )
             };
             let _unlock_guard = CustomAutoDrop {

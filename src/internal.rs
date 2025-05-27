@@ -283,7 +283,7 @@ impl GlobalLockedData {
     pub(crate) fn ptr(&mut self) -> *mut c_void {
         self.ptr.as_ptr()
     }
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) fn handle(&self) -> HGLOBAL {
         self.handle
     }
@@ -471,7 +471,7 @@ impl<'inner, I, O> OpaqueClosure<'inner, I, O> {
     }
 
     /// Returns a closure that delegates to the original closure.
-    #[allow(clippy::wrong_self_convention)]
+    #[expect(clippy::wrong_self_convention)]
     pub(crate) fn to_closure(&mut self) -> impl FnMut(I) -> O {
         |input| unsafe { (self.trampoline)(self.raw_boxed_closure.box_ptr, input) }
     }
@@ -484,7 +484,6 @@ where
     io::Error::other(format!("{}. Code: {}", err_text, result_code))
 }
 
-#[allow(dead_code)]
 pub(crate) mod windows_missing {
     use windows::Win32::Foundation::LPARAM;
     use windows::Win32::UI::Shell::{
@@ -494,28 +493,28 @@ pub(crate) mod windows_missing {
 
     pub const NIN_KEYSELECT: u32 = NIN_SELECT | NINF_KEY;
 
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     pub fn LOWORD(l: u32) -> u16 {
         (l << u16::BITS >> u16::BITS).try_into().unwrap()
     }
 
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     pub fn HIWORD(l: u32) -> u16 {
         (l >> u16::BITS).try_into().unwrap()
     }
 
-    #[allow(non_snake_case)]
-    #[allow(clippy::cast_possible_truncation)]
-    #[allow(clippy::cast_possible_wrap)]
-    #[allow(clippy::cast_sign_loss)]
+    #[expect(non_snake_case)]
+    #[expect(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_wrap)]
+    #[expect(clippy::cast_sign_loss)]
     pub fn GET_X_LPARAM(lp: LPARAM) -> i32 {
         (LOWORD(lp.0 as u32) as i16).into()
     }
 
-    #[allow(non_snake_case)]
-    #[allow(clippy::cast_possible_truncation)]
-    #[allow(clippy::cast_possible_wrap)]
-    #[allow(clippy::cast_sign_loss)]
+    #[expect(non_snake_case)]
+    #[expect(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_wrap)]
+    #[expect(clippy::cast_sign_loss)]
     pub fn GET_Y_LPARAM(lp: LPARAM) -> i32 {
         (HIWORD(lp.0 as u32) as i16).into()
     }

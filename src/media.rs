@@ -45,7 +45,7 @@ pub(crate) struct ScreenDeviceContext {
 }
 
 impl ScreenDeviceContext {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) fn get() -> io::Result<Self> {
         let result = unsafe { GetDC(None).if_null_to_error(|| io::ErrorKind::Other.into())? };
         Ok(Self {
@@ -54,7 +54,7 @@ impl ScreenDeviceContext {
         })
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) fn get_raw_gamma_ramp(&self) -> io::Result<[[u16; 256]; 3]> {
         let mut rgbs: [[u16; 256]; 3] = [[0; 256]; 3];
         let _ = unsafe {
@@ -64,7 +64,7 @@ impl ScreenDeviceContext {
         Ok(rgbs)
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) fn set_raw_gamma_ramp(&self, values: &[[u16; 256]; 3]) -> io::Result<()> {
         let _ = unsafe {
             SetDeviceGammaRamp(self.raw_context, values.as_ptr().cast::<c_void>())
@@ -204,7 +204,7 @@ mod policy_config {
         }
     }
 
-    #[allow(clippy::transmute_ptr_to_ptr)]
+    #[expect(clippy::transmute_ptr_to_ptr)]
     mod interface_hierarchy {
         use super::IPolicyConfig;
 

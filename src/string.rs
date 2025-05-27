@@ -30,7 +30,6 @@ pub(crate) trait ToWideString: AsRef<OsStr> + Sized {
 }
 impl<T: AsRef<OsStr> + Sized> ToWideString for T {}
 
-#[allow(clippy::needless_lifetimes)]
 pub(crate) fn to_wide_chars_iter(
     str: &(impl AsRef<OsStr> + ?Sized),
 ) -> impl Iterator<Item = u16> + '_ {
@@ -77,7 +76,7 @@ pub(crate) struct WinUnicodeString {
 }
 
 impl WinUnicodeString {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) fn new(string: &str) -> io::Result<Self> {
         let os_str: &OsStr = string.as_ref();
         let mut wide_string: Vec<u16> = os_str.encode_wide().collect();

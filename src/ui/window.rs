@@ -344,13 +344,13 @@ impl WindowHandle {
                 .unwrap_or_else(|_| unreachable!()),
             ..Default::default()
         };
-        unsafe { GetWindowPlacement(self.raw_handle, &mut raw_placement)? };
+        unsafe { GetWindowPlacement(self.raw_handle, &raw mut raw_placement)? };
         Ok(WindowPlacement { raw_placement })
     }
 
     /// Sets the window's show state and positions.
     pub fn set_placement(self, placement: &WindowPlacement) -> io::Result<()> {
-        unsafe { SetWindowPlacement(self.raw_handle, &placement.raw_placement)? };
+        unsafe { SetWindowPlacement(self.raw_handle, &raw const placement.raw_placement)? };
         Ok(())
     }
 
@@ -382,7 +382,7 @@ impl WindowHandle {
     /// Returns the window's client area rectangle relative to the screen.
     pub fn get_client_area_coords(self) -> io::Result<Rectangle> {
         let mut result_rect: Rectangle = Default::default();
-        unsafe { GetClientRect(self.raw_handle, &mut result_rect) }?;
+        unsafe { GetClientRect(self.raw_handle, &raw mut result_rect) }?;
         self.map_points(None, result_rect.as_point_array_mut())?;
         Ok(result_rect)
     }
@@ -495,7 +495,7 @@ impl WindowHandle {
             },
         };
         unsafe {
-            let _ = FlashWindowEx(&raw_config);
+            let _ = FlashWindowEx(&raw const raw_config);
         };
     }
 
@@ -510,7 +510,7 @@ impl WindowHandle {
             ..Default::default()
         };
         unsafe {
-            let _ = FlashWindowEx(&raw_config);
+            let _ = FlashWindowEx(&raw const raw_config);
         };
     }
 
@@ -553,7 +553,8 @@ impl WindowHandle {
     fn get_creator_thread_process_ids(self) -> (ThreadId, ProcessId) {
         use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
         let mut process_id: u32 = 0;
-        let thread_id = unsafe { GetWindowThreadProcessId(self.raw_handle, Some(&mut process_id)) };
+        let thread_id =
+            unsafe { GetWindowThreadProcessId(self.raw_handle, Some(&raw mut process_id)) };
         (ThreadId(thread_id), ProcessId(process_id))
     }
 
@@ -672,7 +673,7 @@ impl WindowClassVariant {
 #[derive(Debug)]
 pub struct WindowClass {
     atom: u16,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     appearance: WindowClassAppearance,
 }
 
@@ -724,7 +725,7 @@ impl WindowClass {
             lpszClassName: ZeroTerminatedWideString::from_os_str(class_name).as_raw_pcwstr(),
             ..Default::default()
         };
-        let atom = unsafe { RegisterClassExW(&class_def).if_null_get_last_error()? };
+        let atom = unsafe { RegisterClassExW(&raw const class_def).if_null_get_last_error()? };
         Ok(WindowClass { atom, appearance })
     }
 }
@@ -787,11 +788,11 @@ impl WindowSubtype for Magnifier {}
 /// must only be called from the creating thread.
 pub struct Window<WST = ()> {
     handle: WindowHandle,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     class: WindowClassVariant,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     opaque_listener: Option<RawBox<WmlOpaqueClosure<'static>>>,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     parent: Option<Rc<dyn Any>>,
     notification_icons: HashMap<NotificationIconId, NotificationIcon>,
     phantom: PhantomData<WST>,
@@ -1001,7 +1002,8 @@ impl Window<Magnifier> {
         *multi_index(&mut matrix.v, 1, 1) = mag_factor;
         *multi_index(&mut matrix.v, 2, 2) = 1.0;
         unsafe {
-            MagSetWindowTransform(self.raw_handle, &mut matrix).if_null_get_last_error_else_drop()
+            MagSetWindowTransform(self.raw_handle, &raw mut matrix)
+                .if_null_get_last_error_else_drop()
         }
     }
 
@@ -1293,7 +1295,6 @@ pub enum MonitorPower {
 pub struct NotificationIcon {
     id: NotificationIconId,
     window: WindowHandle,
-    #[allow(dead_code)]
     icon: Rc<Icon>,
 }
 
@@ -1314,11 +1315,11 @@ impl NotificationIcon {
             None,
         );
         unsafe {
-            Shell_NotifyIconW(NIM_ADD, &call_data)
+            Shell_NotifyIconW(NIM_ADD, &raw const call_data)
                 .if_null_to_error_else_drop(|| io::Error::other("Cannot add notification icon"))?;
-            Shell_NotifyIconW(NIM_SETVERSION, &call_data).if_null_to_error_else_drop(|| {
-                io::Error::other("Cannot set notification version")
-            })?;
+            Shell_NotifyIconW(NIM_SETVERSION, &raw const call_data).if_null_to_error_else_drop(
+                || io::Error::other("Cannot set notification version"),
+            )?;
         };
         Ok(NotificationIcon {
             id: options.icon_id,
@@ -1339,7 +1340,7 @@ impl NotificationIcon {
             None,
         );
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &call_data)
+            Shell_NotifyIconW(NIM_MODIFY, &raw const call_data)
                 .if_null_to_error_else_drop(|| io::Error::other("Cannot set notification icon"))?;
         };
         self.icon = icon;
@@ -1351,9 +1352,9 @@ impl NotificationIcon {
         let call_data =
             get_notification_call_data(self.window, self.id, false, None, None, Some(hidden), None);
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
-                io::Error::other("Cannot set notification icon hidden state")
-            })?;
+            Shell_NotifyIconW(NIM_MODIFY, &raw const call_data).if_null_to_error_else_drop(
+                || io::Error::other("Cannot set notification icon hidden state"),
+            )?;
         };
         Ok(())
     }
@@ -1363,9 +1364,9 @@ impl NotificationIcon {
         let call_data =
             get_notification_call_data(self.window, self.id, false, None, Some(text), None, None);
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
-                io::Error::other("Cannot set notification icon tooltip text")
-            })?;
+            Shell_NotifyIconW(NIM_MODIFY, &raw const call_data).if_null_to_error_else_drop(
+                || io::Error::other("Cannot set notification icon tooltip text"),
+            )?;
         };
         Ok(())
     }
@@ -1385,9 +1386,9 @@ impl NotificationIcon {
             Some(notification),
         );
         unsafe {
-            Shell_NotifyIconW(NIM_MODIFY, &call_data).if_null_to_error_else_drop(|| {
-                io::Error::other("Cannot set notification icon balloon text")
-            })?;
+            Shell_NotifyIconW(NIM_MODIFY, &raw const call_data).if_null_to_error_else_drop(
+                || io::Error::other("Cannot set notification icon balloon text"),
+            )?;
         };
         Ok(())
     }
@@ -1398,11 +1399,11 @@ impl Drop for NotificationIcon {
         let call_data =
             get_notification_call_data(self.window, self.id, false, None, None, None, None);
         // Ignore seemingly unavoidable random errors here
-        let _ = unsafe { Shell_NotifyIconW(NIM_DELETE, &call_data) };
+        let _ = unsafe { Shell_NotifyIconW(NIM_DELETE, &raw const call_data) };
     }
 }
 
-#[allow(clippy::option_option)]
+#[expect(clippy::option_option)]
 fn get_notification_call_data(
     window_handle: WindowHandle,
     icon_id: NotificationIconId,

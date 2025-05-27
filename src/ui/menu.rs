@@ -56,7 +56,7 @@ pub(crate) struct MenuHandle {
 }
 
 impl MenuHandle {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn new_menu() -> io::Result<Self> {
         let handle = unsafe { CreateMenu()?.if_null_get_last_error()? };
         let result = Self {
@@ -77,7 +77,7 @@ impl MenuHandle {
         Ok(result)
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) fn from_non_null(raw_handle: HMENU) -> Self {
         Self {
             raw_handle,
@@ -112,7 +112,7 @@ impl MenuHandle {
             dwMenuData: 0,
         };
         unsafe {
-            SetMenuInfo(self.raw_handle, &raw_menu_info)?;
+            SetMenuInfo(self.raw_handle, &raw const raw_menu_info)?;
         }
         Ok(())
     }
@@ -120,7 +120,7 @@ impl MenuHandle {
     fn insert_submenu_item(&self, item: &SubMenuItem, idx: u32) -> io::Result<()> {
         let insert_call = |raw_item_info| {
             unsafe {
-                InsertMenuItemW(self.raw_handle, idx, true, &raw_item_info)?;
+                InsertMenuItemW(self.raw_handle, idx, true, &raw const raw_item_info)?;
             }
             Ok(())
         };
@@ -130,7 +130,7 @@ impl MenuHandle {
     fn modify_submenu_item(&self, item: &SubMenuItem, idx: u32) -> io::Result<()> {
         let insert_call = |raw_item_info| {
             unsafe {
-                SetMenuItemInfoW(self.raw_handle, idx, true, &raw_item_info)?;
+                SetMenuItemInfoW(self.raw_handle, idx, true, &raw const raw_item_info)?;
             }
             Ok(())
         };
@@ -159,7 +159,7 @@ impl MenuHandle {
         Ok(count)
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn is_menu(&self) -> bool {
         unsafe { IsMenu(self.raw_handle).as_bool() }
     }
@@ -290,7 +290,7 @@ impl SubMenu {
                 modify_fn(item)?;
             } else {
                 unreachable!()
-            };
+            }
             Ok(())
         };
         for index in indexes {

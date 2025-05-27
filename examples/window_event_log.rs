@@ -8,7 +8,7 @@ use winapi_easy::hooking::{
 use winapi_easy::ui::Rectangle;
 
 fn main() -> io::Result<()> {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     #[derive(Debug)]
     struct MessageContent {
         kind: WinEventKind,

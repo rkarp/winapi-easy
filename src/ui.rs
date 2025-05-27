@@ -68,7 +68,7 @@ pub type Point = POINT;
 pub type Rectangle = RECT;
 
 trait RectTransform {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn as_point_array(&self) -> &[POINT];
     fn as_point_array_mut(&mut self) -> &mut [POINT];
 }
@@ -161,7 +161,7 @@ impl CursorConfinement {
 
     fn apply(bounding_area: Rectangle) -> io::Result<()> {
         unsafe {
-            ClipCursor(Some(&bounding_area))?;
+            ClipCursor(Some(&raw const bounding_area))?;
         }
         Ok(())
     }

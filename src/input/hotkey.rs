@@ -49,7 +49,7 @@ impl GlobalHotkeySet {
     /// # Panics
     ///
     /// Will panic if more than 1 instance is created per thread.
-    #[allow(clippy::new_without_default)]
+    #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
         assert!(
             !Self::RUNNING.get(),
@@ -81,7 +81,10 @@ impl GlobalHotkeySet {
     {
         let message_listener = |message| {
             if let ThreadMessage::Hotkey(hotkey_id) = message {
-                assert!(self.hotkey_defs.contains_key(&hotkey_id));
+                #[expect(clippy::missing_panics_doc)]
+                {
+                    assert!(self.hotkey_defs.contains_key(&hotkey_id));
+                }
                 listener(hotkey_id)
             } else {
                 Ok(())
@@ -100,7 +103,7 @@ impl Drop for GlobalHotkeySet {
 #[derive(Debug)]
 struct HotkeyDef {
     user_id: HotkeyId,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     key_combination: KeyCombination,
 }
 
@@ -193,7 +196,7 @@ where
     type Output = ModifierCombination;
 
     fn add(self, rhs: T2) -> Self::Output {
-        #[allow(clippy::suspicious_arithmetic_impl)]
+        #[expect(clippy::suspicious_arithmetic_impl)]
         ModifierCombination(self.0 | rhs.into().0)
     }
 }

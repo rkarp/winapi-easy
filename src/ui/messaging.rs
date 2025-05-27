@@ -224,7 +224,7 @@ impl RawMessage {
         window_proc_message.post_to_queue(None)
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn post_loop_wakeup_message() -> io::Result<()> {
         let wakeup_message = RawMessage {
             message: Self::ID_APP_WAKEUP_MSG,

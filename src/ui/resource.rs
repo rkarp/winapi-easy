@@ -355,7 +355,7 @@ mod windows_missing {
     use windows::core::PCWSTR;
 
     // Temporary function until this gets resolved: https://github.com/microsoft/windows-rs/issues/641
-    #[allow(non_snake_case)]
+    #[expect(non_snake_case)]
     pub fn MAKEINTRESOURCEW(i: u32) -> PCWSTR {
         PCWSTR(i as usize as *const u16)
     }

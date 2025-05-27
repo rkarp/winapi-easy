@@ -31,7 +31,7 @@ impl MonitorHandle {
                 .unwrap_or_else(|_| unreachable!()),
             ..Default::default()
         };
-        unsafe { GetMonitorInfoW(self.raw_handle, &mut raw_info) }
+        unsafe { GetMonitorInfoW(self.raw_handle, &raw mut raw_info) }
             .if_null_get_last_error_else_drop()?;
         Ok(MonitorInfo {
             monitor_area: raw_info.rcMonitor,
