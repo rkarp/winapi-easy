@@ -1,6 +1,10 @@
 //! An example magnifier app that will automatically magnify the foreground window on hotkey Ctrl + Alt + Shift + F.
 //!
 //! Exit via notification icon command.
+
+// Hide console window in release mode
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::cell::RefCell;
 use std::io;
 use std::rc::Rc;
@@ -19,10 +23,14 @@ use winapi_easy::hooking::{
     WinEventKind,
     WinEventMessage,
 };
-use winapi_easy::input::KeyboardKey;
 use winapi_easy::input::hotkey::{
     GlobalHotkeySet,
     Modifier,
+};
+use winapi_easy::input::{
+    KeyboardKey,
+    get_mouse_speed,
+    set_mouse_speed,
 };
 use winapi_easy::messaging::{
     ThreadMessage,
@@ -117,7 +125,8 @@ fn main() -> io::Result<()> {
     })?;
 
     let mut magnifier_options = MagnifierOptions::default();
-    let magnifier_state = RefCell::new(MagnifierState::default());
+
+    let magnifier_context = RefCell::new(MagnifierContext::new()?);
 
     let mut popup = SubMenu::new()?;
     popup.insert_menu_item(
@@ -141,6 +150,20 @@ fn main() -> io::Result<()> {
         }),
         None,
     )?;
+    popup.insert_menu_item(
+        SubMenuItem::Text(TextMenuItem {
+            item_symbol: magnifier_context
+                .borrow()
+                .mouse_speed_mod
+                .is_some()
+                .then_some(ItemSymbol::CheckMark),
+            ..TextMenuItem::default_with_text(
+                MenuID::UseMouseSpeedMod.into(),
+                "Auto adjust mouse speed",
+            )
+        }),
+        None,
+    )?;
     popup.insert_menu_item(SubMenuItem::Separator, None)?;
     popup.insert_menu_item(
         SubMenuItem::Text(TextMenuItem {
@@ -160,15 +183,13 @@ fn main() -> io::Result<()> {
         None,
     )?;
 
-    let mut mag_windows = MagnifierWindowSet::new()?;
-
     let _hotkeys = setup_hotkeys()?;
 
     let _mouse_hook = {
         let mouse_callback = |message: LowLevelMouseMessage| {
             match message.action {
                 LowLevelMouseAction::Move => {
-                    if let Some(confinement) = &magnifier_state.borrow().cursor_confinement {
+                    if let Some(confinement) = &magnifier_context.borrow().cursor_confinement {
                         confinement.reapply().unwrap();
                     }
                 }
@@ -221,12 +242,24 @@ fn main() -> io::Result<()> {
                             })?;
                             magnifier_options.use_smoothing = target_state;
                         }
+                        MenuID::UseMouseSpeedMod => {
+                            let mut magnifier_context = magnifier_context.borrow_mut();
+                            let target_state = !magnifier_context.mouse_speed_mod.is_some();
+                            if target_state {
+                                magnifier_context.mouse_speed_mod = Some(MouseSpeedMod::new()?);
+                            } else {
+                                magnifier_context.mouse_speed_mod = None;
+                            }
+                            popup.modify_text_menu_items_by_id(selected_item_id, |item| {
+                                item.item_symbol = target_state.then_some(ItemSymbol::CheckMark);
+                                Ok(())
+                            })?;
+                        }
                         MenuID::UseMagnifierControl => {
                             let target_state = !magnifier_options.use_magnifier_control;
-                            mag_windows.set_variant(
+                            magnifier_context.borrow_mut().set_variant(
                                 target_state,
                                 &magnifier_options,
-                                &mut magnifier_state.borrow_mut(),
                                 &main_window,
                             )?;
                             popup.modify_text_menu_items_by_id(selected_item_id, |item| {
@@ -244,31 +277,28 @@ fn main() -> io::Result<()> {
                     popup.show_menu(*main_window, xy_coords)?;
                 }
                 ListenerMessageVariant::Timer { timer_id: 0 } => {
-                    mag_windows.apply_timer_tick()?;
+                    magnifier_context.borrow_mut().apply_timer_tick()?;
                 }
                 ListenerMessageVariant::CustomUserMessage(custom_message) => {
                     match UserMessageId::from(custom_message.message_id) {
                         UserMessageId::ForegroundWindowChanged => {
-                            mag_windows.set_magnifier_initialized(
+                            magnifier_context.borrow_mut().set_magnifier_initialized(
                                 true,
                                 &magnifier_options,
-                                &mut magnifier_state.borrow_mut(),
                                 &main_window,
                             )?;
                         }
                         UserMessageId::TargetWindowChanged => {
                             if let Some(_window_handle) = magnifier_options.target_window_setting {
-                                mag_windows.set_magnifier_initialized(
+                                magnifier_context.borrow_mut().set_magnifier_initialized(
                                     true,
                                     &magnifier_options,
-                                    &mut magnifier_state.borrow_mut(),
                                     &main_window,
                                 )?;
                             } else {
-                                mag_windows.set_magnifier_initialized(
+                                magnifier_context.borrow_mut().set_magnifier_initialized(
                                     false,
                                     &magnifier_options,
-                                    &mut magnifier_state.borrow_mut(),
                                     &main_window,
                                 )?;
                             }
@@ -309,6 +339,7 @@ fn main() -> io::Result<()> {
 enum MenuID {
     UseIntegerScaling,
     UseSmoothing,
+    UseMouseSpeedMod,
     UseMagnifierControl,
     Exit,
     #[num_enum(catch_all)]
@@ -351,25 +382,26 @@ impl Default for MagnifierOptions {
     }
 }
 
-#[derive(Default, Debug)]
-struct MagnifierState {
+struct MagnifierContext {
     magnifier_active: bool,
+    variant: MagnifierVariant,
+    mouse_speed_mod: Option<MouseSpeedMod>,
     cursor_hider: Option<CursorConcealment>,
     cursor_confinement: Option<CursorConfinement>,
-}
-
-struct MagnifierWindowSet {
     overlay_class: Rc<WindowClass>,
-    variant: MagnifierVariant,
 }
 
-impl MagnifierWindowSet {
+impl MagnifierContext {
     fn new() -> io::Result<Self> {
         let overlay_class = Self::register_overlay_class()?;
         let variant = Self::create_variant(Default::default(), Rc::clone(&overlay_class))?;
         Ok(Self {
-            overlay_class,
+            magnifier_active: false,
             variant,
+            mouse_speed_mod: None,
+            cursor_hider: None,
+            cursor_confinement: None,
+            overlay_class,
         })
     }
 
@@ -377,7 +409,6 @@ impl MagnifierWindowSet {
         &mut self,
         use_magnifier_control: bool,
         magnifier_options: &MagnifierOptions,
-        magnifier_state: &mut MagnifierState,
         main_window: &Window,
     ) -> io::Result<()> {
         let is_control = match self.variant {
@@ -385,10 +416,10 @@ impl MagnifierWindowSet {
             MagnifierVariant::Control(..) => true,
         };
         if is_control != use_magnifier_control {
-            self.set_magnifier_initialized(false, magnifier_options, magnifier_state, main_window)?;
+            self.set_magnifier_initialized(false, magnifier_options, main_window)?;
             self.variant =
                 Self::create_variant(use_magnifier_control, Rc::clone(&self.overlay_class))?;
-            self.set_magnifier_initialized(true, magnifier_options, magnifier_state, main_window)?;
+            self.set_magnifier_initialized(true, magnifier_options, main_window)?;
         }
         Ok(())
     }
@@ -397,7 +428,6 @@ impl MagnifierWindowSet {
         &mut self,
         enable: bool,
         magnifier_options: &MagnifierOptions,
-        magnifier_state: &mut MagnifierState,
         main_window: &Window,
     ) -> io::Result<()> {
         if enable {
@@ -406,24 +436,19 @@ impl MagnifierWindowSet {
                 Some(foreground_window)
                     if maybe_foreground_window == magnifier_options.target_window_setting =>
                 {
-                    self.set_magnifier_enabled(true, magnifier_state, main_window)?;
-                    self.adjust_for_target(foreground_window, magnifier_options, magnifier_state)?;
+                    self.set_magnifier_enabled(true, main_window)?;
+                    self.adjust_for_target(foreground_window, magnifier_options)?;
                 }
-                _ => self.set_magnifier_enabled(false, magnifier_state, main_window)?,
+                _ => self.set_magnifier_enabled(false, main_window)?,
             }
         } else {
-            self.set_magnifier_enabled(false, magnifier_state, main_window)?;
+            self.set_magnifier_enabled(false, main_window)?;
         }
         Ok(())
     }
 
-    fn set_magnifier_enabled(
-        &mut self,
-        enable: bool,
-        magnifier_state: &mut MagnifierState,
-        main_window: &Window,
-    ) -> io::Result<()> {
-        if magnifier_state.magnifier_active != enable {
+    fn set_magnifier_enabled(&mut self, enable: bool, main_window: &Window) -> io::Result<()> {
+        if self.magnifier_active != enable {
             let overlay_window_handle;
             match &mut self.variant {
                 MagnifierVariant::Fullscreen(fullscreen_magnifier) => {
@@ -434,9 +459,9 @@ impl MagnifierWindowSet {
                 }
                 MagnifierVariant::Control(magnifier_control) => {
                     if enable {
-                        magnifier_state.cursor_hider = Some(CursorConcealment::new()?);
+                        self.cursor_hider = Some(CursorConcealment::new()?);
                     } else {
-                        magnifier_state.cursor_hider = None;
+                        self.cursor_hider = None;
                     }
                     overlay_window_handle = magnifier_control.overlay_window.borrow().as_handle();
                 }
@@ -448,12 +473,15 @@ impl MagnifierWindowSet {
                 overlay_window_handle.set_z_position(WindowZPosition::NoTopMost)?;
                 overlay_window_handle.set_z_position(WindowZPosition::TopMost)?;
             } else {
-                magnifier_state.cursor_confinement = None;
+                if let Some(x) = &self.mouse_speed_mod {
+                    x.disable()?
+                }
+                self.cursor_confinement = None;
                 overlay_window_handle.set_z_position(WindowZPosition::Bottom)?;
                 overlay_window_handle.set_show_state(WindowShowState::Hide)?;
             }
             self.variant.set_active(enable, main_window)?;
-            magnifier_state.magnifier_active = enable;
+            self.magnifier_active = enable;
         }
         Ok(())
     }
@@ -462,7 +490,6 @@ impl MagnifierWindowSet {
         &mut self,
         foreground_window: WindowHandle,
         magnifier_options: &MagnifierOptions,
-        magnifier_state: &mut MagnifierState,
     ) -> io::Result<()> {
         let monitor_info = MonitorHandle::from_window(foreground_window).info()?;
         let source_window_rect = foreground_window.get_client_area_coords()?;
@@ -488,7 +515,7 @@ impl MagnifierWindowSet {
                 )?;
                 set_fullscreen_magnification_use_bitmap_smoothing(magnifier_options.use_smoothing)?;
                 set_fullscreen_magnification(
-                    scaling_result.max_scale_factor as f32,
+                    scaling_result.scale_factor as f32,
                     scaling_result.unscaled_rect_centered_offset,
                 )?;
             }
@@ -507,11 +534,14 @@ impl MagnifierWindowSet {
                     Ok(())
                 })?;
                 control_window.set_lens_use_bitmap_smoothing(magnifier_options.use_smoothing)?;
-                control_window.set_magnification_factor(scaling_result.max_scale_factor as f32)?;
+                control_window.set_magnification_factor(scaling_result.scale_factor as f32)?;
                 control_window.set_magnification_source(source_window_rect)?;
             }
         }
-        magnifier_state.cursor_confinement = Some(CursorConfinement::new(source_window_rect)?);
+        self.cursor_confinement = Some(CursorConfinement::new(source_window_rect)?);
+        if let Some(x) = &self.mouse_speed_mod {
+            x.enable(1.0 / scaling_result.scale_factor)?
+        }
         Ok(())
     }
 
@@ -648,9 +678,9 @@ fn setup_hotkeys() -> io::Result<GlobalHotkeySet> {
 
 #[derive(Debug)]
 struct ScalingResult {
-    max_scale_factor: f64,
-    max_scaled_rect: Rectangle,
-    max_scaled_rect_centered_offset: Point,
+    scale_factor: f64,
+    scaled_rect: Rectangle,
+    scaled_rect_centered_offset: Point,
     unscaled_rect_centered_offset: Point,
 }
 
@@ -664,9 +694,9 @@ impl ScalingResult {
         assert!(source_height > 0);
         assert!(target_width > 0);
         assert!(target_height > 0);
-        let max_width_scale = f64::from(target_width) / f64::from(source_width);
-        let max_height_scale = f64::from(target_height) / f64::from(source_height);
-        let max_scale_factor = {
+        let scale_factor = {
+            let max_width_scale = f64::from(target_width) / f64::from(source_width);
+            let max_height_scale = f64::from(target_height) / f64::from(source_height);
             let max_scale_factor = f64::min(max_width_scale, max_height_scale);
             if use_integer_scaling {
                 f64::max(1.0, max_scale_factor.trunc())
@@ -674,20 +704,20 @@ impl ScalingResult {
                 max_scale_factor
             }
         };
-        let max_scaled_rect = Rectangle {
+        let scaled_rect = Rectangle {
             left: 0,
             top: 0,
-            right: (f64::from(source_width) * max_scale_factor).round() as i32,
-            bottom: (f64::from(source_height) * max_scale_factor).round() as i32,
+            right: (f64::from(source_width) * scale_factor).round() as i32,
+            bottom: (f64::from(source_height) * scale_factor).round() as i32,
         };
-        let unscaled_lens_width = (f64::from(target_width) / max_scale_factor).round() as i32;
-        let unscaled_lens_height = (f64::from(target_height) / max_scale_factor).round() as i32;
+        let unscaled_lens_width = (f64::from(target_width) / scale_factor).round() as i32;
+        let unscaled_lens_height = (f64::from(target_height) / scale_factor).round() as i32;
         Self {
-            max_scale_factor,
-            max_scaled_rect,
-            max_scaled_rect_centered_offset: Point {
-                x: (target_width - max_scaled_rect.right) / 2,
-                y: (target_height - max_scaled_rect.bottom) / 2,
+            scale_factor,
+            scaled_rect,
+            scaled_rect_centered_offset: Point {
+                x: (target_width - scaled_rect.right) / 2,
+                y: (target_height - scaled_rect.bottom) / 2,
             },
             unscaled_rect_centered_offset: Point {
                 x: source.left - (unscaled_lens_width - source_width) / 2,
@@ -698,10 +728,51 @@ impl ScalingResult {
 
     fn max_scaled_rect_centered(&self) -> Rectangle {
         Rectangle {
-            left: self.max_scaled_rect.left + self.max_scaled_rect_centered_offset.x,
-            top: self.max_scaled_rect.top + self.max_scaled_rect_centered_offset.y,
-            right: self.max_scaled_rect.right + self.max_scaled_rect_centered_offset.x,
-            bottom: self.max_scaled_rect.bottom + self.max_scaled_rect_centered_offset.y,
+            left: self.scaled_rect.left + self.scaled_rect_centered_offset.x,
+            top: self.scaled_rect.top + self.scaled_rect_centered_offset.y,
+            right: self.scaled_rect.right + self.scaled_rect_centered_offset.x,
+            bottom: self.scaled_rect.bottom + self.scaled_rect_centered_offset.y,
         }
+    }
+}
+
+#[derive(Debug)]
+struct MouseSpeedMod {
+    org_speed: u32,
+}
+
+impl MouseSpeedMod {
+    fn new() -> io::Result<Self> {
+        let org_speed = get_mouse_speed()?;
+        Ok(Self { org_speed })
+    }
+
+    fn enable(&self, factor: f64) -> io::Result<()> {
+        // See: https://stackoverflow.com/a/53022163
+        const WINDOWS_MOUSE_SPEED_MULTS: [f64; 20] = [
+            0.03125, 0.0625, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0, 1.25, 1.5, 1.75,
+            2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5,
+        ];
+        assert!(factor > 0.0 && factor <= 1.0);
+        let org_speed_mult =
+            WINDOWS_MOUSE_SPEED_MULTS[usize::try_from(self.org_speed).unwrap() - 1];
+        let target_speed = {
+            let target_speed_mult = org_speed_mult * factor;
+            assert!(target_speed_mult >= 0.0);
+            let target_speed =
+                WINDOWS_MOUSE_SPEED_MULTS.partition_point(|x| *x < target_speed_mult) + 1;
+            u32::try_from(target_speed).unwrap()
+        };
+        set_mouse_speed(target_speed, false)
+    }
+
+    fn disable(&self) -> io::Result<()> {
+        set_mouse_speed(self.org_speed, false)
+    }
+}
+
+impl Drop for MouseSpeedMod {
+    fn drop(&mut self) {
+        self.disable().unwrap()
     }
 }
