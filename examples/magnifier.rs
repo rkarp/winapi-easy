@@ -124,64 +124,66 @@ fn main() -> io::Result<()> {
         visible: true,
     })?;
 
-    let mut magnifier_options = MagnifierOptions::default();
-
     let magnifier_context = RefCell::new(MagnifierContext::new()?);
 
-    let mut popup = SubMenu::new()?;
-    popup.insert_menu_item(
-        SubMenuItem::Text(TextMenuItem {
-            item_symbol: magnifier_options
-                .use_integer_scaling
-                .then_some(ItemSymbol::CheckMark),
-            ..TextMenuItem::default_with_text(
-                MenuID::UseIntegerScaling.into(),
-                "Use integer scaling",
-            )
-        }),
-        None,
-    )?;
-    popup.insert_menu_item(
-        SubMenuItem::Text(TextMenuItem {
-            item_symbol: magnifier_options
-                .use_smoothing
-                .then_some(ItemSymbol::CheckMark),
-            ..TextMenuItem::default_with_text(MenuID::UseSmoothing.into(), "Use smoothing")
-        }),
-        None,
-    )?;
-    popup.insert_menu_item(
-        SubMenuItem::Text(TextMenuItem {
-            item_symbol: magnifier_context
-                .borrow()
-                .mouse_speed_mod
-                .is_some()
-                .then_some(ItemSymbol::CheckMark),
-            ..TextMenuItem::default_with_text(
-                MenuID::UseMouseSpeedMod.into(),
-                "Auto adjust mouse speed",
-            )
-        }),
-        None,
-    )?;
-    popup.insert_menu_item(SubMenuItem::Separator, None)?;
-    popup.insert_menu_item(
-        SubMenuItem::Text(TextMenuItem {
-            item_symbol: magnifier_options
-                .use_magnifier_control
-                .then_some(ItemSymbol::CheckMark),
-            ..TextMenuItem::default_with_text(
-                MenuID::UseMagnifierControl.into(),
-                "Use magnifier control",
-            )
-        }),
-        None,
-    )?;
-    popup.insert_menu_item(SubMenuItem::Separator, None)?;
-    popup.insert_menu_item(
-        SubMenuItem::Text(TextMenuItem::default_with_text(MenuID::Exit.into(), "Exit")),
-        None,
-    )?;
+    let mut popup = {
+        let magnifier_options = &magnifier_context.borrow().options;
+        let mut popup = SubMenu::new()?;
+        popup.insert_menu_item(
+            SubMenuItem::Text(TextMenuItem {
+                item_symbol: magnifier_options
+                    .use_integer_scaling
+                    .then_some(ItemSymbol::CheckMark),
+                ..TextMenuItem::default_with_text(
+                    MenuID::UseIntegerScaling.into(),
+                    "Use integer scaling",
+                )
+            }),
+            None,
+        )?;
+        popup.insert_menu_item(
+            SubMenuItem::Text(TextMenuItem {
+                item_symbol: magnifier_options
+                    .use_smoothing
+                    .then_some(ItemSymbol::CheckMark),
+                ..TextMenuItem::default_with_text(MenuID::UseSmoothing.into(), "Use smoothing")
+            }),
+            None,
+        )?;
+        popup.insert_menu_item(
+            SubMenuItem::Text(TextMenuItem {
+                item_symbol: magnifier_context
+                    .borrow()
+                    .mouse_speed_mod
+                    .is_some()
+                    .then_some(ItemSymbol::CheckMark),
+                ..TextMenuItem::default_with_text(
+                    MenuID::UseMouseSpeedMod.into(),
+                    "Auto adjust mouse speed",
+                )
+            }),
+            None,
+        )?;
+        popup.insert_menu_item(SubMenuItem::Separator, None)?;
+        popup.insert_menu_item(
+            SubMenuItem::Text(TextMenuItem {
+                item_symbol: magnifier_options
+                    .use_magnifier_control
+                    .then_some(ItemSymbol::CheckMark),
+                ..TextMenuItem::default_with_text(
+                    MenuID::UseMagnifierControl.into(),
+                    "Use magnifier control",
+                )
+            }),
+            None,
+        )?;
+        popup.insert_menu_item(SubMenuItem::Separator, None)?;
+        popup.insert_menu_item(
+            SubMenuItem::Text(TextMenuItem::default_with_text(MenuID::Exit.into(), "Exit")),
+            None,
+        )?;
+        popup
+    };
 
     let _hotkeys = setup_hotkeys()?;
 
@@ -189,8 +191,11 @@ fn main() -> io::Result<()> {
         let mouse_callback = |message: LowLevelMouseMessage| {
             match message.action {
                 LowLevelMouseAction::Move => {
-                    if let Some(confinement) = &magnifier_context.borrow().cursor_confinement {
-                        confinement.reapply().unwrap();
+                    // The hook can be called even on some Windows API calls, so avoid magnifier context borrow panics here
+                    if let Ok(magnifier_context) = magnifier_context.try_borrow() {
+                        if let Some(confinement) = &magnifier_context.cursor_confinement {
+                            confinement.reapply().unwrap();
+                        }
                     }
                 }
                 _ => (),
@@ -218,117 +223,111 @@ fn main() -> io::Result<()> {
         WinEventHook::new::<1>(win_event_listener)
     };
 
-    let loop_callback = |thread_message| match thread_message {
-        ThreadMessage::WindowProc(window_message)
-            if window_message.window_handle == *main_window =>
-        {
-            match window_message.variant {
-                ListenerMessageVariant::MenuCommand { selected_item_id } => {
-                    let selected_menu_id: MenuID = selected_item_id.into();
-                    match selected_menu_id {
-                        MenuID::UseIntegerScaling => {
-                            let target_state = !magnifier_options.use_integer_scaling;
-                            popup.modify_text_menu_items_by_id(selected_item_id, |item| {
-                                item.item_symbol = target_state.then_some(ItemSymbol::CheckMark);
-                                Ok(())
-                            })?;
-                            magnifier_options.use_integer_scaling = target_state;
-                        }
-                        MenuID::UseSmoothing => {
-                            let target_state = !magnifier_options.use_smoothing;
-                            popup.modify_text_menu_items_by_id(selected_item_id, |item| {
-                                item.item_symbol = target_state.then_some(ItemSymbol::CheckMark);
-                                Ok(())
-                            })?;
-                            magnifier_options.use_smoothing = target_state;
-                        }
-                        MenuID::UseMouseSpeedMod => {
-                            let mut magnifier_context = magnifier_context.borrow_mut();
-                            let target_state = !magnifier_context.mouse_speed_mod.is_some();
-                            if target_state {
-                                magnifier_context.mouse_speed_mod = Some(MouseSpeedMod::new()?);
-                            } else {
-                                magnifier_context.mouse_speed_mod = None;
+    let loop_callback = |thread_message| {
+        let mut magnifier_context = magnifier_context.borrow_mut();
+        match thread_message {
+            ThreadMessage::WindowProc(window_message)
+                if window_message.window_handle == *main_window =>
+            {
+                match window_message.variant {
+                    ListenerMessageVariant::MenuCommand { selected_item_id } => {
+                        let selected_menu_id: MenuID = selected_item_id.into();
+                        match selected_menu_id {
+                            MenuID::UseIntegerScaling => {
+                                let target_state = !magnifier_context.options.use_integer_scaling;
+                                popup.modify_text_menu_items_by_id(selected_item_id, |item| {
+                                    item.item_symbol =
+                                        target_state.then_some(ItemSymbol::CheckMark);
+                                    Ok(())
+                                })?;
+                                magnifier_context.options.use_integer_scaling = target_state;
                             }
-                            popup.modify_text_menu_items_by_id(selected_item_id, |item| {
-                                item.item_symbol = target_state.then_some(ItemSymbol::CheckMark);
-                                Ok(())
-                            })?;
-                        }
-                        MenuID::UseMagnifierControl => {
-                            let target_state = !magnifier_options.use_magnifier_control;
-                            magnifier_context.borrow_mut().set_variant(
-                                target_state,
-                                &magnifier_options,
-                                &main_window,
-                            )?;
-                            popup.modify_text_menu_items_by_id(selected_item_id, |item| {
-                                item.item_symbol = target_state.then_some(ItemSymbol::CheckMark);
-                                Ok(())
-                            })?;
-                            magnifier_options.use_magnifier_control = target_state;
-                        }
-                        MenuID::Exit => main_window.send_command(WindowCommand::Close)?,
-                        MenuID::Other(_) => unreachable!(),
-                    }
-                }
-                ListenerMessageVariant::NotificationIconContextSelect { xy_coords, .. } => {
-                    let _ = main_window.set_as_foreground();
-                    popup.show_menu(*main_window, xy_coords)?;
-                }
-                ListenerMessageVariant::Timer { timer_id: 0 } => {
-                    magnifier_context.borrow_mut().apply_timer_tick()?;
-                }
-                ListenerMessageVariant::CustomUserMessage(custom_message) => {
-                    match UserMessageId::from(custom_message.message_id) {
-                        UserMessageId::ForegroundWindowChanged => {
-                            magnifier_context.borrow_mut().set_magnifier_initialized(
-                                true,
-                                &magnifier_options,
-                                &main_window,
-                            )?;
-                        }
-                        UserMessageId::TargetWindowChanged => {
-                            if let Some(_window_handle) = magnifier_options.target_window_setting {
-                                magnifier_context.borrow_mut().set_magnifier_initialized(
-                                    true,
-                                    &magnifier_options,
-                                    &main_window,
-                                )?;
-                            } else {
-                                magnifier_context.borrow_mut().set_magnifier_initialized(
-                                    false,
-                                    &magnifier_options,
-                                    &main_window,
-                                )?;
+                            MenuID::UseSmoothing => {
+                                let target_state = !magnifier_context.options.use_smoothing;
+                                popup.modify_text_menu_items_by_id(selected_item_id, |item| {
+                                    item.item_symbol =
+                                        target_state.then_some(ItemSymbol::CheckMark);
+                                    Ok(())
+                                })?;
+                                magnifier_context.options.use_smoothing = target_state;
                             }
+                            MenuID::UseMouseSpeedMod => {
+                                let target_state = !magnifier_context.mouse_speed_mod.is_some();
+                                if target_state {
+                                    magnifier_context.mouse_speed_mod = Some(MouseSpeedMod::new()?);
+                                } else {
+                                    magnifier_context.mouse_speed_mod = None;
+                                }
+                                popup.modify_text_menu_items_by_id(selected_item_id, |item| {
+                                    item.item_symbol =
+                                        target_state.then_some(ItemSymbol::CheckMark);
+                                    Ok(())
+                                })?;
+                            }
+                            MenuID::UseMagnifierControl => {
+                                let target_state = !magnifier_context.options.use_magnifier_control;
+                                magnifier_context.set_variant(target_state, &main_window)?;
+                                popup.modify_text_menu_items_by_id(selected_item_id, |item| {
+                                    item.item_symbol =
+                                        target_state.then_some(ItemSymbol::CheckMark);
+                                    Ok(())
+                                })?;
+                                magnifier_context.options.use_magnifier_control = target_state;
+                            }
+                            MenuID::Exit => main_window.send_command(WindowCommand::Close)?,
+                            MenuID::Other(_) => unreachable!(),
                         }
-                        UserMessageId::Other(_) => unreachable!(),
                     }
+                    ListenerMessageVariant::NotificationIconContextSelect { xy_coords, .. } => {
+                        let _ = main_window.set_as_foreground();
+                        popup.show_menu(*main_window, xy_coords)?;
+                    }
+                    ListenerMessageVariant::Timer { timer_id: 0 } => {
+                        magnifier_context.apply_timer_tick()?;
+                    }
+                    ListenerMessageVariant::CustomUserMessage(custom_message) => {
+                        match UserMessageId::from(custom_message.message_id) {
+                            UserMessageId::ForegroundWindowChanged => {
+                                magnifier_context.set_magnifier_initialized(true, &main_window)?;
+                            }
+                            UserMessageId::TargetWindowChanged => {
+                                if let Some(_window_handle) =
+                                    magnifier_context.options.target_window_setting
+                                {
+                                    magnifier_context
+                                        .set_magnifier_initialized(true, &main_window)?;
+                                } else {
+                                    magnifier_context
+                                        .set_magnifier_initialized(false, &main_window)?;
+                                }
+                            }
+                            UserMessageId::Other(_) => unreachable!(),
+                        }
+                    }
+                    _ => (),
                 }
-                _ => (),
-            }
-            Ok(())
-        }
-        ThreadMessage::Hotkey(hotkey_id) => {
-            if let HotkeyId::SetTargetWindow = HotkeyId::from(hotkey_id) {
-                let foreground_window = WindowHandle::get_foreground_window();
-                if magnifier_options.target_window_setting.is_some() {
-                    magnifier_options.target_window_setting = None;
-                } else {
-                    magnifier_options.target_window_setting = foreground_window;
-                }
-                main_window.send_user_message(CustomUserMessage {
-                    message_id: UserMessageId::TargetWindowChanged.into(),
-                    ..Default::default()
-                })?;
                 Ok(())
-            } else {
-                unreachable!()
             }
+            ThreadMessage::Hotkey(hotkey_id) => {
+                if let HotkeyId::SetTargetWindow = HotkeyId::from(hotkey_id) {
+                    let foreground_window = WindowHandle::get_foreground_window();
+                    if magnifier_context.options.target_window_setting.is_some() {
+                        magnifier_context.options.target_window_setting = None;
+                    } else {
+                        magnifier_context.options.target_window_setting = foreground_window;
+                    }
+                    main_window.send_user_message(CustomUserMessage {
+                        message_id: UserMessageId::TargetWindowChanged.into(),
+                        ..Default::default()
+                    })?;
+                    Ok(())
+                } else {
+                    unreachable!()
+                }
+            }
+            ThreadMessage::Other(_) => Ok(()),
+            _ => Ok(()),
         }
-        ThreadMessage::Other(_) => Ok(()),
-        _ => Ok(()),
     };
     ThreadMessageLoop::new().run_with(loop_callback)?;
     Ok(())
@@ -385,6 +384,7 @@ impl Default for MagnifierOptions {
 struct MagnifierContext {
     magnifier_active: bool,
     variant: MagnifierVariant,
+    options: MagnifierOptions,
     mouse_speed_mod: Option<MouseSpeedMod>,
     cursor_hider: Option<CursorConcealment>,
     cursor_confinement: Option<CursorConfinement>,
@@ -398,6 +398,7 @@ impl MagnifierContext {
         Ok(Self {
             magnifier_active: false,
             variant,
+            options: MagnifierOptions::default(),
             mouse_speed_mod: None,
             cursor_hider: None,
             cursor_confinement: None,
@@ -405,39 +406,29 @@ impl MagnifierContext {
         })
     }
 
-    fn set_variant(
-        &mut self,
-        use_magnifier_control: bool,
-        magnifier_options: &MagnifierOptions,
-        main_window: &Window,
-    ) -> io::Result<()> {
+    fn set_variant(&mut self, use_magnifier_control: bool, main_window: &Window) -> io::Result<()> {
         let is_control = match self.variant {
             MagnifierVariant::Fullscreen(..) => false,
             MagnifierVariant::Control(..) => true,
         };
         if is_control != use_magnifier_control {
-            self.set_magnifier_initialized(false, magnifier_options, main_window)?;
+            self.set_magnifier_initialized(false, main_window)?;
             self.variant =
                 Self::create_variant(use_magnifier_control, Rc::clone(&self.overlay_class))?;
-            self.set_magnifier_initialized(true, magnifier_options, main_window)?;
+            self.set_magnifier_initialized(true, main_window)?;
         }
         Ok(())
     }
 
-    fn set_magnifier_initialized(
-        &mut self,
-        enable: bool,
-        magnifier_options: &MagnifierOptions,
-        main_window: &Window,
-    ) -> io::Result<()> {
+    fn set_magnifier_initialized(&mut self, enable: bool, main_window: &Window) -> io::Result<()> {
         if enable {
             let maybe_foreground_window = WindowHandle::get_foreground_window();
             match maybe_foreground_window {
                 Some(foreground_window)
-                    if maybe_foreground_window == magnifier_options.target_window_setting =>
+                    if maybe_foreground_window == self.options.target_window_setting =>
                 {
                     self.set_magnifier_enabled(true, main_window)?;
-                    self.adjust_for_target(foreground_window, magnifier_options)?;
+                    self.adjust_for_target(foreground_window)?;
                 }
                 _ => self.set_magnifier_enabled(false, main_window)?,
             }
@@ -486,18 +477,14 @@ impl MagnifierContext {
         Ok(())
     }
 
-    fn adjust_for_target(
-        &mut self,
-        foreground_window: WindowHandle,
-        magnifier_options: &MagnifierOptions,
-    ) -> io::Result<()> {
+    fn adjust_for_target(&mut self, foreground_window: WindowHandle) -> io::Result<()> {
         let monitor_info = MonitorHandle::from_window(foreground_window).info()?;
         let source_window_rect = foreground_window.get_client_area_coords()?;
 
         let scaling_result = ScalingResult::from_rects(
             source_window_rect,
             monitor_info.monitor_area,
-            magnifier_options.use_integer_scaling,
+            self.options.use_integer_scaling,
         );
 
         match &mut self.variant {
@@ -513,7 +500,7 @@ impl MagnifierContext {
                     Region::from_rect(overlay_window_extent)
                         .and_not_in(&Region::from_rect(source_window_rect))?,
                 )?;
-                set_fullscreen_magnification_use_bitmap_smoothing(magnifier_options.use_smoothing)?;
+                set_fullscreen_magnification_use_bitmap_smoothing(self.options.use_smoothing)?;
                 set_fullscreen_magnification(
                     scaling_result.scale_factor as f32,
                     scaling_result.unscaled_rect_centered_offset,
@@ -533,7 +520,7 @@ impl MagnifierContext {
                     placement.set_normal_position(scaling_result.max_scaled_rect_centered());
                     Ok(())
                 })?;
-                control_window.set_lens_use_bitmap_smoothing(magnifier_options.use_smoothing)?;
+                control_window.set_lens_use_bitmap_smoothing(self.options.use_smoothing)?;
                 control_window.set_magnification_factor(scaling_result.scale_factor as f32)?;
                 control_window.set_magnification_source(source_window_rect)?;
             }
