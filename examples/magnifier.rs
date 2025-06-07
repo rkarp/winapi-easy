@@ -685,11 +685,13 @@ impl ScalingResult {
             let max_width_scale = f64::from(target_width) / f64::from(source_width);
             let max_height_scale = f64::from(target_height) / f64::from(source_height);
             let max_scale_factor = f64::min(max_width_scale, max_height_scale);
-            if use_integer_scaling {
-                f64::max(1.0, max_scale_factor.trunc())
+            let max_scale_factor = if use_integer_scaling {
+                max_scale_factor.trunc()
             } else {
                 max_scale_factor
-            }
+            };
+            // TODO: Integer scaling & resulting scale factor 1.0 disables magnifier, so window won't be centered
+            f64::max(1.0, max_scale_factor)
         };
         let scaled_rect = Rectangle {
             left: 0,
@@ -699,6 +701,8 @@ impl ScalingResult {
         };
         let unscaled_lens_width = (f64::from(target_width) / scale_factor).round() as i32;
         let unscaled_lens_height = (f64::from(target_height) / scale_factor).round() as i32;
+        let unscaled_lens_x_offset = (f64::from(target.left) / scale_factor).round() as i32;
+        let unscaled_lens_y_offset = (f64::from(target.top) / scale_factor).round() as i32;
         Self {
             scale_factor,
             scaled_rect,
@@ -707,8 +711,8 @@ impl ScalingResult {
                 y: (target_height - scaled_rect.bottom) / 2,
             },
             unscaled_rect_centered_offset: Point {
-                x: source.left - (unscaled_lens_width - source_width) / 2,
-                y: source.top - (unscaled_lens_height - source_height) / 2,
+                x: source.left - unscaled_lens_x_offset - (unscaled_lens_width - source_width) / 2,
+                y: source.top - unscaled_lens_y_offset - (unscaled_lens_height - source_height) / 2,
             },
         }
     }
