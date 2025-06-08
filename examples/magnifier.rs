@@ -479,13 +479,42 @@ impl MagnifierContext {
 
     fn adjust_for_target(&mut self, foreground_window: WindowHandle) -> io::Result<()> {
         let monitor_info = MonitorHandle::from_window(foreground_window).info()?;
-        let source_window_rect = foreground_window.get_client_area_coords()?;
 
-        let scaling_result = ScalingResult::from_rects(
-            source_window_rect,
-            monitor_info.monitor_area,
-            self.options.use_integer_scaling,
-        );
+        let source_window_rect;
+        let scaling_result;
+        {
+            let initial_source_window_rect = foreground_window.get_client_area_coords()?;
+            let initial_scaling_result = Scaling::from_rects(
+                initial_source_window_rect,
+                monitor_info.monitor_area,
+                self.options.use_integer_scaling,
+            );
+
+            match &mut self.variant {
+                MagnifierVariant::Fullscreen(_)
+                    if (initial_scaling_result.scale_factor - 1.0).abs() < 0.1 =>
+                {
+                    // Scale factor of less than 1.1 disables magnifier, so window won't be centered
+                    // by the magnification API and needs to be pre-centered directly instead
+                    foreground_window.modify_placement_with(|placement| {
+                        let old_position = placement.get_normal_position();
+                        let new_position = center_rect(old_position, monitor_info.monitor_area);
+                        placement.set_normal_position(new_position);
+                        Ok(())
+                    })?;
+                    source_window_rect = foreground_window.get_client_area_coords()?;
+                    scaling_result = Scaling::from_rects(
+                        source_window_rect,
+                        monitor_info.monitor_area,
+                        self.options.use_integer_scaling,
+                    );
+                }
+                MagnifierVariant::Fullscreen(_) | MagnifierVariant::Control(_) => {
+                    source_window_rect = initial_source_window_rect;
+                    scaling_result = initial_scaling_result;
+                }
+            }
+        }
 
         match &mut self.variant {
             MagnifierVariant::Fullscreen(fullscreen_magnifier) => {
@@ -663,15 +692,30 @@ fn setup_hotkeys() -> io::Result<GlobalHotkeySet> {
     Ok(hotkeys)
 }
 
+fn center_rect(source: Rectangle, target: Rectangle) -> Rectangle {
+    let source_width = source.right - source.left;
+    let source_height = source.bottom - source.top;
+    let target_width = target.right - target.left;
+    let target_height = target.bottom - target.top;
+    let centered_offset_x = (target_width - source_width) / 2;
+    let centered_offset_y = (target_height - source_height) / 2;
+    Rectangle {
+        left: target.left + centered_offset_x,
+        top: target.top + centered_offset_y,
+        right: target.right - centered_offset_x,
+        bottom: target.bottom - centered_offset_y,
+    }
+}
+
 #[derive(Debug)]
-struct ScalingResult {
+struct Scaling {
     scale_factor: f64,
     scaled_rect: Rectangle,
     scaled_rect_centered_offset: Point,
     unscaled_rect_centered_offset: Point,
 }
 
-impl ScalingResult {
+impl Scaling {
     fn from_rects(source: Rectangle, target: Rectangle, use_integer_scaling: bool) -> Self {
         let source_width = source.right - source.left;
         let source_height = source.bottom - source.top;
@@ -690,7 +734,6 @@ impl ScalingResult {
             } else {
                 max_scale_factor
             };
-            // TODO: Integer scaling & resulting scale factor 1.0 disables magnifier, so window won't be centered
             f64::max(1.0, max_scale_factor)
         };
         let scaled_rect = Rectangle {
