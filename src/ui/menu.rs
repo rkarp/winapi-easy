@@ -223,6 +223,15 @@ impl SubMenu {
         })
     }
 
+    pub fn new_from_items<I>(items: I) -> io::Result<Self>
+    where
+        I: IntoIterator<Item = SubMenuItem>,
+    {
+        let mut result = Self::new()?;
+        result.insert_menu_items(items)?;
+        Ok(result)
+    }
+
     /// Inserts a menu item before the item with the given index.
     ///
     /// If no index is given, it will be inserted after the last item.
@@ -243,6 +252,16 @@ impl SubMenu {
         };
         self.handle.insert_submenu_item(&item, idx)?;
         self.items.insert(idx.try_into().unwrap(), item);
+        Ok(())
+    }
+
+    pub fn insert_menu_items<I>(&mut self, items: I) -> io::Result<()>
+    where
+        I: IntoIterator<Item = SubMenuItem>,
+    {
+        for item in items {
+            self.insert_menu_item(item, None)?;
+        }
         Ok(())
     }
 
@@ -370,7 +389,7 @@ impl SubMenuItem {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct TextMenuItem {
     pub id: u32,
     pub text: String,
@@ -443,11 +462,10 @@ mod tests {
         let mut menu = SubMenu::new()?;
         const TEST_ID: u32 = 42;
         const TEST_ID2: u32 = 43;
-        menu.insert_menu_item(
+        menu.insert_menu_items([
             SubMenuItem::Text(TextMenuItem::default_with_text(TEST_ID, "text")),
-            None,
-        )?;
-        menu.insert_menu_item(SubMenuItem::Separator, None)?;
+            SubMenuItem::Separator,
+        ])?;
         menu.modify_menu_item_by_index(0, |item| {
             if let SubMenuItem::Text(item) = item {
                 item.disabled = true;

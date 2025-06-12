@@ -128,61 +128,45 @@ fn main() -> io::Result<()> {
 
     let mut popup = {
         let magnifier_options = &magnifier_context.borrow().options;
-        let mut popup = SubMenu::new()?;
-        popup.insert_menu_item(
+        SubMenu::new_from_items([
             SubMenuItem::Text(TextMenuItem {
+                id: MenuID::UseIntegerScaling.into(),
+                text: "Use integer scaling".to_owned(),
                 item_symbol: magnifier_options
                     .use_integer_scaling
                     .then_some(ItemSymbol::CheckMark),
-                ..TextMenuItem::default_with_text(
-                    MenuID::UseIntegerScaling.into(),
-                    "Use integer scaling",
-                )
+                ..TextMenuItem::default()
             }),
-            None,
-        )?;
-        popup.insert_menu_item(
             SubMenuItem::Text(TextMenuItem {
+                id: MenuID::UseSmoothing.into(),
+                text: "Use smoothing".to_owned(),
                 item_symbol: magnifier_options
                     .use_smoothing
                     .then_some(ItemSymbol::CheckMark),
-                ..TextMenuItem::default_with_text(MenuID::UseSmoothing.into(), "Use smoothing")
+                ..TextMenuItem::default()
             }),
-            None,
-        )?;
-        popup.insert_menu_item(
             SubMenuItem::Text(TextMenuItem {
+                id: MenuID::UseMouseSpeedMod.into(),
+                text: "Auto adjust mouse speed".to_owned(),
                 item_symbol: magnifier_context
                     .borrow()
                     .mouse_speed_mod
                     .is_some()
                     .then_some(ItemSymbol::CheckMark),
-                ..TextMenuItem::default_with_text(
-                    MenuID::UseMouseSpeedMod.into(),
-                    "Auto adjust mouse speed",
-                )
+                ..TextMenuItem::default()
             }),
-            None,
-        )?;
-        popup.insert_menu_item(SubMenuItem::Separator, None)?;
-        popup.insert_menu_item(
+            SubMenuItem::Separator,
             SubMenuItem::Text(TextMenuItem {
+                id: MenuID::UseMagnifierControl.into(),
+                text: "Use magnifier control".to_owned(),
                 item_symbol: magnifier_options
                     .use_magnifier_control
                     .then_some(ItemSymbol::CheckMark),
-                ..TextMenuItem::default_with_text(
-                    MenuID::UseMagnifierControl.into(),
-                    "Use magnifier control",
-                )
+                ..TextMenuItem::default()
             }),
-            None,
-        )?;
-        popup.insert_menu_item(SubMenuItem::Separator, None)?;
-        popup.insert_menu_item(
+            SubMenuItem::Separator,
             SubMenuItem::Text(TextMenuItem::default_with_text(MenuID::Exit.into(), "Exit")),
-            None,
-        )?;
-        popup
+        ])?
     };
 
     let _hotkeys = setup_hotkeys()?;

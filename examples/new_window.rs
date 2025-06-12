@@ -96,43 +96,33 @@ fn main() -> io::Result<()> {
     let window_handle = window.as_handle();
     window_handle.set_caption_text("My Window")?;
     window_handle.set_show_state(WindowShowState::Show)?;
-    let mut popup = SubMenu::new()?;
-    popup.insert_menu_item(
-        SubMenuItem::Text(TextMenuItem::default_with_text(
-            MenuID::ShowWindow.into(),
-            "Show window",
-        )),
-        None,
-    )?;
-    popup.insert_menu_item(
-        SubMenuItem::Text(TextMenuItem::default_with_text(
-            MenuID::HideWindow.into(),
-            "Hide window",
-        )),
-        None,
-    )?;
-    popup.insert_menu_item(
-        SubMenuItem::Text(TextMenuItem::default_with_text(
-            MenuID::ShowBalloonNotification.into(),
-            "Show balloon notification",
-        )),
-        None,
-    )?;
+
     let messsage_box_item = SubMenuItem::Text(TextMenuItem::default_with_text(
         MenuID::ShowMessageBox.into(),
         "Show message box",
     ));
-    popup.insert_menu_item(messsage_box_item.clone(), None)?;
     let mut submenu = SubMenu::new()?;
-    submenu.insert_menu_item(messsage_box_item, None)?;
+    submenu.insert_menu_item(messsage_box_item.clone(), None)?;
     let submenu = Rc::new(RefCell::new(submenu));
-    popup.insert_menu_item(
+    let popup = SubMenu::new_from_items([
+        SubMenuItem::Text(TextMenuItem::default_with_text(
+            MenuID::ShowWindow.into(),
+            "Show window",
+        )),
+        SubMenuItem::Text(TextMenuItem::default_with_text(
+            MenuID::HideWindow.into(),
+            "Hide window",
+        )),
+        SubMenuItem::Text(TextMenuItem::default_with_text(
+            MenuID::ShowBalloonNotification.into(),
+            "Show balloon notification",
+        )),
+        messsage_box_item,
         SubMenuItem::Text(TextMenuItem {
             sub_menu: Some(submenu),
             ..TextMenuItem::default_with_text(MenuID::None.into(), "Submenu")
         }),
-        None,
-    )?;
+    ])?;
 
     let loop_callback = |thread_message| match thread_message {
         ThreadMessage::WindowProc(window_message)
