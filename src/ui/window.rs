@@ -194,6 +194,7 @@ use crate::ui::resource::{
     Brush,
     Cursor,
     Icon,
+    ImageKindInternal,
 };
 
 /// A (non-null) handle to a window.

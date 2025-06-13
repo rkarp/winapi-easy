@@ -10,8 +10,6 @@ use num_enum::{
     FromPrimitive,
     IntoPrimitive,
 };
-#[expect(clippy::wildcard_imports)]
-use private::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState,
     GetKeyState,
@@ -158,6 +156,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     XBUTTON2,
 };
 
+#[expect(clippy::wildcard_imports)]
+use self::private::*;
 use crate::internal::ReturnValue;
 
 pub mod hotkey;

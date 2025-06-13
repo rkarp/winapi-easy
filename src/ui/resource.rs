@@ -1,5 +1,6 @@
-//! Application resources.
+//! Application resources (icons, cursors and brushes).
 
+use std::path::Path;
 use std::{
     io,
     ptr,
@@ -49,6 +50,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     IMAGE_CURSOR,
     IMAGE_ICON,
     LR_DEFAULTSIZE,
+    LR_LOADFROMFILE,
     LR_SHARED,
     LoadImageW,
     OCR_APPSTARTING,
@@ -74,29 +76,155 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows_missing::MAKEINTRESOURCEW;
 
-pub(crate) trait ImageHandleKind: Copy + Sized {
-    type BuiltinType: Into<u32>;
-    const RESOURCE_TYPE: GDI_IMAGE_TYPE;
+pub(crate) use self::private::*;
+use crate::module::Module;
+use crate::string::ZeroTerminatedWideString;
 
-    fn from_builtin_loaded(builtin: Self::BuiltinType) -> io::Result<LoadedImage<Self>> {
-        Ok(LoadedImage {
-            handle: Self::from_builtin(builtin)?,
-            shared: true,
-        })
+mod private {
+    #[expect(clippy::wildcard_imports)]
+    use super::*;
+
+    pub trait ImageHandleKind: Copy + Sized {
+        type BuiltinType: BuiltinImageKind;
+        const RESOURCE_TYPE: GDI_IMAGE_TYPE;
+
+        fn from_untyped_handle(handle: HANDLE) -> Self;
+
+        /// Destroys a non-shared image handle.
+        fn destroy(self) -> io::Result<()>;
     }
 
-    fn from_builtin(builtin: Self::BuiltinType) -> io::Result<Self> {
-        Self::get_shared_image_handle(builtin.into())
+    pub trait ImageKindInternal {
+        type Handle: ImageHandleKind;
+        fn new_from_loaded_image(loaded_image: LoadedImage<Self::Handle>) -> Self;
+        fn as_handle(&self) -> Self::Handle;
     }
 
-    fn get_shared_image_handle(resource_id: u32) -> io::Result<Self> {
-        get_shared_image_handle(resource_id, Self::RESOURCE_TYPE).map(Self::from_untyped_handle)
+    pub trait BuiltinImageKind: Into<u32> {
+        fn into_ordinal(self) -> u32 {
+            self.into()
+        }
     }
 
-    fn from_untyped_handle(handle: HANDLE) -> Self;
+    #[derive(Eq, PartialEq, Debug)]
+    pub struct LoadedImage<H: ImageHandleKind> {
+        handle: H,
+        shared: bool,
+    }
 
-    /// Destroys a non-shared image handle.
-    fn destroy(self) -> io::Result<()>;
+    impl<H: ImageHandleKind> LoadedImage<H> {
+        pub(crate) fn from_builtin(builtin: H::BuiltinType) -> io::Result<Self> {
+            Self::load(LoadImageVariant::BuiltinId(builtin.into_ordinal()))
+        }
+
+        pub(crate) fn from_module_by_name(module: &Module, name: String) -> io::Result<Self> {
+            Self::load(LoadImageVariant::FromModule {
+                module,
+                module_load_variant: LoadImageFromModuleVariant::ByName(name),
+                load_as_shared: true,
+            })
+        }
+
+        pub(crate) fn from_module_by_ordinal(module: &Module, ordinal: u32) -> io::Result<Self> {
+            Self::load(LoadImageVariant::FromModule {
+                module,
+                module_load_variant: LoadImageFromModuleVariant::ByOrdinal(ordinal),
+                load_as_shared: true,
+            })
+        }
+
+        pub(crate) fn from_file(path: impl AsRef<Path>) -> io::Result<Self> {
+            Self::load(LoadImageVariant::FromFile(path.as_ref()))
+        }
+
+        pub(crate) fn as_handle(&self) -> H {
+            self.handle
+        }
+
+        fn load(load_params: LoadImageVariant) -> io::Result<Self> {
+            let handle_param;
+            let base_flags;
+            let name_data;
+            let name_param;
+            let shared;
+            match load_params {
+                LoadImageVariant::BuiltinId(resource_id) => {
+                    handle_param = None;
+                    base_flags = Default::default();
+                    name_param = MAKEINTRESOURCEW(resource_id);
+                    shared = true;
+                }
+                LoadImageVariant::FromModule {
+                    module,
+                    module_load_variant,
+                    load_as_shared,
+                } => {
+                    handle_param = Some(module.as_hinstance());
+                    base_flags = Default::default();
+                    match module_load_variant {
+                        LoadImageFromModuleVariant::ByOrdinal(ordinal) => {
+                            name_param = MAKEINTRESOURCEW(ordinal);
+                        }
+                        LoadImageFromModuleVariant::ByName(name) => {
+                            name_data = ZeroTerminatedWideString::from_os_str(name);
+                            name_param = name_data.as_raw_pcwstr();
+                        }
+                    }
+                    shared = load_as_shared;
+                }
+                LoadImageVariant::FromFile(file_name) => {
+                    handle_param = None;
+                    base_flags = LR_LOADFROMFILE;
+                    name_data = ZeroTerminatedWideString::from_os_str(file_name);
+                    name_param = name_data.as_raw_pcwstr();
+                    shared = false;
+                }
+            }
+            let flags = if shared {
+                base_flags | LR_SHARED
+            } else {
+                base_flags
+            };
+            let handle = unsafe {
+                LoadImageW(
+                    handle_param,
+                    name_param,
+                    H::RESOURCE_TYPE,
+                    0,
+                    0,
+                    flags | LR_DEFAULTSIZE,
+                )?
+            };
+            let handle = H::from_untyped_handle(handle);
+            Ok(Self { handle, shared })
+        }
+    }
+
+    impl<H: ImageHandleKind> Drop for LoadedImage<H> {
+        fn drop(&mut self) {
+            if !self.shared {
+                self.handle
+                    .destroy()
+                    .expect("Error destroying image handle");
+            }
+        }
+    }
+
+    impl TryFrom<BuiltinIcon> for LoadedImage<HICON> {
+        type Error = io::Error;
+
+        fn try_from(value: BuiltinIcon) -> Result<Self, Self::Error> {
+            Self::from_builtin(value)
+        }
+    }
+
+    impl TryFrom<BuiltinCursor> for LoadedImage<HCURSOR> {
+        type Error = io::Error;
+
+        fn try_from(value: BuiltinCursor) -> Result<Self, Self::Error> {
+            Self::from_builtin(value)
+        }
+    }
 }
 
 impl ImageHandleKind for HICON {
@@ -131,41 +259,27 @@ impl ImageHandleKind for HCURSOR {
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
-pub(crate) struct LoadedImage<H: ImageHandleKind> {
-    handle: H,
-    shared: bool,
-}
-
-impl<H: ImageHandleKind> LoadedImage<H> {
-    pub(crate) fn as_handle(&self) -> H {
-        self.handle
+pub trait ImageKind: ImageKindInternal + Sized {
+    fn from_builtin(builtin: <Self::Handle as ImageHandleKind>::BuiltinType) -> Self {
+        Self::new_from_loaded_image(
+            LoadedImage::from_builtin(builtin).unwrap_or_else(|_| unreachable!()),
+        )
     }
-}
 
-impl<H: ImageHandleKind> Drop for LoadedImage<H> {
-    fn drop(&mut self) {
-        if !self.shared {
-            self.handle
-                .destroy()
-                .expect("Error destroying image handle");
-        }
+    fn from_module_by_name(module: &Module, name: String) -> io::Result<Self> {
+        Ok(Self::new_from_loaded_image(
+            LoadedImage::from_module_by_name(module, name)?,
+        ))
     }
-}
 
-impl TryFrom<BuiltinIcon> for LoadedImage<HICON> {
-    type Error = io::Error;
-
-    fn try_from(value: BuiltinIcon) -> Result<Self, Self::Error> {
-        HICON::from_builtin_loaded(value)
+    fn from_module_by_ordinal(module: &Module, ordinal: u32) -> io::Result<Self> {
+        Ok(Self::new_from_loaded_image(
+            LoadedImage::from_module_by_ordinal(module, ordinal)?,
+        ))
     }
-}
 
-impl TryFrom<BuiltinCursor> for LoadedImage<HCURSOR> {
-    type Error = io::Error;
-
-    fn try_from(value: BuiltinCursor) -> Result<Self, Self::Error> {
-        HCURSOR::from_builtin_loaded(value)
+    fn from_file<A: AsRef<Path>>(path: A) -> io::Result<Self> {
+        Ok(Self::new_from_loaded_image(LoadedImage::from_file(path)?))
     }
 }
 
@@ -181,18 +295,28 @@ pub enum BuiltinIcon {
     Shield = OIC_SHIELD,
 }
 
+impl BuiltinImageKind for BuiltinIcon {}
+
 #[derive(Eq, PartialEq, Debug)]
 pub struct Icon(LoadedImage<HICON>);
 
-impl Icon {
-    pub(crate) fn as_handle(&self) -> HICON {
+impl ImageKindInternal for Icon {
+    type Handle = HICON;
+
+    fn new_from_loaded_image(loaded_image: LoadedImage<Self::Handle>) -> Self {
+        Self(loaded_image)
+    }
+
+    fn as_handle(&self) -> Self::Handle {
         self.0.as_handle()
     }
 }
 
+impl ImageKind for Icon {}
+
 impl From<BuiltinIcon> for Icon {
     fn from(value: BuiltinIcon) -> Self {
-        Self(LoadedImage::try_from(value).unwrap_or_else(|_| unreachable!()))
+        Self::from_builtin(value)
     }
 }
 
@@ -236,18 +360,28 @@ pub enum BuiltinCursor {
     Up = OCR_UP.0,
 }
 
+impl BuiltinImageKind for BuiltinCursor {}
+
 #[derive(Eq, PartialEq, Debug)]
 pub struct Cursor(LoadedImage<HCURSOR>);
 
-impl Cursor {
-    pub(crate) fn as_handle(&self) -> HCURSOR {
+impl ImageKindInternal for Cursor {
+    type Handle = HCURSOR;
+
+    fn new_from_loaded_image(loaded_image: LoadedImage<Self::Handle>) -> Self {
+        Self(loaded_image)
+    }
+
+    fn as_handle(&self) -> Self::Handle {
         self.0.as_handle()
     }
 }
 
+impl ImageKind for Cursor {}
+
 impl From<BuiltinCursor> for Cursor {
     fn from(value: BuiltinCursor) -> Self {
-        Self(LoadedImage::try_from(value).unwrap_or_else(|_| unreachable!()))
+        Self::from_builtin(value)
     }
 }
 
@@ -337,18 +471,19 @@ impl From<BuiltinColor> for Brush {
     }
 }
 
-fn get_shared_image_handle(resource_id: u32, resource_type: GDI_IMAGE_TYPE) -> io::Result<HANDLE> {
-    let handle = unsafe {
-        LoadImageW(
-            None,
-            MAKEINTRESOURCEW(resource_id),
-            resource_type,
-            0,
-            0,
-            LR_SHARED | LR_DEFAULTSIZE,
-        )?
-    };
-    Ok(handle)
+enum LoadImageVariant<'a> {
+    BuiltinId(u32),
+    FromModule {
+        module: &'a Module,
+        module_load_variant: LoadImageFromModuleVariant,
+        load_as_shared: bool,
+    },
+    FromFile(&'a Path),
+}
+
+enum LoadImageFromModuleVariant {
+    ByOrdinal(u32),
+    ByName(String),
 }
 
 mod windows_missing {
@@ -358,5 +493,25 @@ mod windows_missing {
     #[expect(non_snake_case)]
     pub fn MAKEINTRESOURCEW(i: u32) -> PCWSTR {
         PCWSTR(i as usize as *const u16)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn load_builtin_icon() -> io::Result<()> {
+        let icon = Icon::from_builtin(BuiltinIcon::default());
+        assert!(!icon.as_handle().is_invalid());
+        Ok(())
+    }
+
+    #[test]
+    fn load_shell32_icon() -> io::Result<()> {
+        let module = Module::load_module_as_data_file("shell32.dll")?;
+        let icon = Icon::from_module_by_ordinal(&module, 1)?;
+        assert!(!icon.as_handle().is_invalid());
+        Ok(())
     }
 }

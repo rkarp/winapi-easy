@@ -36,6 +36,7 @@ use winapi_easy::messaging::{
     ThreadMessage,
     ThreadMessageLoop,
 };
+use winapi_easy::module::Module;
 use winapi_easy::ui::desktop::MonitorHandle;
 use winapi_easy::ui::menu::{
     ItemSymbol,
@@ -53,6 +54,7 @@ use winapi_easy::ui::resource::{
     Brush,
     BuiltinColor,
     Icon,
+    ImageKind,
 };
 use winapi_easy::ui::window::{
     DefaultWmlType,
@@ -100,7 +102,11 @@ fn main() -> io::Result<()> {
         answer
     };
 
-    let icon: Rc<Icon> = Default::default();
+    let icon: Rc<Icon> = {
+        let icon_module = Module::load_module_as_data_file("shell32.dll")?;
+        let icon = Icon::from_module_by_ordinal(&icon_module, 23).unwrap_or_default();
+        icon.into()
+    };
 
     let mut main_window = Window::new::<_, ()>(
         WindowClass::register_new(

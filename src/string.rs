@@ -126,3 +126,20 @@ pub(crate) fn max_path_extend(path: &OsStr) -> Cow<OsStr> {
         Cow::Owned(combined_path)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_zero_terminated_wstr() {
+        const TEST_STR: &'static str = "test";
+        let transformed_string = unsafe {
+            ZeroTerminatedWideString::from_os_str(TEST_STR)
+                .as_raw_pcwstr()
+                .to_string()
+                .unwrap()
+        };
+        assert_eq!(&transformed_string, TEST_STR);
+    }
+}

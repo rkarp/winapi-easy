@@ -18,8 +18,6 @@ use num_enum::{
     FromPrimitive,
     IntoPrimitive,
 };
-#[expect(clippy::wildcard_imports)]
-use private::*;
 use windows::Win32::Foundation::{
     HWND,
     LPARAM,
@@ -66,6 +64,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_XBUTTONUP,
 };
 
+#[expect(clippy::wildcard_imports)]
+use self::private::*;
 use crate::input::{
     KeyboardKey,
     MouseButton,

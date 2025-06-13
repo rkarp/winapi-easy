@@ -30,6 +30,7 @@ pub mod input;
 #[cfg(feature = "media")]
 pub mod media;
 pub mod messaging;
+pub mod module;
 #[cfg(feature = "process")]
 pub mod process;
 #[cfg(feature = "shell")]

@@ -15,10 +15,7 @@ use windows::Wdk::System::Threading::{
     NtQueryInformationProcess,
     ProcessIoPriority,
 };
-use windows::Win32::Foundation::{
-    HANDLE,
-    HMODULE,
-};
+use windows::Win32::Foundation::HANDLE;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot,
     TH32CS_SNAPTHREAD,
@@ -26,7 +23,6 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
     Thread32First,
     Thread32Next,
 };
-use windows::Win32::System::LibraryLoader::GetModuleHandleExW;
 use windows::Win32::System::Threading;
 use windows::Win32::System::Threading::{
     GetCurrentProcess,
@@ -410,24 +406,6 @@ pub enum IoPriority {
     VeryLow = 0,
     Low = 1,
     Normal = 2,
-}
-
-/// A handle to a module (EXE or DLL).
-pub struct ModuleHandle {
-    #[expect(dead_code)]
-    raw_handle: HMODULE,
-}
-
-impl ModuleHandle {
-    /// Returns the module handle of the currently executed code.
-    pub fn get_current() -> io::Result<Self> {
-        let raw_handle = unsafe {
-            let mut h_module: HMODULE = Default::default();
-            GetModuleHandleExW(0, None, &raw mut h_module)?;
-            h_module.if_null_get_last_error()?
-        };
-        Ok(ModuleHandle { raw_handle })
-    }
 }
 
 #[cfg(test)]
