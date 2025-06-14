@@ -141,7 +141,7 @@ impl ThreadMessageLoop {
 
     /// Posts a 'quit' message in the thread message loop.
     ///
-    /// This will cause [`Self::run_thread_message_loop`] to return.
+    /// This will cause the running message loop to return.
     pub fn post_quit_message() {
         unsafe {
             PostQuitMessage(0);

@@ -852,7 +852,7 @@ impl<WST: WindowSubtype> Window<WST> {
         self.handle
     }
 
-    /// Changes the [`WindowMessageListener`].
+    /// Changes the user window message listener.
     pub fn set_listener<WML>(&mut self, listener: WML) -> io::Result<()>
     where
         WML: FnMut(&ListenerMessage) -> ListenerAnswer + 'static,
@@ -1291,7 +1291,7 @@ pub enum MonitorPower {
 
 /// An icon in the Windows notification area.
 ///
-/// This icon is always associated with a window and can be used in conjunction with [`crate::ui::menu::PopupMenu`].
+/// This icon is always associated with a window and can be used in conjunction with [`crate::ui::menu::SubMenu`].
 #[derive(Debug)]
 pub struct NotificationIcon {
     id: NotificationIconId,

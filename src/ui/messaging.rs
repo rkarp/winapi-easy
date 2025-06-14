@@ -160,7 +160,7 @@ pub enum ListenerMessageVariant {
     CustomUserMessage(CustomUserMessage),
 }
 
-/// Indicates what should be done after the [`WindowMessageListener`] is done processing the message.
+/// Indicates what should be done after the user listener is done processing the message.
 #[derive(Copy, Clone, Default, Debug)]
 pub enum ListenerAnswer {
     /// Call the default windows handler after the current message processing code.
