@@ -239,8 +239,7 @@ pub enum LowLevelKeyboardAction {
     Other(u32),
 }
 
-/// A value indicating what action should be taken after returning from the user callback
-/// in [`LowLevelInputHook::run_hook`].
+/// A value indicating what action should be taken after returning from the user callback.
 #[derive(Copy, Clone, PartialEq, Eq, Default, Debug)]
 pub enum HookReturnValue {
     /// Returns the result of calling [`CallNextHookEx`] with the original raw message,

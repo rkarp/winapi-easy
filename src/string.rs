@@ -116,7 +116,7 @@ impl AsMut<[u16]> for WinUnicodeString {
     }
 }
 
-pub(crate) fn max_path_extend(path: &OsStr) -> Cow<OsStr> {
+pub(crate) fn max_path_extend(path: &OsStr) -> Cow<'_, OsStr> {
     let special_prefix: &OsStr = OsStr::new(r"\\?\");
     if Path::new(path).starts_with(special_prefix) {
         Cow::Borrowed(path)

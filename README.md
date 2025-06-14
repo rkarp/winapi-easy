@@ -7,9 +7,10 @@ An ergonomic and safe interface to some Windows API functionality.
 
 ## Design
 
-This is an **experimental** library designed to explore how the Windows API could look like if it had these properties:
+This is an **experimental** library designed as an abstraction over the Windows API with the following properties:
 
 * Properly typed parameters, making wrong usage of the API difficult
+* Automatic release of resources on drop
 * No unsafe functionality exposed to the user outside of 'escape hatches'
 * Consistent error handling without special numerical return values
 
@@ -18,20 +19,14 @@ of the Windows API.
 
 ## Features
 
-* Keyboard and mouse control & monitoring (send events, hotkeys, hooking)
-* List threads
-* Set CPU priority for any process / thread
-* Set IO priority for any process
-* Set current process / thread to background processing mode (sets very low IO priority, lowering disk access contention)
-* Get toplevel windows
-* Get windows associated with a thread
-* Window actions like minimize, flash
-* Set taskbar progress animation for a window
-* Turn monitor off
-* COM initialization
-* Get a file list from the Windows clipboard
-* Refresh icon cache
-* Set default audio output device
+* Keyboard and mouse control (sending events, hotkeys, hooking)
+* Creating windows and manipulating window properties
+* Window actions like minimize, flash, taskbar progress animation
+* Creating notification icons & menus
+* Magnification API
+* Running message loops & listening for events
+* Process and thread functionality (including CPU & IO priority)
+* File transfers with progress notifications
 
 ## License
 

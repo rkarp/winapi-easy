@@ -1,5 +1,5 @@
 /*!
-A small collection of various abstractions over the Windows API.
+A collection of various abstractions over the Windows API.
 */
 
 #![cfg_attr(all(doc, nightly), feature(doc_auto_cfg))]

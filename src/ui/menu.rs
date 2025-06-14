@@ -96,7 +96,7 @@ impl MenuHandle {
         }
     }
 
-    /// Sets the menu to send `WMWM_MENUCOMMAND` instead of `WM_COMMAND` messages.
+    /// Sets the menu to send `WM_MENUCOMMAND` instead of `WM_COMMAND` messages.
     ///
     /// According to docs: This is a menu header style and has no effect when applied to individual sub menus.
     fn set_notify_by_pos(&self) -> io::Result<()> {
