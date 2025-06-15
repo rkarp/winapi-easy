@@ -82,13 +82,13 @@ use winapi_easy::ui::{
     Region,
     get_virtual_screen_rect,
     remove_fullscreen_magnification,
-    set_dpi_awareness_context,
     set_fullscreen_magnification,
     set_fullscreen_magnification_use_bitmap_smoothing,
+    set_process_dpi_awareness_context,
 };
 
 fn main() -> io::Result<()> {
-    set_dpi_awareness_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE)?;
+    set_process_dpi_awareness_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE)?;
 
     let listener = move |message: &ListenerMessage| {
         let answer;

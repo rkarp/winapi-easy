@@ -72,6 +72,8 @@ use windows::Win32::UI::Shell::{
     NOTIFY_ICON_STATE,
     NOTIFYICON_VERSION_4,
     NOTIFYICONDATAW,
+    NOTIFYICONIDENTIFIER,
+    Shell_NotifyIconGetRect,
     Shell_NotifyIconW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -896,7 +898,7 @@ impl<WST: WindowSubtype> Window<WST> {
         );
         self.notification_icons
             .insert(id, NotificationIcon::new(self.handle, options)?);
-        Ok(self.get_notification_icon(id))
+        Ok(self.get_notification_icon_mut(id))
     }
 
     /// Returns a reference to a previously added notification icon.
@@ -904,7 +906,18 @@ impl<WST: WindowSubtype> Window<WST> {
     /// # Panics
     ///
     /// Will panic if the ID doesn't exist.
-    pub fn get_notification_icon(&mut self, id: NotificationIconId) -> &mut NotificationIcon {
+    pub fn get_notification_icon(&self, id: NotificationIconId) -> &NotificationIcon {
+        self.notification_icons
+            .get(&id)
+            .expect("Notification icon ID doesn't exist")
+    }
+
+    /// Returns a mutable reference to a previously added notification icon.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the ID doesn't exist.
+    pub fn get_notification_icon_mut(&mut self, id: NotificationIconId) -> &mut NotificationIcon {
         self.notification_icons
             .get_mut(&id)
             .expect("Notification icon ID doesn't exist")
@@ -1306,7 +1319,7 @@ impl NotificationIcon {
     fn new(window: WindowHandle, options: NotificationIconOptions) -> io::Result<Self> {
         // For GUID handling maybe look at generating it from the executable path:
         // https://stackoverflow.com/questions/7432319/notifyicondata-guid-problem
-        let call_data = get_notification_call_data(
+        let call_data = Self::get_notification_call_data(
             window,
             options.icon_id,
             true,
@@ -1329,9 +1342,14 @@ impl NotificationIcon {
         })
     }
 
+    pub fn get_bounding_rectangle(&self) -> io::Result<Rectangle> {
+        let identifier = self.get_raw_identifier();
+        unsafe { Shell_NotifyIconGetRect(&raw const identifier).map_err(Into::into) }
+    }
+
     /// Sets the icon graphics.
     pub fn set_icon(&mut self, icon: Rc<Icon>) -> io::Result<()> {
-        let call_data = get_notification_call_data(
+        let call_data = Self::get_notification_call_data(
             self.window,
             self.id,
             false,
@@ -1350,8 +1368,15 @@ impl NotificationIcon {
 
     /// Allows showing or hiding the icon in the notification area.
     pub fn set_icon_hidden_state(&mut self, hidden: bool) -> io::Result<()> {
-        let call_data =
-            get_notification_call_data(self.window, self.id, false, None, None, Some(hidden), None);
+        let call_data = Self::get_notification_call_data(
+            self.window,
+            self.id,
+            false,
+            None,
+            None,
+            Some(hidden),
+            None,
+        );
         unsafe {
             Shell_NotifyIconW(NIM_MODIFY, &raw const call_data).if_null_to_error_else_drop(
                 || io::Error::other("Cannot set notification icon hidden state"),
@@ -1362,8 +1387,15 @@ impl NotificationIcon {
 
     /// Sets the tooltip text when hovering over the icon with the mouse.
     pub fn set_tooltip_text(&mut self, text: &str) -> io::Result<()> {
-        let call_data =
-            get_notification_call_data(self.window, self.id, false, None, Some(text), None, None);
+        let call_data = Self::get_notification_call_data(
+            self.window,
+            self.id,
+            false,
+            None,
+            Some(text),
+            None,
+            None,
+        );
         unsafe {
             Shell_NotifyIconW(NIM_MODIFY, &raw const call_data).if_null_to_error_else_drop(
                 || io::Error::other("Cannot set notification icon tooltip text"),
@@ -1377,7 +1409,7 @@ impl NotificationIcon {
         &mut self,
         notification: Option<BalloonNotification>,
     ) -> io::Result<()> {
-        let call_data = get_notification_call_data(
+        let call_data = Self::get_notification_call_data(
             self.window,
             self.id,
             false,
@@ -1393,91 +1425,106 @@ impl NotificationIcon {
         };
         Ok(())
     }
+
+    fn get_raw_identifier(&self) -> NOTIFYICONIDENTIFIER {
+        let (uid, guid_item) = match self.id {
+            NotificationIconId::Simple(uid) => (uid, GUID::zeroed()),
+            NotificationIconId::GUID(guid) => (0, guid),
+        };
+        NOTIFYICONIDENTIFIER {
+            cbSize: std::mem::size_of::<NOTIFYICONIDENTIFIER>()
+                .try_into()
+                .unwrap_or_else(|_| unreachable!()),
+            hWnd: self.window.into(),
+            uID: uid.into(),
+            guidItem: guid_item,
+        }
+    }
+
+    #[expect(clippy::option_option)]
+    fn get_notification_call_data(
+        window_handle: WindowHandle,
+        icon_id: NotificationIconId,
+        set_callback_message: bool,
+        maybe_icon: Option<HICON>,
+        maybe_tooltip_str: Option<&str>,
+        icon_hidden_state: Option<bool>,
+        maybe_balloon_text: Option<Option<BalloonNotification>>,
+    ) -> NOTIFYICONDATAW {
+        let mut icon_data = NOTIFYICONDATAW {
+            cbSize: mem::size_of::<NOTIFYICONDATAW>()
+                .try_into()
+                .expect("NOTIFYICONDATAW size conversion failed"),
+            hWnd: window_handle.into(),
+            ..Default::default()
+        };
+        icon_data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
+        match icon_id {
+            NotificationIconId::GUID(id) => {
+                icon_data.guidItem = id;
+                icon_data.uFlags |= NIF_GUID;
+            }
+            NotificationIconId::Simple(simple_id) => icon_data.uID = simple_id.into(),
+        }
+        if set_callback_message {
+            icon_data.uCallbackMessage = super::messaging::RawMessage::ID_NOTIFICATION_ICON_MSG;
+            icon_data.uFlags |= NIF_MESSAGE;
+        }
+        if let Some(icon) = maybe_icon {
+            icon_data.hIcon = icon;
+            icon_data.uFlags |= NIF_ICON;
+        }
+        if let Some(tooltip_str) = maybe_tooltip_str {
+            let chars = to_wide_chars_iter(tooltip_str)
+                .take(icon_data.szTip.len() - 1)
+                .chain(std::iter::once(0))
+                .enumerate();
+            for (i, w_char) in chars {
+                icon_data.szTip[i] = w_char;
+            }
+            icon_data.uFlags |= NIF_TIP;
+            // Standard tooltip is normally suppressed on NOTIFYICON_VERSION_4
+            icon_data.uFlags |= NIF_SHOWTIP;
+        }
+        if let Some(hidden_state) = icon_hidden_state {
+            if hidden_state {
+                icon_data.dwState = NOTIFY_ICON_STATE(icon_data.dwState.0 | NIS_HIDDEN.0);
+                icon_data.dwStateMask |= NIS_HIDDEN;
+            }
+            icon_data.uFlags |= NIF_STATE;
+        }
+        if let Some(set_balloon_notification) = maybe_balloon_text {
+            if let Some(balloon) = set_balloon_notification {
+                let body_chars = to_wide_chars_iter(balloon.body)
+                    .take(icon_data.szInfo.len() - 1)
+                    .chain(std::iter::once(0))
+                    .enumerate();
+                for (i, w_char) in body_chars {
+                    icon_data.szInfo[i] = w_char;
+                }
+                let title_chars = to_wide_chars_iter(balloon.title)
+                    .take(icon_data.szInfoTitle.len() - 1)
+                    .chain(std::iter::once(0))
+                    .enumerate();
+                for (i, w_char) in title_chars {
+                    icon_data.szInfoTitle[i] = w_char;
+                }
+                icon_data.dwInfoFlags =
+                    NOTIFY_ICON_INFOTIP_FLAGS(icon_data.dwInfoFlags.0 | u32::from(balloon.icon));
+            }
+            icon_data.uFlags |= NIF_INFO;
+        }
+        icon_data
+    }
 }
 
 impl Drop for NotificationIcon {
     fn drop(&mut self) {
         let call_data =
-            get_notification_call_data(self.window, self.id, false, None, None, None, None);
+            Self::get_notification_call_data(self.window, self.id, false, None, None, None, None);
         // Ignore seemingly unavoidable random errors here
         let _ = unsafe { Shell_NotifyIconW(NIM_DELETE, &raw const call_data) };
     }
-}
-
-#[expect(clippy::option_option)]
-fn get_notification_call_data(
-    window_handle: WindowHandle,
-    icon_id: NotificationIconId,
-    set_callback_message: bool,
-    maybe_icon: Option<HICON>,
-    maybe_tooltip_str: Option<&str>,
-    icon_hidden_state: Option<bool>,
-    maybe_balloon_text: Option<Option<BalloonNotification>>,
-) -> NOTIFYICONDATAW {
-    let mut icon_data = NOTIFYICONDATAW {
-        cbSize: mem::size_of::<NOTIFYICONDATAW>()
-            .try_into()
-            .expect("NOTIFYICONDATAW size conversion failed"),
-        hWnd: window_handle.into(),
-        ..Default::default()
-    };
-    icon_data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
-    match icon_id {
-        NotificationIconId::GUID(id) => {
-            icon_data.guidItem = id;
-            icon_data.uFlags |= NIF_GUID;
-        }
-        NotificationIconId::Simple(simple_id) => icon_data.uID = simple_id.into(),
-    }
-    if set_callback_message {
-        icon_data.uCallbackMessage = super::messaging::RawMessage::ID_NOTIFICATION_ICON_MSG;
-        icon_data.uFlags |= NIF_MESSAGE;
-    }
-    if let Some(icon) = maybe_icon {
-        icon_data.hIcon = icon;
-        icon_data.uFlags |= NIF_ICON;
-    }
-    if let Some(tooltip_str) = maybe_tooltip_str {
-        let chars = to_wide_chars_iter(tooltip_str)
-            .take(icon_data.szTip.len() - 1)
-            .chain(std::iter::once(0))
-            .enumerate();
-        for (i, w_char) in chars {
-            icon_data.szTip[i] = w_char;
-        }
-        icon_data.uFlags |= NIF_TIP;
-        // Standard tooltip is normally suppressed on NOTIFYICON_VERSION_4
-        icon_data.uFlags |= NIF_SHOWTIP;
-    }
-    if let Some(hidden_state) = icon_hidden_state {
-        if hidden_state {
-            icon_data.dwState = NOTIFY_ICON_STATE(icon_data.dwState.0 | NIS_HIDDEN.0);
-            icon_data.dwStateMask |= NIS_HIDDEN;
-        }
-        icon_data.uFlags |= NIF_STATE;
-    }
-    if let Some(set_balloon_notification) = maybe_balloon_text {
-        if let Some(balloon) = set_balloon_notification {
-            let body_chars = to_wide_chars_iter(balloon.body)
-                .take(icon_data.szInfo.len() - 1)
-                .chain(std::iter::once(0))
-                .enumerate();
-            for (i, w_char) in body_chars {
-                icon_data.szInfo[i] = w_char;
-            }
-            let title_chars = to_wide_chars_iter(balloon.title)
-                .take(icon_data.szInfoTitle.len() - 1)
-                .chain(std::iter::once(0))
-                .enumerate();
-            for (i, w_char) in title_chars {
-                icon_data.szInfoTitle[i] = w_char;
-            }
-            icon_data.dwInfoFlags =
-                NOTIFY_ICON_INFOTIP_FLAGS(icon_data.dwInfoFlags.0 | u32::from(balloon.icon));
-        }
-        icon_data.uFlags |= NIF_INFO;
-    }
-    icon_data
 }
 
 /// Notification icon ID given to the Windows API.

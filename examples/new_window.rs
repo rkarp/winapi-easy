@@ -145,7 +145,7 @@ fn main() -> io::Result<()> {
                                 ..Default::default()
                             };
                             window
-                                .get_notification_icon(notification_icon_id)
+                                .get_notification_icon_mut(notification_icon_id)
                                 .set_balloon_notification(Some(notification))?;
                         }
                         MenuID::ShowMessageBox => {

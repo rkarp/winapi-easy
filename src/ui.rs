@@ -29,6 +29,7 @@ use windows::Win32::System::Shutdown::LockWorkStation;
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT,
     SetProcessDpiAwarenessContext,
+    SetThreadDpiAwarenessContext,
 };
 pub use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE,
@@ -262,9 +263,18 @@ pub fn set_fullscreen_magnification_use_bitmap_smoothing(use_smoothing: bool) ->
     }
 }
 
-pub fn set_dpi_awareness_context(context: DPI_AWARENESS_CONTEXT) -> io::Result<()> {
+pub fn set_process_dpi_awareness_context(context: DPI_AWARENESS_CONTEXT) -> io::Result<()> {
     unsafe {
         SetProcessDpiAwarenessContext(context)?;
+    }
+    Ok(())
+}
+
+pub fn set_thread_dpi_awareness_context(context: DPI_AWARENESS_CONTEXT) -> io::Result<()> {
+    unsafe {
+        SetThreadDpiAwarenessContext(context)
+            .0
+            .if_null_get_last_error_else_drop()?;
     }
     Ok(())
 }
