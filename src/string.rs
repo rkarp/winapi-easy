@@ -2,6 +2,7 @@
 
 use std::borrow::Cow;
 use std::ffi::{
+    CString,
     OsStr,
     OsString,
 };
@@ -18,9 +19,25 @@ use std::{
 
 use windows::Win32::Foundation::UNICODE_STRING;
 use windows::core::{
+    PCSTR,
     PCWSTR,
     PWSTR,
 };
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(crate) struct ZeroTerminatedString(CString);
+
+impl ZeroTerminatedString {
+    pub(crate) fn as_raw_pcstr(&self) -> PCSTR {
+        PCSTR(self.0.as_ptr().cast::<u8>())
+    }
+}
+
+impl<T: AsRef<str>> From<T> for ZeroTerminatedString {
+    fn from(value: T) -> Self {
+        Self(CString::new(value.as_ref()).unwrap_or_else(|_| unreachable!()))
+    }
+}
 
 pub(crate) trait ToWideString: AsRef<OsStr> + Sized {
     /// Converts to a zero-terminated wide string.
