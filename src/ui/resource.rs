@@ -77,7 +77,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows_missing::MAKEINTRESOURCEW;
 
 pub(crate) use self::private::*;
-use crate::module::Module;
+use crate::module::ExecutableModule;
 use crate::string::ZeroTerminatedWideString;
 
 mod private {
@@ -117,7 +117,7 @@ mod private {
             Self::load(LoadImageVariant::BuiltinId(builtin.into_ordinal()))
         }
 
-        pub(crate) fn from_module_by_name(module: &Module, name: String) -> io::Result<Self> {
+        pub(crate) fn from_module_by_name(module: &ExecutableModule, name: String) -> io::Result<Self> {
             Self::load(LoadImageVariant::FromModule {
                 module,
                 module_load_variant: LoadImageFromModuleVariant::ByName(name),
@@ -125,7 +125,7 @@ mod private {
             })
         }
 
-        pub(crate) fn from_module_by_ordinal(module: &Module, ordinal: u32) -> io::Result<Self> {
+        pub(crate) fn from_module_by_ordinal(module: &ExecutableModule, ordinal: u32) -> io::Result<Self> {
             Self::load(LoadImageVariant::FromModule {
                 module,
                 module_load_variant: LoadImageFromModuleVariant::ByOrdinal(ordinal),
@@ -266,13 +266,13 @@ pub trait ImageKind: ImageKindInternal + Sized {
         )
     }
 
-    fn from_module_by_name(module: &Module, name: String) -> io::Result<Self> {
+    fn from_module_by_name(module: &ExecutableModule, name: String) -> io::Result<Self> {
         Ok(Self::new_from_loaded_image(
             LoadedImage::from_module_by_name(module, name)?,
         ))
     }
 
-    fn from_module_by_ordinal(module: &Module, ordinal: u32) -> io::Result<Self> {
+    fn from_module_by_ordinal(module: &ExecutableModule, ordinal: u32) -> io::Result<Self> {
         Ok(Self::new_from_loaded_image(
             LoadedImage::from_module_by_ordinal(module, ordinal)?,
         ))
@@ -474,7 +474,7 @@ impl From<BuiltinColor> for Brush {
 enum LoadImageVariant<'a> {
     BuiltinId(u32),
     FromModule {
-        module: &'a Module,
+        module: &'a ExecutableModule,
         module_load_variant: LoadImageFromModuleVariant,
         load_as_shared: bool,
     },
@@ -509,7 +509,7 @@ mod tests {
 
     #[test]
     fn load_shell32_icon() -> io::Result<()> {
-        let module = Module::load_module_as_data_file("shell32.dll")?;
+        let module = ExecutableModule::load_module_as_data_file("shell32.dll")?;
         let icon = Icon::from_module_by_ordinal(&module, 1)?;
         assert!(!icon.as_handle().is_invalid());
         Ok(())
