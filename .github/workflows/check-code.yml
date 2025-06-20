@@ -13,13 +13,15 @@ jobs:
   run-tests:
     name: Run tests
     runs-on: windows-2022
+    env:
+      RUSTFLAGS: '-D warnings'
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
       - name: Install toolchains
         run: |
           rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal -t x86_64-pc-windows-msvc -c clippy,rustfmt
-          rustup toolchain install nightly --profile minimal -c rustfmt
+          rustup toolchain install nightly --profile minimal -c clippy,rustfmt
           rustup default stable-x86_64-pc-windows-msvc
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
@@ -28,6 +30,10 @@ jobs:
       - name: Run tests
         run: cargo hack test --each-feature
       - name: Run clippy
-        run: cargo clippy --no-deps
+        run: cargo +nightly clippy --no-deps -- -D clippy::pedantic
       - name: Check formatting
         run: cargo +nightly fmt --check
+      - name: Check docs
+        env:
+          RUSTDOCFLAGS: '-D warnings'
+        run: cargo +nightly doc --no-deps
