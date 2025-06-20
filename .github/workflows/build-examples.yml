@@ -1,0 +1,26 @@
+name: Build examples
+on:
+  workflow_dispatch: {}
+jobs:
+  build-examples:
+    name: Build examples
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: Install toolchains
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-msvc --profile minimal -t x86_64-pc-windows-msvc
+          rustup default stable-x86_64-pc-windows-msvc
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Build
+        env:
+          RUSTFLAGS: '-C target-feature=+crt-static'
+        run: cargo build --examples --release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: examples
+          path: ${{ github.workspace }}/target/release/examples/*.exe
+          compression-level: 9
