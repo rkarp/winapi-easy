@@ -144,18 +144,18 @@ where
     let listener = move |message: &ListenerMessage| {
         if let ListenerMessageVariant::CustomUserMessage(custom_message) = message.variant {
             fn get_path_from_id_list(raw_id_list: ITEMIDLIST) -> PathBuf {
-                let mut raw_path_buffer: ZeroTerminatedWideString =
-                    ZeroTerminatedWideString(vec![0; 32000]);
+                let mut raw_path_buffer = vec![0; 32000];
                 unsafe {
                     // Unclear if paths > MAX_PATH are even supported here
                     SHGetPathFromIDListEx(
                         &raw const raw_id_list,
-                        raw_path_buffer.0.as_mut_slice(),
+                        raw_path_buffer.as_mut_slice(),
                         Default::default(),
                     )
                     .if_null_panic_else_drop("Cannot get path from ID list");
                 }
-                raw_path_buffer.to_os_string().into()
+                let wide_string = unsafe { ZeroTerminatedWideString::from_raw(raw_path_buffer) };
+                wide_string.to_os_string().into()
             }
 
             // Should be `WM_APP`

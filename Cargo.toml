@@ -80,7 +80,9 @@ media = [
 process = [
     "ntapi",
     "windows/Wdk_System_Threading",
+    "windows/Win32_Security",
     "windows/Win32_System_Diagnostics_ToolHelp",
+    "windows/Win32_System_Diagnostics_Debug",
     "windows/Win32_System_Threading",
 ]
 shell = [

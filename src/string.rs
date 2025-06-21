@@ -39,6 +39,12 @@ impl<T: AsRef<str>> From<T> for ZeroTerminatedString {
     }
 }
 
+impl AsRef<[u8]> for ZeroTerminatedString {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_bytes_with_nul()
+    }
+}
+
 pub(crate) trait ToWideString: AsRef<OsStr> + Sized {
     /// Converts to a zero-terminated wide string.
     fn to_wide_string(&self) -> Vec<u16> {
@@ -64,11 +70,15 @@ pub(crate) trait FromWideString: AsRef<[u16]> + Sized {
 }
 impl<T: AsRef<[u16]> + Sized> FromWideString for T {}
 
-pub(crate) struct ZeroTerminatedWideString(pub Vec<u16>);
+pub(crate) struct ZeroTerminatedWideString(Vec<u16>);
 
 impl ZeroTerminatedWideString {
     pub(crate) fn from_os_str<T: AsRef<OsStr> + Sized>(input: T) -> Self {
         Self(input.to_wide_string())
+    }
+
+    pub(crate) unsafe fn from_raw<T: Into<Vec<u16>>>(raw_data: T) -> Self {
+        Self(raw_data.into())
     }
 
     pub(crate) fn to_os_string(&self) -> OsString {
@@ -84,6 +94,12 @@ impl ZeroTerminatedWideString {
 
     pub(crate) fn as_raw_pwstr(&mut self) -> PWSTR {
         PWSTR::from_raw(self.0.as_mut_ptr())
+    }
+}
+
+impl AsRef<[u16]> for ZeroTerminatedWideString {
+    fn as_ref(&self) -> &[u16] {
+        self.0.as_slice()
     }
 }
 

@@ -31,7 +31,7 @@ fn main() -> io::Result<()> {
             Action::NormalPrio => IoPriority::Normal,
             Action::Other(_) => unreachable!(),
         };
-        let mut foreground_process: Process = WindowHandle::get_foreground_window()
+        let foreground_process: Process = WindowHandle::get_foreground_window()
             .unwrap()
             .get_creator_process_id()
             .try_into()?;
