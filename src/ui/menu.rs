@@ -415,7 +415,7 @@ impl TextMenuItem {
         let mut item_info = default_raw_item_info();
         item_info.fMask |= MIIM_FTYPE | MIIM_STATE | MIIM_ID | MIIM_SUBMENU | MIIM_STRING;
         item_info.fType |= MFT_STRING;
-        item_info.cch = text_wide_string.0.len().try_into().unwrap();
+        item_info.cch = text_wide_string.as_ref().len().try_into().unwrap();
         item_info.dwTypeData = text_wide_string.as_raw_pwstr();
         if self.disabled {
             item_info.fState |= MFS_DISABLED;

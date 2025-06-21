@@ -4,6 +4,7 @@ use std::ffi::c_void;
 use std::{
     io,
     mem,
+    ptr,
 };
 
 use ntapi::ntpsapi::NtSetInformationProcess;
@@ -15,7 +16,14 @@ use windows::Wdk::System::Threading::{
     NtQueryInformationProcess,
     ProcessIoPriority,
 };
-use windows::Win32::Foundation::HANDLE;
+use windows::Win32::Foundation::{
+    HANDLE,
+    WAIT_ABANDONED,
+    WAIT_FAILED,
+    WAIT_OBJECT_0,
+    WAIT_TIMEOUT,
+};
+use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot,
     TH32CS_SNAPTHREAD,
@@ -23,14 +31,25 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
     Thread32First,
     Thread32Next,
 };
-use windows::Win32::System::Threading;
+use windows::Win32::System::Memory::{
+    MEM_COMMIT,
+    MEM_DECOMMIT,
+    MEM_RELEASE,
+    MEM_RESERVE,
+    PAGE_READWRITE,
+    VirtualAllocEx,
+    VirtualFreeEx,
+};
 use windows::Win32::System::Threading::{
+    self,
+    CreateRemoteThreadEx,
     GetCurrentProcess,
     GetCurrentProcessId,
     GetCurrentThread,
     GetCurrentThreadId,
     GetProcessId,
     GetThreadId,
+    INFINITE,
     OpenProcess,
     OpenThread,
     PROCESS_ALL_ACCESS,
@@ -43,6 +62,7 @@ use windows::Win32::System::Threading::{
     THREAD_MODE_BACKGROUND_BEGIN,
     THREAD_MODE_BACKGROUND_END,
     THREAD_PRIORITY,
+    WaitForSingleObject,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     PostThreadMessageW,
@@ -62,8 +82,6 @@ pub struct Process {
 
 impl Process {
     /// Constructs a special handle that always points to the current process.
-    ///
-    /// When transferred to a different process, it will point to that process when used from it.
     pub fn current() -> Self {
         let pseudo_handle = unsafe { GetCurrentProcess() };
         Self::from_maybe_null(pseudo_handle)
@@ -81,6 +99,11 @@ impl Process {
         Ok(Self {
             handle: raw_handle.into(),
         })
+    }
+
+    pub fn get_id(&self) -> ProcessId {
+        let id = unsafe { GetProcessId(self.handle.entity) };
+        ProcessId(id)
     }
 
     /// Sets the current process to background processing mode.
@@ -108,7 +131,7 @@ impl Process {
     ///
     /// # Result::<(), std::io::Error>::Ok(())
     /// ```
-    pub fn set_priority(&mut self, priority: ProcessPriority) -> io::Result<()> {
+    pub fn set_priority(&self, priority: ProcessPriority) -> io::Result<()> {
         unsafe { SetPriorityClass(self.handle.entity, priority.into())? };
         Ok(())
     }
@@ -134,7 +157,7 @@ impl Process {
         Ok(IoPriority::try_from(raw_io_priority.cast_unsigned()).ok())
     }
 
-    pub fn set_io_priority(&mut self, io_priority: IoPriority) -> io::Result<()> {
+    pub fn set_io_priority(&self, io_priority: IoPriority) -> io::Result<()> {
         let mut raw_io_priority = u32::from(io_priority);
         let ret_val = unsafe {
             NtSetInformationProcess(
@@ -149,9 +172,36 @@ impl Process {
         Ok(())
     }
 
-    pub fn get_id(&self) -> ProcessId {
-        let id = unsafe { GetProcessId(self.handle.entity) };
-        ProcessId(id)
+    /// Creates a thread in another process.
+    ///
+    /// # Safety
+    ///
+    /// Requires `start_address` to be a function pointer valid in the remote process
+    /// and ABI-compatible with the signature: `unsafe extern "system" fn(*mut std::ffi::c_void) -> u32`
+    pub unsafe fn create_remote_thread(
+        &self,
+        start_address: *const c_void,
+        call_param0: Option<*const c_void>,
+    ) -> io::Result<Thread> {
+        let thread_handle = unsafe {
+            let start_fn =
+                mem::transmute::<*const c_void, unsafe extern "system" fn(_) -> _>(start_address);
+            CreateRemoteThreadEx(
+                self.as_raw_handle(),
+                None,
+                0,
+                Some(start_fn),
+                call_param0,
+                0,
+                None,
+                None,
+            )
+        }?;
+        Ok(Thread::from_non_null(thread_handle))
+    }
+
+    fn as_raw_handle(&self) -> HANDLE {
+        self.handle.entity
     }
 
     #[expect(dead_code)]
@@ -169,6 +219,12 @@ impl Process {
                 handle: handle.into(),
             })
         }
+    }
+}
+
+impl AsRef<Process> for Process {
+    fn as_ref(&self) -> &Process {
+        self
     }
 }
 
@@ -219,6 +275,17 @@ impl Thread {
         })
     }
 
+    pub fn join(&self) -> io::Result<()> {
+        let event = unsafe { WaitForSingleObject(self.handle.entity, INFINITE) };
+        match event {
+            _ if event == WAIT_OBJECT_0 => Ok(()),
+            _ if event == WAIT_FAILED => Err(io::Error::last_os_error()),
+            _ if event == WAIT_ABANDONED => Err(io::ErrorKind::InvalidData.into()),
+            _ if event == WAIT_TIMEOUT => Err(io::ErrorKind::TimedOut.into()),
+            _ => unreachable!(),
+        }
+    }
+
     /// Sets the current thread to background processing mode.
     ///
     /// This will also lower the I/O priority of the thread, which will lower the impact of heavy disk I/O on other threads and processes.
@@ -244,7 +311,7 @@ impl Thread {
     ///
     /// # Result::<(), std::io::Error>::Ok(())
     /// ```
-    pub fn set_priority(&mut self, priority: ThreadPriority) -> Result<(), io::Error> {
+    pub fn set_priority(&self, priority: ThreadPriority) -> Result<(), io::Error> {
         unsafe { SetThreadPriority(self.handle.entity, priority.into())? };
         Ok(())
     }
@@ -254,7 +321,6 @@ impl Thread {
         ThreadId(id)
     }
 
-    #[expect(dead_code)]
     fn from_non_null(handle: HANDLE) -> Self {
         Self {
             handle: handle.into(),
@@ -408,11 +474,99 @@ pub enum IoPriority {
     Normal = 2,
 }
 
+pub struct ProcessMemoryAllocation<P: AsRef<Process>> {
+    remote_ptr: *mut c_void,
+    num_bytes: usize,
+    process: P,
+    pre_reserved: bool,
+}
+
+impl<P: AsRef<Process>> ProcessMemoryAllocation<P> {
+    /// Allocates memory in another process and writes the raw bytes of `*data` into it.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the size of `data` is zero.
+    pub fn with_data<D: ?Sized>(process: P, pre_reserve: bool, data: &D) -> io::Result<Self> {
+        let data_size = mem::size_of_val(data);
+        assert_ne!(data_size, 0);
+        let allocation = Self::new_empty(process, pre_reserve, data_size)?;
+        allocation.write(data)?;
+        Ok(allocation)
+    }
+
+    fn new_empty(process: P, pre_reserve: bool, num_bytes: usize) -> io::Result<Self> {
+        assert_ne!(num_bytes, 0);
+        let mut allocation_type = MEM_COMMIT;
+        if pre_reserve {
+            // Potentially reserves less than a full 64K block, wasting address space: https://stackoverflow.com/q/31586303
+            allocation_type |= MEM_RESERVE;
+        }
+        let remote_ptr = unsafe {
+            VirtualAllocEx(
+                process.as_ref().as_raw_handle(),
+                None,
+                num_bytes,
+                allocation_type,
+                PAGE_READWRITE,
+            )
+        }
+        .if_null_get_last_error()?;
+        Ok(Self {
+            remote_ptr,
+            num_bytes,
+            process,
+            pre_reserved: pre_reserve,
+        })
+    }
+
+    fn write<D: ?Sized>(&self, data: &D) -> io::Result<()> {
+        let data_size = mem::size_of_val(data);
+        assert_ne!(data_size, 0);
+        assert!(data_size <= self.num_bytes);
+        unsafe {
+            WriteProcessMemory(
+                self.process.as_ref().as_raw_handle(),
+                self.remote_ptr,
+                ptr::from_ref(data).cast::<c_void>(),
+                data_size,
+                None,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn free(&self) -> io::Result<()> {
+        let free_type = if self.pre_reserved {
+            MEM_RELEASE
+        } else {
+            MEM_DECOMMIT
+        };
+        unsafe {
+            VirtualFreeEx(
+                self.process.as_ref().as_raw_handle(),
+                self.remote_ptr,
+                0,
+                free_type,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl<P: AsRef<Process>> Drop for ProcessMemoryAllocation<P> {
+    fn drop(&mut self) {
+        self.free().unwrap();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use more_asserts::*;
 
     use super::*;
+    use crate::module::ExecutableModule;
+    use crate::string::ZeroTerminatedString;
     #[cfg(feature = "ui")]
     use crate::ui::window::WindowHandle;
 
@@ -444,11 +598,40 @@ mod tests {
 
     #[test]
     fn set_get_io_priority() -> io::Result<()> {
-        let mut curr_process = Process::current();
+        let curr_process = Process::current();
         let target_priority = IoPriority::Low;
         curr_process.set_io_priority(target_priority)?;
         let priority = curr_process.get_io_priority()?.unwrap();
         assert_eq!(priority, target_priority);
         Ok(())
+    }
+
+    #[test]
+    fn write_process_memory() -> io::Result<()> {
+        write_process_memory_internal(true)?;
+        write_process_memory_internal(false)?;
+        Ok(())
+    }
+
+    fn write_process_memory_internal(pre_reserve: bool) -> io::Result<()> {
+        let process = Process::current();
+        let memory = ProcessMemoryAllocation::with_data(process, pre_reserve, "123")?;
+        assert!(!memory.remote_ptr.is_null());
+        Ok(())
+    }
+
+    #[test]
+    fn create_remote_thread_locally() -> io::Result<()> {
+        let process = Process::current();
+        let module = ExecutableModule::from_loaded("kernel32.dll")?;
+        let load_library_fn_ptr = module.get_symbol_ptr_by_name("LoadLibraryA")?;
+        let raw_lib_name = ZeroTerminatedString::from("kernel32.dll");
+        let thread = unsafe {
+            process.create_remote_thread(
+                load_library_fn_ptr,
+                Some(raw_lib_name.as_raw_pcstr().as_ptr().cast::<c_void>()),
+            )
+        }?;
+        thread.join()
     }
 }
