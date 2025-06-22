@@ -117,7 +117,10 @@ mod private {
             Self::load(LoadImageVariant::BuiltinId(builtin.into_ordinal()))
         }
 
-        pub(crate) fn from_module_by_name(module: &ExecutableModule, name: String) -> io::Result<Self> {
+        pub(crate) fn from_module_by_name(
+            module: &ExecutableModule,
+            name: String,
+        ) -> io::Result<Self> {
             Self::load(LoadImageVariant::FromModule {
                 module,
                 module_load_variant: LoadImageFromModuleVariant::ByName(name),
@@ -125,7 +128,10 @@ mod private {
             })
         }
 
-        pub(crate) fn from_module_by_ordinal(module: &ExecutableModule, ordinal: u32) -> io::Result<Self> {
+        pub(crate) fn from_module_by_ordinal(
+            module: &ExecutableModule,
+            ordinal: u32,
+        ) -> io::Result<Self> {
             Self::load(LoadImageVariant::FromModule {
                 module,
                 module_load_variant: LoadImageFromModuleVariant::ByOrdinal(ordinal),

@@ -375,8 +375,10 @@ mod private {
         }
     }
 
+    #[allow(dead_code)]
     pub enum GlobalRawClosureStore {}
 
+    #[allow(dead_code)]
     impl GlobalRawClosureStore {
         fn closures() -> &'static Mutex<HashMap<IdType, StoredClosurePtr>> {
             static CLOSURES: OnceLock<Mutex<HashMap<IdType, StoredClosurePtr>>> = OnceLock::new();
