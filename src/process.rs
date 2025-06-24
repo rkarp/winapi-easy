@@ -4,6 +4,7 @@ use std::ffi::c_void;
 use std::{
     io,
     mem,
+    process,
     ptr,
 };
 
@@ -19,6 +20,7 @@ use windows::Wdk::System::Threading::{
 use windows::Win32::Foundation::{
     HANDLE,
     WAIT_ABANDONED,
+    WAIT_EVENT,
     WAIT_FAILED,
     WAIT_OBJECT_0,
     WAIT_TIMEOUT,
@@ -56,12 +58,14 @@ use windows::Win32::System::Threading::{
     PROCESS_CREATION_FLAGS,
     PROCESS_MODE_BACKGROUND_BEGIN,
     PROCESS_MODE_BACKGROUND_END,
+    ResumeThread,
     SetPriorityClass,
     SetThreadPriority,
     THREAD_ALL_ACCESS,
     THREAD_MODE_BACKGROUND_BEGIN,
     THREAD_MODE_BACKGROUND_END,
     THREAD_PRIORITY,
+    WaitForInputIdle,
     WaitForSingleObject,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -172,6 +176,17 @@ impl Process {
         Ok(())
     }
 
+    pub fn wait_for_initialization(&self) -> io::Result<()> {
+        let return_code = unsafe { WaitForInputIdle(self.as_raw_handle(), INFINITE) };
+        let return_code = WAIT_EVENT(return_code);
+        match return_code {
+            WAIT_EVENT(0) => Ok(()),
+            _ if return_code == WAIT_FAILED => Err(io::Error::last_os_error()),
+            _ if return_code == WAIT_TIMEOUT => Err(io::ErrorKind::TimedOut.into()),
+            _ => unreachable!(),
+        }
+    }
+
     /// Creates a thread in another process.
     ///
     /// # Safety
@@ -236,6 +251,14 @@ impl TryFrom<ProcessId> for Process {
     }
 }
 
+impl TryFrom<&process::Child> for Process {
+    type Error = io::Error;
+
+    fn try_from(value: &process::Child) -> Result<Self, Self::Error> {
+        Self::try_from(ProcessId::from(value))
+    }
+}
+
 /// ID of a [`Process`].
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct ProcessId(pub(crate) u32);
@@ -244,6 +267,16 @@ impl ProcessId {
     /// Returns the current process ID.
     pub fn current() -> Self {
         Self(unsafe { GetCurrentProcessId() })
+    }
+
+    fn from_raw_id(raw_id: u32) -> Self {
+        Self(raw_id)
+    }
+}
+
+impl From<&process::Child> for ProcessId {
+    fn from(value: &process::Child) -> Self {
+        Self::from_raw_id(value.id())
     }
 }
 
@@ -275,6 +308,7 @@ impl Thread {
         })
     }
 
+    /// Waits for the thread to finish.
     pub fn join(&self) -> io::Result<()> {
         let event = unsafe { WaitForSingleObject(self.handle.entity, INFINITE) };
         match event {
@@ -284,6 +318,13 @@ impl Thread {
             _ if event == WAIT_TIMEOUT => Err(io::ErrorKind::TimedOut.into()),
             _ => unreachable!(),
         }
+    }
+
+    /// Resumes a suspended thread.
+    pub fn resume(&self) -> io::Result<()> {
+        unsafe { ResumeThread(self.handle.entity) }
+            .cast_signed()
+            .if_eq_to_error(-1, io::Error::last_os_error)
     }
 
     /// Sets the current thread to background processing mode.
@@ -557,6 +598,29 @@ impl<P: AsRef<Process>> ProcessMemoryAllocation<P> {
 impl<P: AsRef<Process>> Drop for ProcessMemoryAllocation<P> {
     fn drop(&mut self) {
         self.free().unwrap();
+    }
+}
+
+pub trait CommandExtWE {
+    fn set_creation_flags(&mut self, flags: ProcessCreationFlags) -> &mut process::Command;
+}
+
+impl CommandExtWE for process::Command {
+    fn set_creation_flags(&mut self, flags: ProcessCreationFlags) -> &mut process::Command {
+        use std::os::windows::process::CommandExt;
+        self.creation_flags(flags.into())
+    }
+}
+
+#[derive(IntoPrimitive, Clone, Copy, Eq, PartialEq, Debug)]
+#[repr(u32)]
+pub enum ProcessCreationFlags {
+    CreateSuspended = Threading::CREATE_SUSPENDED.0,
+}
+
+impl From<ProcessCreationFlags> for PROCESS_CREATION_FLAGS {
+    fn from(value: ProcessCreationFlags) -> Self {
+        PROCESS_CREATION_FLAGS(value.into())
     }
 }
 
