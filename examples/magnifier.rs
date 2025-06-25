@@ -415,7 +415,8 @@ impl MagnifierContext {
             let maybe_foreground_window = WindowHandle::get_foreground_window();
             match maybe_foreground_window {
                 Some(foreground_window)
-                    if maybe_foreground_window == self.options.target_window_setting =>
+                    if maybe_foreground_window == self.options.target_window_setting
+                        && has_nonzero_area(foreground_window.get_client_area_coords()?) =>
                 {
                     self.set_magnifier_enabled(true, main_window)?;
                     self.adjust_for_target(foreground_window)?;
@@ -758,6 +759,12 @@ impl Scaling {
             bottom: self.scaled_rect.bottom + self.scaled_rect_centered_offset.y,
         }
     }
+}
+
+fn has_nonzero_area(source: Rectangle) -> bool {
+    let source_width = source.right - source.left;
+    let source_height = source.bottom - source.top;
+    source_width > 0 && source_height > 0
 }
 
 #[derive(Debug)]
