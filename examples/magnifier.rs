@@ -182,10 +182,10 @@ fn main() -> io::Result<()> {
             match message.action {
                 LowLevelMouseAction::Move => {
                     // The hook can be called even on some Windows API calls, so avoid magnifier context borrow panics here
-                    if let Ok(magnifier_context) = magnifier_context.try_borrow() {
-                        if let Some(confinement) = &magnifier_context.cursor_confinement {
-                            confinement.reapply().unwrap();
-                        }
+                    if let Ok(magnifier_context) = magnifier_context.try_borrow()
+                        && let Some(confinement) = &magnifier_context.cursor_confinement
+                    {
+                        confinement.reapply().unwrap();
                     }
                 }
                 _ => (),

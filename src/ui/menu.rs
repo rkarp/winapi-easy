@@ -184,18 +184,18 @@ impl From<&MenuHandle> for HMENU {
     }
 }
 
-#[cfg(any())]
+#[cfg(false)]
 #[cfg(test)]
 static_assertions::assert_not_impl_any!(Menu: Send, Sync);
 
-#[cfg(any())]
+#[cfg(false)]
 #[derive(Debug)]
 pub struct Menu {
     handle: MenuHandle,
     items: Vec<TextMenuItem>,
 }
 
-#[cfg(any())]
+#[cfg(false)]
 impl Menu {
     pub fn new() -> io::Result<Self> {
         Ok(Self {
