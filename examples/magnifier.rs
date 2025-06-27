@@ -90,16 +90,12 @@ use winapi_easy::ui::{
 fn main() -> io::Result<()> {
     set_process_dpi_awareness_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE)?;
 
-    let listener = move |message: &ListenerMessage| {
-        let answer;
-        match message.variant {
-            ListenerMessageVariant::WindowDestroy => {
-                ThreadMessageLoop::post_quit_message();
-                answer = ListenerAnswer::CallDefaultHandler
-            }
-            _ => answer = ListenerAnswer::default(),
+    let listener = move |message: &ListenerMessage| match message.variant {
+        ListenerMessageVariant::WindowDestroy => {
+            ThreadMessageLoop::post_quit_message();
+            ListenerAnswer::CallDefaultHandler
         }
-        answer
+        _ => ListenerAnswer::default(),
     };
 
     let icon: Rc<Icon> = {
@@ -164,7 +160,7 @@ fn main() -> io::Result<()> {
             SubMenuItem::Separator,
             SubMenuItem::Text(TextMenuItem {
                 id: MenuID::UseMagnifierControl.into(),
-                text: "Use magnifier control".to_owned(),
+                text: "Use magnifier control mode".to_owned(),
                 item_symbol: magnifier_options
                     .use_magnifier_control
                     .then_some(ItemSymbol::CheckMark),
@@ -296,7 +292,6 @@ fn main() -> io::Result<()> {
                     }
                     _ => (),
                 }
-                Ok(())
             }
             ThreadMessage::Hotkey(hotkey_id) => {
                 if let HotkeyId::SetTargetWindow = HotkeyId::from(hotkey_id) {
@@ -310,14 +305,14 @@ fn main() -> io::Result<()> {
                         message_id: UserMessageId::TargetWindowChanged.into(),
                         ..Default::default()
                     })?;
-                    Ok(())
                 } else {
                     unreachable!()
                 }
             }
-            ThreadMessage::Other(_) => Ok(()),
-            _ => Ok(()),
-        }
+            ThreadMessage::Other(_) => (),
+            _ => (),
+        };
+        Ok(())
     };
     ThreadMessageLoop::new().run_with(loop_callback)?;
     Ok(())
