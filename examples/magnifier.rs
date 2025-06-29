@@ -15,6 +15,7 @@ use num_enum::{
 };
 use winapi_easy::hooking::{
     HookReturnValue,
+    LowLevelInputHook,
     LowLevelInputHookType,
     LowLevelMouseAction,
     LowLevelMouseHook,
@@ -172,24 +173,6 @@ fn main() -> io::Result<()> {
     };
 
     let _hotkeys = setup_hotkeys()?;
-
-    let _mouse_hook = {
-        let mouse_callback = |message: LowLevelMouseMessage| {
-            match message.action {
-                LowLevelMouseAction::Move => {
-                    // The hook can be called even on some Windows API calls, so avoid magnifier context borrow panics here
-                    if let Ok(magnifier_context) = magnifier_context.try_borrow()
-                        && let Some(confinement) = &magnifier_context.cursor_confinement
-                    {
-                        confinement.reapply().unwrap();
-                    }
-                }
-                _ => (),
-            }
-            HookReturnValue::CallNextHook
-        };
-        LowLevelMouseHook::add_hook::<0, _>(mouse_callback)?
-    };
 
     let _win_event_hook = {
         let win_event_listener = |event: WinEventMessage| match event.event_kind {
@@ -372,7 +355,7 @@ struct MagnifierContext {
     options: MagnifierOptions,
     mouse_speed_mod: Option<MouseSpeedMod>,
     cursor_hider: Option<CursorConcealment>,
-    cursor_confinement: Option<CursorConfinement>,
+    cursor_confinement: Option<RefreshingCursorConfinement>,
     overlay_class: Rc<WindowClass>,
 }
 
@@ -540,7 +523,8 @@ impl MagnifierContext {
                 control_window.set_magnification_source(source_window_rect)?;
             }
         }
-        self.cursor_confinement = Some(CursorConfinement::new(source_window_rect)?);
+        self.cursor_confinement = None;
+        self.cursor_confinement = Some(RefreshingCursorConfinement::new(source_window_rect)?);
         if let Some(x) = &self.mouse_speed_mod {
             x.enable(1.0 / scaling_result.scale_factor)?
         }
@@ -647,6 +631,30 @@ impl MagnifierControl {
             control_window,
             overlay_window,
         })
+    }
+}
+
+struct RefreshingCursorConfinement {
+    _hook:
+        LowLevelInputHook<LowLevelMouseHook, Box<dyn Fn(LowLevelMouseMessage) -> HookReturnValue>>,
+}
+
+impl RefreshingCursorConfinement {
+    fn new(bounding_area: Rectangle) -> io::Result<Self> {
+        let cursor_confinement = CursorConfinement::new(bounding_area)?;
+        let mouse_callback = move |message: LowLevelMouseMessage| {
+            match message.action {
+                LowLevelMouseAction::Move => {
+                    cursor_confinement.reapply().unwrap();
+                }
+                _ => (),
+            }
+            HookReturnValue::CallNextHook
+        };
+        let result = Self {
+            _hook: LowLevelMouseHook::add_hook::<0, _>(Box::new(mouse_callback) as Box<_>)?,
+        };
+        Ok(result)
     }
 }
 
