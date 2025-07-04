@@ -45,11 +45,13 @@ use windows::Win32::UI::Magnification::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     ClipCursor,
+    GetCursorPos,
     GetSystemMetrics,
     SM_CXVIRTUALSCREEN,
     SM_CYVIRTUALSCREEN,
     SM_XVIRTUALSCREEN,
     SM_YVIRTUALSCREEN,
+    SetCursorPos,
 };
 use windows::core::BOOL;
 
@@ -183,13 +185,14 @@ impl Drop for CursorConfinement {
 
 #[derive(Debug)]
 #[must_use]
-pub struct CursorConcealment(());
+pub struct UnmagnifiedCursorConcealment(());
 
-impl CursorConcealment {
-    /// Globally hides the system cursor.
+impl UnmagnifiedCursorConcealment {
+    /// Globally hides the unmagnified system cursor.
     ///
-    /// The cursor will be automatically visible again when [`CursorConcealment`] is dropped.
+    /// The cursor will be automatically visible again when [`UnmagnifiedCursorConcealment`] is dropped.
     pub fn new() -> io::Result<Self> {
+        init_magnifier()?;
         unsafe {
             MagShowSystemCursor(false).if_null_get_last_error_else_drop()?;
         }
@@ -204,10 +207,21 @@ impl CursorConcealment {
     }
 }
 
-impl Drop for CursorConcealment {
+impl Drop for UnmagnifiedCursorConcealment {
     fn drop(&mut self) {
         Self::remove().expect("Removing cursor hidden state failed");
     }
+}
+
+pub fn get_cursor_pos() -> io::Result<Point> {
+    let mut point = Point::default();
+    unsafe { GetCursorPos(&raw mut point)? }
+    Ok(point)
+}
+
+pub fn set_cursor_pos(coords: Point) -> io::Result<()> {
+    unsafe { SetCursorPos(coords.x, coords.y)? }
+    Ok(())
 }
 
 pub fn get_virtual_screen_rect() -> Rectangle {

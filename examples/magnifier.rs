@@ -75,12 +75,13 @@ use winapi_easy::ui::window::{
     WindowZPosition,
 };
 use winapi_easy::ui::{
-    CursorConcealment,
     CursorConfinement,
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE,
     Point,
     Rectangle,
     Region,
+    UnmagnifiedCursorConcealment,
+    get_cursor_pos,
     get_virtual_screen_rect,
     remove_fullscreen_magnification,
     set_fullscreen_magnification,
@@ -247,9 +248,9 @@ fn main() -> io::Result<()> {
                             MenuID::Other(_) => unreachable!(),
                         }
                     }
-                    ListenerMessageVariant::NotificationIconContextSelect { xy_coords, .. } => {
+                    ListenerMessageVariant::NotificationIconContextSelect { .. } => {
                         let _ = main_window.set_as_foreground();
-                        popup.show_menu(*main_window, xy_coords)?;
+                        popup.show_menu(*main_window, get_cursor_pos()?)?;
                     }
                     ListenerMessageVariant::Timer { timer_id: 0 } => {
                         magnifier_context.apply_timer_tick()?;
@@ -354,7 +355,7 @@ struct MagnifierContext {
     variant: MagnifierVariant,
     options: MagnifierOptions,
     mouse_speed_mod: Option<MouseSpeedMod>,
-    cursor_hider: Option<CursorConcealment>,
+    cursor_hider: Option<UnmagnifiedCursorConcealment>,
     cursor_confinement: Option<RefreshingCursorConfinement>,
     overlay_class: Rc<WindowClass>,
 }
@@ -419,7 +420,7 @@ impl MagnifierContext {
                 }
                 MagnifierVariant::Control(magnifier_control) => {
                     if enable {
-                        self.cursor_hider = Some(CursorConcealment::new()?);
+                        self.cursor_hider = Some(UnmagnifiedCursorConcealment::new()?);
                     } else {
                         self.cursor_hider = None;
                     }
