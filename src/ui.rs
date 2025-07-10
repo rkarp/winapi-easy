@@ -53,7 +53,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SM_YVIRTUALSCREEN,
     SetCursorPos,
 };
-use windows::core::BOOL;
+use windows::core::{
+    BOOL,
+    Free,
+};
 
 use crate::internal::ReturnValue;
 
@@ -91,20 +94,29 @@ impl ReturnValue for GDI_REGION_TYPE {
     const NULL_VALUE: Self = RGN_ERROR;
 }
 
+impl ReturnValue for HRGN {
+    const NULL_VALUE: Self = HRGN(ptr::null_mut());
+}
+
 /// A (non-null) handle to a region.
 #[derive(Eq, PartialEq, Debug)]
 pub struct Region {
     raw_handle: HRGN,
+    forget_handle: bool,
 }
 
 impl Region {
-    pub fn from_rect(rect: Rectangle) -> Self {
-        let raw_handle = unsafe { CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom) };
-        Self::from_non_null(raw_handle)
+    pub fn from_rect(rect: Rectangle) -> io::Result<Self> {
+        let raw_handle = unsafe { CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom) }
+            .if_null_to_error(|| io::ErrorKind::Other.into())?;
+        Ok(Self::from_non_null(raw_handle))
     }
 
     pub(crate) fn from_non_null(handle: HRGN) -> Self {
-        Self { raw_handle: handle }
+        Self {
+            raw_handle: handle,
+            forget_handle: false,
+        }
     }
 
     pub fn duplicate(&self) -> io::Result<Self> {
@@ -116,7 +128,7 @@ impl Region {
     }
 
     fn combine(&self, other: Option<&Region>, mode: RGN_COMBINE_MODE) -> io::Result<Self> {
-        let dest = Self::from_rect(Default::default());
+        let dest = Self::from_rect(Default::default())?;
         unsafe {
             CombineRgn(
                 Some(dest.raw_handle),
@@ -128,11 +140,26 @@ impl Region {
         }
         Ok(dest)
     }
+
+    fn into_raw(mut self) -> HRGN {
+        self.forget_handle = true;
+        self.raw_handle
+    }
+}
+
+impl Drop for Region {
+    fn drop(&mut self) {
+        if !self.forget_handle {
+            unsafe {
+                self.raw_handle.free();
+            }
+        }
+    }
 }
 
 impl From<Region> for HRGN {
     fn from(value: Region) -> Self {
-        value.raw_handle
+        value.into_raw()
     }
 }
 

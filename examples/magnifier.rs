@@ -496,8 +496,8 @@ impl MagnifierContext {
                         Ok(())
                     })?;
                 fullscreen_magnifier.overlay_window.set_region(
-                    Region::from_rect(overlay_window_extent)
-                        .and_not_in(&Region::from_rect(source_window_rect))?,
+                    Region::from_rect(overlay_window_extent)?
+                        .and_not_in(&Region::from_rect(source_window_rect)?)?,
                 )?;
                 set_fullscreen_magnification_use_bitmap_smoothing(self.options.use_smoothing)?;
                 set_fullscreen_magnification(

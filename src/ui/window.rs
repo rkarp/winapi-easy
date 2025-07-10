@@ -412,13 +412,13 @@ impl WindowHandle {
         Ok(())
     }
 
-    pub fn get_region(self) -> Option<Region> {
-        let region = Region::from_rect(Default::default());
+    pub fn get_region(self) -> io::Result<Option<Region>> {
+        let region = Region::from_rect(Default::default())?;
         let result = unsafe { GetWindowRgn(self.raw_handle, region.raw_handle) };
         if result == RGN_ERROR {
-            None
+            Ok(None)
         } else {
-            Some(region)
+            Ok(Some(region))
         }
     }
 
@@ -428,7 +428,7 @@ impl WindowHandle {
     pub fn set_region(self, region: Region) -> io::Result<()> {
         unsafe {
             SetWindowRgn(self.raw_handle, Some(region.into()), true)
-                .if_null_get_last_error_else_drop()
+                .if_null_to_error_else_drop(|| io::ErrorKind::Other.into())
         }
     }
 
