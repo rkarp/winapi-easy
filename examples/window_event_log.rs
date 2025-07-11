@@ -6,14 +6,15 @@ use winapi_easy::hooking::{
     WinEventMessage,
 };
 use winapi_easy::ui::Rectangle;
+use winapi_easy::ui::window::WindowHandle;
 
 fn main() -> io::Result<()> {
     #[expect(dead_code)]
     #[derive(Debug)]
     struct MessageContent {
         kind: WinEventKind,
-        caption: String,
-        client_area: Rectangle,
+        caption: Option<String>,
+        client_area: Option<Rectangle>,
     }
     let callback = |message: WinEventMessage| {
         match message.event_kind {
@@ -22,11 +23,15 @@ fn main() -> io::Result<()> {
             | WinEventKind::WindowMinimized
             | WinEventKind::WindowMoveStart
             | WinEventKind::WindowMoveEnd => {
-                let window_handle = message.window_handle.unwrap();
+                let window_handle = message.window_handle;
                 let message_content = MessageContent {
                     kind: message.event_kind,
-                    caption: window_handle.get_caption_text(),
-                    client_area: window_handle.get_client_area_coords().unwrap(),
+                    caption: window_handle.map(WindowHandle::get_caption_text),
+                    client_area: window_handle
+                        .map(WindowHandle::get_client_area_coords)
+                        .transpose()
+                        .ok()
+                        .flatten(),
                 };
                 println!("{:#?}", message_content);
             }

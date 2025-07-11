@@ -175,24 +175,6 @@ fn main() -> io::Result<()> {
 
     let _hotkeys = setup_hotkeys()?;
 
-    let _win_event_hook = {
-        let win_event_listener = |event: WinEventMessage| match event.event_kind {
-            WinEventKind::ForegroundWindowChanged
-            | WinEventKind::WindowUnminimized
-            | WinEventKind::WindowMinimized
-            | WinEventKind::WindowMoveEnd => {
-                main_window
-                    .send_user_message(CustomUserMessage {
-                        message_id: UserMessageId::ForegroundWindowChanged.into(),
-                        ..Default::default()
-                    })
-                    .unwrap();
-            }
-            _ => (),
-        };
-        WinEventHook::new::<1>(win_event_listener)
-    };
-
     let loop_callback = |thread_message| {
         let mut magnifier_context = magnifier_context.borrow_mut();
         match thread_message {
@@ -257,7 +239,7 @@ fn main() -> io::Result<()> {
                     }
                     ListenerMessageVariant::CustomUserMessage(custom_message) => {
                         match UserMessageId::from(custom_message.message_id) {
-                            UserMessageId::ForegroundWindowChanged => {
+                            UserMessageId::WindowChanged => {
                                 magnifier_context.set_magnifier_initialized(true, &main_window)?;
                             }
                             UserMessageId::TargetWindowChanged => {
@@ -282,8 +264,32 @@ fn main() -> io::Result<()> {
                     let foreground_window = WindowHandle::get_foreground_window();
                     if magnifier_context.options.target_window_setting.is_some() {
                         magnifier_context.options.target_window_setting = None;
+                        magnifier_context.win_event_hook = None;
                     } else {
                         magnifier_context.options.target_window_setting = foreground_window;
+                        let win_event_hook = {
+                            let main_window_handle = *main_window;
+                            let win_event_listener =
+                                move |event: WinEventMessage| match event.event_kind {
+                                    WinEventKind::ObjectLocationChanged
+                                    | WinEventKind::ForegroundWindowChanged
+                                    | WinEventKind::WindowUnminimized
+                                    | WinEventKind::WindowMinimized
+                                    | WinEventKind::WindowMoveEnd
+                                        if event.window_handle.is_some() =>
+                                    {
+                                        main_window_handle
+                                            .send_user_message(CustomUserMessage {
+                                                message_id: UserMessageId::WindowChanged.into(),
+                                                ..Default::default()
+                                            })
+                                            .unwrap();
+                                    }
+                                    _ => (),
+                                };
+                            WinEventHook::new::<1>(Box::new(win_event_listener) as Box<dyn Fn(_)>)?
+                        };
+                        magnifier_context.win_event_hook = Some(win_event_hook);
                     }
                     main_window.send_user_message(CustomUserMessage {
                         message_id: UserMessageId::TargetWindowChanged.into(),
@@ -317,7 +323,7 @@ enum MenuID {
 #[derive(FromPrimitive, IntoPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[repr(u8)]
 enum UserMessageId {
-    ForegroundWindowChanged,
+    WindowChanged,
     TargetWindowChanged,
     #[num_enum(catch_all)]
     Other(u8),
@@ -354,6 +360,7 @@ struct MagnifierContext {
     magnifier_active: bool,
     variant: MagnifierVariant,
     options: MagnifierOptions,
+    win_event_hook: Option<WinEventHook<Box<dyn Fn(WinEventMessage)>>>,
     mouse_speed_mod: Option<MouseSpeedMod>,
     cursor_hider: Option<UnmagnifiedCursorConcealment>,
     cursor_confinement: Option<RefreshingCursorConfinement>,
@@ -368,6 +375,7 @@ impl MagnifierContext {
             magnifier_active: false,
             variant,
             options: MagnifierOptions::default(),
+            win_event_hook: None,
             mouse_speed_mod: None,
             cursor_hider: None,
             cursor_confinement: None,

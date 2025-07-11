@@ -33,6 +33,18 @@ use windows::Win32::UI::Accessibility::{
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx,
     EVENT_MIN,
+    EVENT_OBJECT_CLOAKED,
+    EVENT_OBJECT_CREATE,
+    EVENT_OBJECT_DESTROY,
+    EVENT_OBJECT_END,
+    EVENT_OBJECT_FOCUS,
+    EVENT_OBJECT_LOCATIONCHANGE,
+    EVENT_OBJECT_NAMECHANGE,
+    EVENT_OBJECT_SHOW,
+    EVENT_OBJECT_STATECHANGE,
+    EVENT_OBJECT_UNCLOAKED,
+    EVENT_SYSTEM_CAPTUREEND,
+    EVENT_SYSTEM_CAPTURESTART,
     EVENT_SYSTEM_END,
     EVENT_SYSTEM_FOREGROUND,
     EVENT_SYSTEM_MINIMIZEEND,
@@ -514,7 +526,7 @@ mod private {
         Self: RemovableHookHandle,
     {
         id: IdType,
-        handle: H,
+        handle_store: H,
         hook_dependency: RawBox<B>,
         remove_initiated: bool,
         phantom: PhantomData<RCS>,
@@ -527,10 +539,10 @@ mod private {
     where
         Self: RemovableHookHandle,
     {
-        pub(crate) fn new(id: IdType, handle: H, hook_dependency: RawBox<B>) -> Self {
+        pub(crate) fn new(id: IdType, handle_store: H, hook_dependency: RawBox<B>) -> Self {
             Self {
                 id,
-                handle,
+                handle_store,
                 hook_dependency,
                 remove_initiated: false,
                 phantom: PhantomData,
@@ -560,15 +572,25 @@ mod private {
 
     impl<RCS: RawClosureStore, B> RemovableHookHandle for HookHandle<RCS, B, HHOOK> {
         unsafe fn unhook(&mut self) -> io::Result<()> {
-            unsafe { UnhookWindowsHookEx(self.handle)? };
+            unsafe { UnhookWindowsHookEx(self.handle_store)? };
             Ok(())
         }
     }
 
     impl<RCS: RawClosureStore, B> RemovableHookHandle for HookHandle<RCS, B, HWINEVENTHOOK> {
         unsafe fn unhook(&mut self) -> io::Result<()> {
-            let _ = unsafe { UnhookWinEvent(self.handle) }
+            let _ = unsafe { UnhookWinEvent(self.handle_store) }
                 .if_null_to_error(|| io::ErrorKind::Other.into())?;
+            Ok(())
+        }
+    }
+
+    impl<RCS: RawClosureStore, B> RemovableHookHandle for HookHandle<RCS, B, Vec<HWINEVENTHOOK>> {
+        unsafe fn unhook(&mut self) -> io::Result<()> {
+            for handle in &self.handle_store {
+                let _ = unsafe { UnhookWinEvent(*handle) }
+                    .if_null_to_error(|| io::ErrorKind::Other.into())?;
+            }
             Ok(())
         }
     }
@@ -665,7 +687,7 @@ impl ReturnValue for HWINEVENTHOOK {
 #[must_use]
 pub struct WinEventHook<F> {
     #[expect(dead_code)]
-    handle: HookHandle<ThreadLocalRawClosureStore, F, HWINEVENTHOOK>,
+    handle_store: HookHandle<ThreadLocalRawClosureStore, F, Vec<HWINEVENTHOOK>>,
 }
 
 impl<F> WinEventHook<F>
@@ -680,8 +702,8 @@ where
     ///
     /// Will panic if a Hook with the given ID already exists for this thread.
     pub fn new<const ID: IdType>(user_callback: F) -> io::Result<Self> {
-        let handle = Self::add_hook_internal::<ID>(user_callback)?;
-        Ok(Self { handle })
+        let handle_store = Self::add_hook_internal::<ID>(user_callback)?;
+        Ok(Self { handle_store })
     }
 
     /// Runs a new hook with ID `0` on a new thread message loop ([`ThreadMessageLoop`]).
@@ -701,7 +723,7 @@ where
 
     fn add_hook_internal<const ID: IdType>(
         user_callback: F,
-    ) -> io::Result<HookHandle<ThreadLocalRawClosureStore, F, HWINEVENTHOOK>> {
+    ) -> io::Result<HookHandle<ThreadLocalRawClosureStore, F, Vec<HWINEVENTHOOK>>> {
         unsafe extern "system" fn internal_callback<const ID: IdType, F>(
             _h_win_event_hook: HWINEVENTHOOK,
             event_id: u32,
@@ -726,21 +748,32 @@ where
             };
             catch_unwind_and_abort(call);
         }
+        const EVENT_RANGES: [(u32, u32); 2] = [
+            (EVENT_MIN, EVENT_SYSTEM_END),
+            (EVENT_OBJECT_CREATE, EVENT_OBJECT_END),
+        ];
+
+        let add_hook = move |(event_min, event_max)| {
+            unsafe {
+                SetWinEventHook(
+                    event_min,
+                    event_max,
+                    None,
+                    Some(internal_callback::<ID, F>),
+                    0,
+                    0,
+                    WINEVENT_OUTOFCONTEXT,
+                )
+            }
+            .if_null_to_error(|| io::ErrorKind::Other.into())
+        };
         let mut user_callback = RawBox::new(user_callback);
         ThreadLocalRawClosureStore::set_thread_raw_closure(ID, Some(user_callback.as_mut_ptr()));
-        let handle = unsafe {
-            SetWinEventHook(
-                EVENT_MIN,
-                EVENT_SYSTEM_END,
-                None,
-                Some(internal_callback::<ID, F>),
-                0,
-                0,
-                WINEVENT_OUTOFCONTEXT,
-            )
-            .if_null_to_error(|| io::ErrorKind::Other.into())?
-        };
-        Ok(HookHandle::new(ID, handle, user_callback))
+        let handle_store: Vec<_> = EVENT_RANGES
+            .into_iter()
+            .map(add_hook)
+            .collect::<io::Result<_>>()?;
+        Ok(HookHandle::new(ID, handle_store, user_callback))
     }
 }
 
@@ -748,6 +781,14 @@ where
 #[non_exhaustive]
 #[repr(u32)]
 pub enum WinEventKind {
+    ObjectCreated = EVENT_OBJECT_CREATE,
+    ObjectDestroyed = EVENT_OBJECT_DESTROY,
+    ObjectKeyboardFocussed = EVENT_OBJECT_FOCUS,
+    ObjectNameChanged = EVENT_OBJECT_NAMECHANGE,
+    /// A hidden object is shown.
+    ObjectUnhidden = EVENT_OBJECT_SHOW,
+    ObjectStateChanged = EVENT_OBJECT_STATECHANGE,
+    ObjectLocationChanged = EVENT_OBJECT_LOCATIONCHANGE,
     /// The foreground window changed.
     ///
     /// **Note**: This event is not always sent when a window is unminimized ([`WinEventKind::WindowUnminimized`]).
@@ -757,6 +798,10 @@ pub enum WinEventKind {
     WindowUnminimized = EVENT_SYSTEM_MINIMIZEEND,
     WindowMoveStart = EVENT_SYSTEM_MOVESIZESTART,
     WindowMoveEnd = EVENT_SYSTEM_MOVESIZEEND,
+    WindowMouseCaptureStart = EVENT_SYSTEM_CAPTURESTART,
+    WindowMouseCaptureEnd = EVENT_SYSTEM_CAPTUREEND,
+    WindowCloaked = EVENT_OBJECT_CLOAKED,
+    WindowUncloaked = EVENT_OBJECT_UNCLOAKED,
     #[num_enum(catch_all)]
     Other(u32),
 }
