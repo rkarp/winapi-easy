@@ -360,6 +360,7 @@ struct MagnifierContext {
     magnifier_active: bool,
     variant: MagnifierVariant,
     options: MagnifierOptions,
+    last_scaling: Option<Scaling>,
     win_event_hook: Option<WinEventHook<Box<dyn Fn(WinEventMessage)>>>,
     mouse_speed_mod: Option<MouseSpeedMod>,
     cursor_hider: Option<UnmagnifiedCursorConcealment>,
@@ -375,6 +376,7 @@ impl MagnifierContext {
             magnifier_active: false,
             variant,
             options: MagnifierOptions::default(),
+            last_scaling: None,
             win_event_hook: None,
             mouse_speed_mod: None,
             cursor_hider: None,
@@ -442,6 +444,7 @@ impl MagnifierContext {
                 overlay_window_handle.set_z_position(WindowZPosition::NoTopMost)?;
                 overlay_window_handle.set_z_position(WindowZPosition::TopMost)?;
             } else {
+                self.last_scaling = None;
                 if let Some(x) = &self.mouse_speed_mod {
                     x.disable()?
                 }
@@ -493,6 +496,14 @@ impl MagnifierContext {
                 }
             }
         }
+        self.cursor_confinement = None;
+        self.cursor_confinement = Some(RefreshingCursorConfinement::new(source_window_rect)?);
+
+        if let Some(last_scaling) = &self.last_scaling
+            && *last_scaling == scaling_result
+        {
+            return Ok(());
+        }
 
         match &mut self.variant {
             MagnifierVariant::Fullscreen(fullscreen_magnifier) => {
@@ -532,11 +543,10 @@ impl MagnifierContext {
                 control_window.set_magnification_source(source_window_rect)?;
             }
         }
-        self.cursor_confinement = None;
-        self.cursor_confinement = Some(RefreshingCursorConfinement::new(source_window_rect)?);
         if let Some(x) = &self.mouse_speed_mod {
             x.enable(1.0 / scaling_result.scale_factor)?
         }
+        self.last_scaling = Some(scaling_result);
         Ok(())
     }
 
@@ -710,7 +720,7 @@ fn center_rect(source: Rectangle, target: Rectangle) -> Rectangle {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 struct Scaling {
     scale_factor: f64,
     scaled_rect: Rectangle,
