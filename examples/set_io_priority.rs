@@ -25,7 +25,7 @@ fn main() -> io::Result<()> {
         Other(u8),
     }
 
-    let listener = |hotkey_id| {
+    let listener = |hotkey_id| -> io::Result<()> {
         let prio_target: IoPriority = match Action::from(hotkey_id) {
             Action::VeryLowPrio => IoPriority::VeryLow,
             Action::NormalPrio => IoPriority::Normal,

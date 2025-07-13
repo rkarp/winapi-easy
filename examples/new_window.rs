@@ -186,6 +186,6 @@ fn main() -> io::Result<()> {
         ThreadMessage::Other(_) => Ok(()),
         _ => Ok(()),
     };
-    ThreadMessageLoop::new().run_with(loop_callback)?;
+    ThreadMessageLoop::new().run_with::<io::Error, _>(loop_callback)?;
     Ok(())
 }

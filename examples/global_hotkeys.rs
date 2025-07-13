@@ -34,7 +34,7 @@ fn main() -> io::Result<()> {
     if let Some(console_window) = WindowHandle::get_console_window() {
         console_window.set_show_state(WindowShowState::Minimize)?;
     }
-    let listener = |hotkey_id| {
+    let listener = |hotkey_id| -> io::Result<()> {
         let monitor_off = || -> io::Result<()> {
             let foreground_window = WindowHandle::get_foreground_window().unwrap();
             foreground_window.set_monitor_power(MonitorPower::Off)

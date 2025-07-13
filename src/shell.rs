@@ -261,7 +261,7 @@ where
         },
     };
 
-    ThreadMessageLoop::new().run_with(|_| callback(&listener_data_clone.take()))?;
+    ThreadMessageLoop::new().run_with::<io::Error, _>(|_| callback(&listener_data_clone.take()))?;
     Ok(())
 }
 

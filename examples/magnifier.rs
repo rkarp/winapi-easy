@@ -6,7 +6,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::cell::RefCell;
-use std::io;
 use std::rc::Rc;
 
 use num_enum::{
@@ -89,7 +88,7 @@ use winapi_easy::ui::{
     set_process_dpi_awareness_context,
 };
 
-fn main() -> io::Result<()> {
+fn main() -> anyhow::Result<()> {
     set_process_dpi_awareness_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE)?;
 
     let listener = move |message: &ListenerMessage| match message.variant {
@@ -175,7 +174,7 @@ fn main() -> io::Result<()> {
 
     let _hotkeys = setup_hotkeys()?;
 
-    let loop_callback = |thread_message| {
+    let loop_callback = |thread_message| -> Result<(), anyhow::Error> {
         let mut magnifier_context = magnifier_context.borrow_mut();
         match thread_message {
             ThreadMessage::WindowProc(window_message)
@@ -304,7 +303,7 @@ fn main() -> io::Result<()> {
         };
         Ok(())
     };
-    ThreadMessageLoop::new().run_with(loop_callback)?;
+    ThreadMessageLoop::new().run_with::<anyhow::Error, _>(loop_callback)?;
     Ok(())
 }
 
@@ -369,7 +368,7 @@ struct MagnifierContext {
 }
 
 impl MagnifierContext {
-    fn new() -> io::Result<Self> {
+    fn new() -> anyhow::Result<Self> {
         let overlay_class = Self::register_overlay_class()?;
         let variant = Self::create_variant(Default::default(), Rc::clone(&overlay_class))?;
         Ok(Self {
@@ -385,7 +384,11 @@ impl MagnifierContext {
         })
     }
 
-    fn set_variant(&mut self, use_magnifier_control: bool, main_window: &Window) -> io::Result<()> {
+    fn set_variant(
+        &mut self,
+        use_magnifier_control: bool,
+        main_window: &Window,
+    ) -> anyhow::Result<()> {
         let is_control = match self.variant {
             MagnifierVariant::Fullscreen(..) => false,
             MagnifierVariant::Control(..) => true,
@@ -399,7 +402,11 @@ impl MagnifierContext {
         Ok(())
     }
 
-    fn set_magnifier_initialized(&mut self, enable: bool, main_window: &Window) -> io::Result<()> {
+    fn set_magnifier_initialized(
+        &mut self,
+        enable: bool,
+        main_window: &Window,
+    ) -> anyhow::Result<()> {
         if enable {
             let maybe_foreground_window = WindowHandle::get_foreground_window();
             match maybe_foreground_window {
@@ -418,7 +425,7 @@ impl MagnifierContext {
         Ok(())
     }
 
-    fn set_magnifier_enabled(&mut self, enable: bool, main_window: &Window) -> io::Result<()> {
+    fn set_magnifier_enabled(&mut self, enable: bool, main_window: &Window) -> anyhow::Result<()> {
         if self.magnifier_active != enable {
             let overlay_window_handle;
             match &mut self.variant {
@@ -458,7 +465,7 @@ impl MagnifierContext {
         Ok(())
     }
 
-    fn adjust_for_target(&mut self, foreground_window: WindowHandle) -> io::Result<()> {
+    fn adjust_for_target(&mut self, foreground_window: WindowHandle) -> anyhow::Result<()> {
         let monitor_info = MonitorHandle::from_window(foreground_window).info()?;
 
         let source_window_rect;
@@ -550,11 +557,12 @@ impl MagnifierContext {
         Ok(())
     }
 
-    fn apply_timer_tick(&mut self) -> io::Result<()> {
+    fn apply_timer_tick(&mut self) -> anyhow::Result<()> {
         match &mut self.variant {
             MagnifierVariant::Fullscreen(..) => panic!(),
             MagnifierVariant::Control(magnifier_control) => {
-                magnifier_control.control_window.redraw()
+                magnifier_control.control_window.redraw()?;
+                Ok(())
             }
         }
     }
@@ -562,7 +570,7 @@ impl MagnifierContext {
     fn create_variant(
         use_magnifier_control: bool,
         overlay_class: Rc<WindowClass>,
-    ) -> io::Result<MagnifierVariant> {
+    ) -> anyhow::Result<MagnifierVariant> {
         let result = if use_magnifier_control {
             MagnifierVariant::Control(MagnifierControl::new(overlay_class)?)
         } else {
@@ -571,7 +579,7 @@ impl MagnifierContext {
         Ok(result)
     }
 
-    fn register_overlay_class() -> io::Result<Rc<WindowClass>> {
+    fn register_overlay_class() -> anyhow::Result<Rc<WindowClass>> {
         Ok(WindowClass::register_new(
             "MagnifierOverlayClass",
             WindowClassAppearance {
@@ -589,7 +597,7 @@ enum MagnifierVariant {
 }
 
 impl MagnifierVariant {
-    fn set_active(&self, active: bool, main_window: &Window) -> io::Result<()> {
+    fn set_active(&self, active: bool, main_window: &Window) -> anyhow::Result<()> {
         match self {
             MagnifierVariant::Fullscreen(..) => Ok(()),
             MagnifierVariant::Control(..) => {
@@ -609,7 +617,7 @@ struct FullscreenMagnifier {
 }
 
 impl FullscreenMagnifier {
-    fn new(overlay_class: Rc<WindowClass>) -> io::Result<Self> {
+    fn new(overlay_class: Rc<WindowClass>) -> anyhow::Result<Self> {
         let overlay_window = create_overlay_window(
             overlay_class,
             "Fullscreen Magnifier Overlay",
@@ -631,7 +639,7 @@ struct MagnifierControl {
 }
 
 impl MagnifierControl {
-    fn new(overlay_class: Rc<WindowClass>) -> io::Result<Self> {
+    fn new(overlay_class: Rc<WindowClass>) -> anyhow::Result<Self> {
         let overlay_window = Rc::new(RefCell::new(create_overlay_window(
             overlay_class,
             "Magnifier Control Overlay",
@@ -659,7 +667,7 @@ struct RefreshingCursorConfinement {
 }
 
 impl RefreshingCursorConfinement {
-    fn new(bounding_area: Rectangle) -> io::Result<Self> {
+    fn new(bounding_area: Rectangle) -> anyhow::Result<Self> {
         let cursor_confinement = CursorConfinement::new(bounding_area)?;
         let mouse_callback = move |message: LowLevelMouseMessage| {
             match message.action {
@@ -681,7 +689,7 @@ fn create_overlay_window(
     overlay_class: Rc<WindowClass>,
     caption_text: &str,
     extra_extended_style: WindowExtendedStyle,
-) -> io::Result<Window<Layered>> {
+) -> anyhow::Result<Window<Layered>> {
     let overlay_window = Window::new_layered::<DefaultWmlType, ()>(
         overlay_class,
         None,
@@ -696,7 +704,7 @@ fn create_overlay_window(
     Ok(overlay_window)
 }
 
-fn setup_hotkeys() -> io::Result<GlobalHotkeySet> {
+fn setup_hotkeys() -> anyhow::Result<GlobalHotkeySet> {
     let mut hotkeys = GlobalHotkeySet::new();
     hotkeys.add_hotkey(
         HotkeyId::SetTargetWindow.into(),
@@ -795,12 +803,12 @@ struct MouseSpeedMod {
 }
 
 impl MouseSpeedMod {
-    fn new() -> io::Result<Self> {
+    fn new() -> anyhow::Result<Self> {
         let org_speed = get_mouse_speed()?;
         Ok(Self { org_speed })
     }
 
-    fn enable(&self, factor: f64) -> io::Result<()> {
+    fn enable(&self, factor: f64) -> anyhow::Result<()> {
         // See: https://stackoverflow.com/a/53022163
         const WINDOWS_MOUSE_SPEED_MULTS: [f64; 20] = [
             0.03125, 0.0625, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0, 1.25, 1.5, 1.75,
@@ -816,11 +824,13 @@ impl MouseSpeedMod {
                 WINDOWS_MOUSE_SPEED_MULTS.partition_point(|x| *x < target_speed_mult) + 1;
             u32::try_from(target_speed).unwrap()
         };
-        set_mouse_speed(target_speed, false)
+        set_mouse_speed(target_speed, false)?;
+        Ok(())
     }
 
-    fn disable(&self) -> io::Result<()> {
-        set_mouse_speed(self.org_speed, false)
+    fn disable(&self) -> anyhow::Result<()> {
+        set_mouse_speed(self.org_speed, false)?;
+        Ok(())
     }
 }
 

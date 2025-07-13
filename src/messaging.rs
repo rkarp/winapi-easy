@@ -82,21 +82,24 @@ impl ThreadMessageLoop {
     /// Runs the Windows thread message loop.
     ///
     /// The user defined callback will be called on every message except `WM_QUIT`.
-    pub fn run_with<F>(&mut self, loop_callback: F) -> io::Result<()>
+    pub fn run_with<E, F>(&mut self, loop_callback: F) -> Result<(), E>
     where
-        F: FnMut(ThreadMessage) -> io::Result<()>,
+        E: From<io::Error>,
+        F: FnMut(ThreadMessage) -> Result<(), E>,
     {
-        self.run_thread_message_loop_internal(loop_callback, true, None)
+        self.run_thread_message_loop_internal(loop_callback, true, None)?;
+        Ok(())
     }
 
-    pub(crate) fn run_thread_message_loop_internal<F>(
+    pub(crate) fn run_thread_message_loop_internal<E, F>(
         &mut self,
         mut loop_msg_callback: F,
         dispatch_to_wnd_proc: bool,
         filter_message_id: Option<u32>,
-    ) -> io::Result<()>
+    ) -> Result<(), E>
     where
-        F: FnMut(ThreadMessage) -> io::Result<()>,
+        E: From<io::Error>,
+        F: FnMut(ThreadMessage) -> Result<(), E>,
     {
         loop {
             match Self::process_single_thread_message(

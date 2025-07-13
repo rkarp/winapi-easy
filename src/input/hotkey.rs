@@ -75,9 +75,10 @@ impl GlobalHotkeySet {
         Ok(())
     }
 
-    pub fn listen_for_hotkeys<F>(&mut self, mut listener: F) -> io::Result<()>
+    pub fn listen_for_hotkeys<E, F>(&mut self, mut listener: F) -> Result<(), E>
     where
-        F: FnMut(HotkeyId) -> io::Result<()>,
+        E: From<io::Error>,
+        F: FnMut(HotkeyId) -> Result<(), E>,
     {
         let message_listener = |message| {
             if let ThreadMessage::Hotkey(hotkey_id) = message {
