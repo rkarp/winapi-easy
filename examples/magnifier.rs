@@ -13,12 +13,6 @@ use num_enum::{
     IntoPrimitive,
 };
 use winapi_easy::hooking::{
-    HookReturnValue,
-    LowLevelInputHook,
-    LowLevelInputHookType,
-    LowLevelMouseAction,
-    LowLevelMouseHook,
-    LowLevelMouseMessage,
     WinEventHook,
     WinEventKind,
     WinEventMessage,
@@ -252,6 +246,12 @@ fn main() -> anyhow::Result<()> {
                                         .set_magnifier_initialized(false, &main_window)?;
                                 }
                             }
+                            UserMessageId::ReapplyMouseConfinement => {
+                                if let Some(confinement) = &magnifier_context.cursor_confinement {
+                                    confinement.reapply()?;
+                                }
+                            }
+
                             UserMessageId::Other(_) => unreachable!(),
                         }
                     }
@@ -280,6 +280,17 @@ fn main() -> anyhow::Result<()> {
                                         main_window_handle
                                             .send_user_message(CustomUserMessage {
                                                 message_id: UserMessageId::WindowChanged.into(),
+                                                ..Default::default()
+                                            })
+                                            .unwrap();
+                                    }
+                                    WinEventKind::ObjectLocationChanged
+                                        if event.window_handle.is_none() =>
+                                    {
+                                        main_window_handle
+                                            .send_user_message(CustomUserMessage {
+                                                message_id: UserMessageId::ReapplyMouseConfinement
+                                                    .into(),
                                                 ..Default::default()
                                             })
                                             .unwrap();
@@ -324,6 +335,7 @@ enum MenuID {
 enum UserMessageId {
     WindowChanged,
     TargetWindowChanged,
+    ReapplyMouseConfinement,
     #[num_enum(catch_all)]
     Other(u8),
 }
@@ -363,7 +375,7 @@ struct MagnifierContext {
     win_event_hook: Option<WinEventHook<Box<dyn Fn(WinEventMessage)>>>,
     mouse_speed_mod: Option<MouseSpeedMod>,
     cursor_hider: Option<UnmagnifiedCursorConcealment>,
-    cursor_confinement: Option<RefreshingCursorConfinement>,
+    cursor_confinement: Option<CursorConfinement>,
     overlay_class: Rc<WindowClass>,
 }
 
@@ -503,8 +515,6 @@ impl MagnifierContext {
                 }
             }
         }
-        self.cursor_confinement = None;
-        self.cursor_confinement = Some(RefreshingCursorConfinement::new(source_window_rect)?);
 
         if let Some(last_scaling) = &self.last_scaling
             && *last_scaling == scaling_result
@@ -550,6 +560,7 @@ impl MagnifierContext {
                 control_window.set_magnification_source(source_window_rect)?;
             }
         }
+        self.cursor_confinement = Some(CursorConfinement::new(source_window_rect)?);
         if let Some(x) = &self.mouse_speed_mod {
             x.enable(1.0 / scaling_result.scale_factor)?
         }
@@ -658,30 +669,6 @@ impl MagnifierControl {
             control_window,
             overlay_window,
         })
-    }
-}
-
-struct RefreshingCursorConfinement {
-    _hook:
-        LowLevelInputHook<LowLevelMouseHook, Box<dyn Fn(LowLevelMouseMessage) -> HookReturnValue>>,
-}
-
-impl RefreshingCursorConfinement {
-    fn new(bounding_area: Rectangle) -> anyhow::Result<Self> {
-        let cursor_confinement = CursorConfinement::new(bounding_area)?;
-        let mouse_callback = move |message: LowLevelMouseMessage| {
-            match message.action {
-                LowLevelMouseAction::Move => {
-                    cursor_confinement.reapply().unwrap();
-                }
-                _ => (),
-            }
-            HookReturnValue::CallNextHook
-        };
-        let result = Self {
-            _hook: LowLevelMouseHook::add_hook::<0, _>(Box::new(mouse_callback) as Box<_>)?,
-        };
-        Ok(result)
     }
 }
 
