@@ -93,6 +93,7 @@ shell = [
 ui = [
     "base64",
     "uuid",
+    "windows/Win32_Graphics_Dwm",
     "windows/Win32_Graphics_Gdi",
     "windows/Win32_System_Console",
     "windows/Win32_System_Shutdown",

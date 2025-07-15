@@ -4,6 +4,7 @@ use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
+use std::ffi::c_void;
 use std::fmt::{
     Display,
     Formatter,
@@ -34,6 +35,10 @@ use windows::Win32::Foundation::{
     NO_ERROR,
     SetLastError,
     WPARAM,
+};
+use windows::Win32::Graphics::Dwm::{
+    DWMWA_CLOAKED,
+    DwmGetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{
     GetWindowRgn,
@@ -266,6 +271,24 @@ impl WindowHandle {
     pub fn is_visible(self) -> bool {
         let result = unsafe { IsWindowVisible(self.raw_handle) };
         result.as_bool()
+    }
+
+    /// Checks if the window is cloaked.
+    ///
+    /// See also: <https://devblogs.microsoft.com/oldnewthing/20200302-00/?p=103507>
+    pub fn is_cloaked(self) -> io::Result<bool> {
+        let mut is_cloaked = BOOL::default();
+        unsafe {
+            DwmGetWindowAttribute(
+                self.raw_handle,
+                DWMWA_CLOAKED,
+                (&raw mut is_cloaked).cast::<c_void>(),
+                mem::size_of::<BOOL>()
+                    .try_into()
+                    .unwrap_or_else(|_| unreachable!()),
+            )
+        }?;
+        Ok(is_cloaked.as_bool())
     }
 
     /// Returns the window caption text, converted to UTF-8 in a potentially lossy way.
@@ -1632,6 +1655,8 @@ mod tests {
         notification_icon.set_balloon_notification(Some(balloon_notification))?;
 
         let window_handle = window.as_handle();
+        assert!(!window_handle.is_visible());
+        assert!(!window_handle.is_cloaked()?);
         assert_eq!(window_handle.get_caption_text(), WINDOW_NAME);
         window_handle.set_caption_text(CAPTION_TEXT)?;
         assert_eq!(window_handle.get_caption_text(), CAPTION_TEXT);
