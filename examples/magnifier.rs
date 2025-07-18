@@ -235,13 +235,13 @@ fn main() -> anyhow::Result<()> {
                             UserMessageId::WindowChanged => {
                                 magnifier_context.set_magnifier_initialized(true, &main_window)?;
                             }
-                            UserMessageId::TargetWindowChanged => {
-                                if let Some(_) = magnifier_context.window_lock {
-                                    magnifier_context
-                                        .set_magnifier_initialized(true, &main_window)?;
-                                } else {
-                                    magnifier_context
-                                        .set_magnifier_initialized(false, &main_window)?;
+                            UserMessageId::WindowDestroyed => {
+                                if let Some(window_lock) = &magnifier_context.window_lock {
+                                    if !window_lock.target_window.is_window() {
+                                        magnifier_context.window_lock = None;
+                                        magnifier_context
+                                            .set_magnifier_initialized(false, &main_window)?;
+                                    }
                                 }
                             }
                             UserMessageId::ReapplyMouseConfinement => {
@@ -261,16 +261,14 @@ fn main() -> anyhow::Result<()> {
                     let foreground_window = WindowHandle::get_foreground_window();
                     if magnifier_context.window_lock.is_some() {
                         magnifier_context.window_lock = None;
+                        magnifier_context.set_magnifier_initialized(false, &main_window)?;
                     } else {
                         if let Some(foreground_window) = foreground_window {
                             magnifier_context.window_lock =
                                 Some(MagnifierWindowLock::new(*main_window, foreground_window)?);
+                            magnifier_context.set_magnifier_initialized(true, &main_window)?;
                         }
                     }
-                    main_window.send_user_message(CustomUserMessage {
-                        message_id: UserMessageId::TargetWindowChanged.into(),
-                        ..Default::default()
-                    })?;
                 } else {
                     unreachable!()
                 }
@@ -300,7 +298,7 @@ enum MenuID {
 #[repr(u8)]
 enum UserMessageId {
     WindowChanged,
-    TargetWindowChanged,
+    WindowDestroyed,
     ReapplyMouseConfinement,
     #[num_enum(catch_all)]
     Other(u8),
@@ -350,6 +348,14 @@ impl MagnifierWindowLock {
                 main_window_handle
                     .send_user_message(CustomUserMessage {
                         message_id: UserMessageId::WindowChanged.into(),
+                        ..Default::default()
+                    })
+                    .unwrap();
+            }
+            WinEventKind::ObjectDestroyed if event.window_handle.is_some() => {
+                main_window_handle
+                    .send_user_message(CustomUserMessage {
+                        message_id: UserMessageId::WindowDestroyed.into(),
                         ..Default::default()
                     })
                     .unwrap();
