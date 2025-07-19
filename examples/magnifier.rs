@@ -12,6 +12,7 @@ use num_enum::{
     FromPrimitive,
     IntoPrimitive,
 };
+use num_traits::ToPrimitive;
 use winapi_easy::hooking::{
     WinEventHook,
     WinEventKind,
@@ -82,6 +83,7 @@ use winapi_easy::ui::{
     set_process_dpi_awareness_context,
 };
 
+#[expect(clippy::too_many_lines)]
 fn main() -> anyhow::Result<()> {
     set_process_dpi_awareness_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE)?;
 
@@ -110,7 +112,7 @@ fn main() -> anyhow::Result<()> {
         .into(),
         Some(listener),
         "Magnifier Main Window",
-        Default::default(),
+        WindowAppearance::default(),
         None,
     )?;
 
@@ -197,7 +199,7 @@ fn main() -> anyhow::Result<()> {
                                 magnifier_context.options.use_smoothing = target_state;
                             }
                             MenuID::UseMouseSpeedMod => {
-                                let target_state = !magnifier_context.mouse_speed_mod.is_some();
+                                let target_state = magnifier_context.mouse_speed_mod.is_none();
                                 if target_state {
                                     magnifier_context.mouse_speed_mod = Some(MouseSpeedMod::new()?);
                                 } else {
@@ -236,12 +238,12 @@ fn main() -> anyhow::Result<()> {
                                 magnifier_context.set_magnifier_initialized(true, &main_window)?;
                             }
                             UserMessageId::WindowDestroyed => {
-                                if let Some(window_lock) = &magnifier_context.window_lock {
-                                    if !window_lock.target_window.is_window() {
-                                        magnifier_context.window_lock = None;
-                                        magnifier_context
-                                            .set_magnifier_initialized(false, &main_window)?;
-                                    }
+                                if let Some(window_lock) = &magnifier_context.window_lock
+                                    && !window_lock.target_window.is_window()
+                                {
+                                    magnifier_context.window_lock = None;
+                                    magnifier_context
+                                        .set_magnifier_initialized(false, &main_window)?;
                                 }
                             }
                             UserMessageId::ReapplyMouseConfinement => {
@@ -262,20 +264,17 @@ fn main() -> anyhow::Result<()> {
                     if magnifier_context.window_lock.is_some() {
                         magnifier_context.window_lock = None;
                         magnifier_context.set_magnifier_initialized(false, &main_window)?;
-                    } else {
-                        if let Some(foreground_window) = foreground_window {
-                            magnifier_context.window_lock =
-                                Some(MagnifierWindowLock::new(*main_window, foreground_window)?);
-                            magnifier_context.set_magnifier_initialized(true, &main_window)?;
-                        }
+                    } else if let Some(foreground_window) = foreground_window {
+                        magnifier_context.window_lock =
+                            Some(MagnifierWindowLock::new(*main_window, foreground_window)?);
+                        magnifier_context.set_magnifier_initialized(true, &main_window)?;
                     }
                 } else {
                     unreachable!()
                 }
             }
-            ThreadMessage::Other(_) => (),
             _ => (),
-        };
+        }
         Ok(())
     };
     ThreadMessageLoop::new().run_with::<anyhow::Error, _>(loop_callback)?;
@@ -312,21 +311,11 @@ enum HotkeyId {
     Other(u8),
 }
 
-#[derive(Debug)]
+#[derive(Default, Debug)]
 struct MagnifierOptions {
     use_integer_scaling: bool,
     use_smoothing: bool,
     use_magnifier_control: bool,
-}
-
-impl Default for MagnifierOptions {
-    fn default() -> Self {
-        Self {
-            use_integer_scaling: false,
-            use_smoothing: false,
-            use_magnifier_control: false,
-        }
-    }
 }
 
 struct MagnifierWindowLock {
@@ -467,7 +456,7 @@ impl MagnifierContext {
                     }
                     overlay_window_handle = magnifier_control.overlay_window.borrow().as_handle();
                 }
-            };
+            }
             if enable {
                 overlay_window_handle.set_show_state(WindowShowState::Show)?;
                 // Possible Windows bug: The topmost setting may stop working if another window of the process
@@ -477,7 +466,7 @@ impl MagnifierContext {
             } else {
                 self.last_scaling = None;
                 if let Some(x) = &self.mouse_speed_mod {
-                    x.disable()?
+                    x.disable()?;
                 }
                 self.cursor_confinement = None;
                 overlay_window_handle.set_z_position(WindowZPosition::Bottom)?;
@@ -549,7 +538,7 @@ impl MagnifierContext {
                 )?;
                 set_fullscreen_magnification_use_bitmap_smoothing(self.options.use_smoothing)?;
                 set_fullscreen_magnification(
-                    scaling_result.scale_factor as f32,
+                    scaling_result.scale_factor.to_f32().unwrap(),
                     scaling_result.unscaled_rect_centered_offset,
                 )?;
             }
@@ -568,13 +557,14 @@ impl MagnifierContext {
                     Ok(())
                 })?;
                 control_window.set_lens_use_bitmap_smoothing(self.options.use_smoothing)?;
-                control_window.set_magnification_factor(scaling_result.scale_factor as f32)?;
+                control_window
+                    .set_magnification_factor(scaling_result.scale_factor.to_f32().unwrap())?;
                 control_window.set_magnification_source(source_window_rect)?;
             }
         }
         self.cursor_confinement = Some(CursorConfinement::new(source_window_rect)?);
         if let Some(x) = &self.mouse_speed_mod {
-            x.enable(1.0 / scaling_result.scale_factor)?
+            x.enable(1.0 / scaling_result.scale_factor)?;
         }
         self.last_scaling = Some(scaling_result);
         Ok(())
@@ -644,7 +634,7 @@ impl FullscreenMagnifier {
         let overlay_window = create_overlay_window(
             overlay_class,
             "Fullscreen Magnifier Overlay",
-            Default::default(),
+            WindowExtendedStyle::default(),
         )?;
         Ok(Self { overlay_window })
     }
@@ -672,7 +662,7 @@ impl MagnifierControl {
             "Magnifier Control View",
             WindowAppearance {
                 style: WindowStyle::Child | WindowStyle::Visible,
-                extended_style: Default::default(),
+                extended_style: WindowExtendedStyle::default(),
             },
             Rc::clone(&overlay_window),
         )?;
@@ -759,13 +749,31 @@ impl Scaling {
         let scaled_rect = Rectangle {
             left: 0,
             top: 0,
-            right: (f64::from(source_width) * scale_factor).round() as i32,
-            bottom: (f64::from(source_height) * scale_factor).round() as i32,
+            right: (f64::from(source_width) * scale_factor)
+                .round()
+                .to_i32()
+                .unwrap(),
+            bottom: (f64::from(source_height) * scale_factor)
+                .round()
+                .to_i32()
+                .unwrap(),
         };
-        let unscaled_lens_width = (f64::from(target_width) / scale_factor).round() as i32;
-        let unscaled_lens_height = (f64::from(target_height) / scale_factor).round() as i32;
-        let unscaled_lens_x_offset = (f64::from(target.left) / scale_factor).round() as i32;
-        let unscaled_lens_y_offset = (f64::from(target.top) / scale_factor).round() as i32;
+        let unscaled_lens_width = (f64::from(target_width) / scale_factor)
+            .round()
+            .to_i32()
+            .unwrap();
+        let unscaled_lens_height = (f64::from(target_height) / scale_factor)
+            .round()
+            .to_i32()
+            .unwrap();
+        let unscaled_lens_x_offset = (f64::from(target.left) / scale_factor)
+            .round()
+            .to_i32()
+            .unwrap();
+        let unscaled_lens_y_offset = (f64::from(target.top) / scale_factor)
+            .round()
+            .to_i32()
+            .unwrap();
         Self {
             scale_factor,
             scaled_rect,
@@ -835,6 +843,6 @@ impl MouseSpeedMod {
 
 impl Drop for MouseSpeedMod {
     fn drop(&mut self) {
-        self.disable().unwrap()
+        self.disable().unwrap();
     }
 }

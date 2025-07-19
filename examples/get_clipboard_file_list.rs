@@ -6,7 +6,7 @@ use winapi_easy::clipboard;
 
 fn main() -> io::Result<()> {
     clipboard::get_file_list()?.into_iter().for_each(|name| {
-        println!("{:#?}", name);
+        println!("{}", name.display());
     });
     Ok(())
 }

@@ -16,6 +16,7 @@ use winapi_easy::ui::menu::{
     TextMenuItem,
 };
 use winapi_easy::ui::message_box::{
+    MessageBoxIcon,
     MessageBoxOptions,
     show_message_box,
 };
@@ -53,20 +54,17 @@ enum MenuID {
     Other(u32),
 }
 
+#[expect(clippy::too_many_lines)]
 fn main() -> io::Result<()> {
-    let listener = move |message: &ListenerMessage| {
-        let answer;
-        match message.variant {
-            ListenerMessageVariant::WindowDestroy => {
-                ThreadMessageLoop::post_quit_message();
-                answer = ListenerAnswer::CallDefaultHandler
-            }
-            _ => answer = ListenerAnswer::default(),
+    let listener = move |message: &ListenerMessage| match message.variant {
+        ListenerMessageVariant::WindowDestroy => {
+            ThreadMessageLoop::post_quit_message();
+            ListenerAnswer::CallDefaultHandler
         }
-        answer
+        _ => ListenerAnswer::default(),
     };
 
-    let icon: Rc<Icon> = Default::default();
+    let icon: Rc<Icon> = Rc::default();
     let class_appearance = WindowClassAppearance {
         background_brush: Some(Brush::from(BuiltinColor::AppWorkspace).into()),
         icon: Some(Rc::clone(&icon)),
@@ -154,8 +152,7 @@ fn main() -> io::Result<()> {
                                 MessageBoxOptions {
                                     message: Some("Message"),
                                     caption: Some("Caption"),
-                                    buttons: Default::default(),
-                                    icon: Some(Default::default()),
+                                    icon: Some(MessageBoxIcon::default()),
                                     ..Default::default()
                                 },
                             )?;
@@ -183,7 +180,6 @@ fn main() -> io::Result<()> {
             }
             Ok(())
         }
-        ThreadMessage::Other(_) => Ok(()),
         _ => Ok(()),
     };
     ThreadMessageLoop::new().run_with::<io::Error, _>(loop_callback)?;

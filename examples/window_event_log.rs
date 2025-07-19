@@ -16,27 +16,25 @@ fn main() -> io::Result<()> {
         caption: Option<String>,
         client_area: Option<Rectangle>,
     }
-    let callback = |message: WinEventMessage| {
-        match message.event_kind {
-            WinEventKind::ForegroundWindowChanged
-            | WinEventKind::WindowUnminimized
-            | WinEventKind::WindowMinimized
-            | WinEventKind::WindowMoveStart
-            | WinEventKind::WindowMoveEnd => {
-                let window_handle = message.window_handle;
-                let message_content = MessageContent {
-                    kind: message.event_kind,
-                    caption: window_handle.map(WindowHandle::get_caption_text),
-                    client_area: window_handle
-                        .map(WindowHandle::get_client_area_coords)
-                        .transpose()
-                        .ok()
-                        .flatten(),
-                };
-                println!("{:#?}", message_content);
-            }
-            _ => (),
-        };
+    let callback = |message: WinEventMessage| match message.event_kind {
+        WinEventKind::ForegroundWindowChanged
+        | WinEventKind::WindowUnminimized
+        | WinEventKind::WindowMinimized
+        | WinEventKind::WindowMoveStart
+        | WinEventKind::WindowMoveEnd => {
+            let window_handle = message.window_handle;
+            let message_content = MessageContent {
+                kind: message.event_kind,
+                caption: window_handle.map(WindowHandle::get_caption_text),
+                client_area: window_handle
+                    .map(WindowHandle::get_client_area_coords)
+                    .transpose()
+                    .ok()
+                    .flatten(),
+            };
+            println!("{message_content:#?}");
+        }
+        _ => (),
     };
     WinEventHook::run_hook_loop(callback)?;
     Ok(())
