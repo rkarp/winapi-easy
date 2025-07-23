@@ -88,6 +88,7 @@ use crate::internal::{
     RawBox,
     ReturnValue,
     catch_unwind_and_abort,
+    values_to_ranges,
 };
 use crate::messaging::ThreadMessageLoop;
 use crate::ui::window::WindowHandle;
@@ -701,8 +702,11 @@ where
     /// # Panics
     ///
     /// Will panic if a Hook with the given ID already exists for this thread.
-    pub fn new<const ID: IdType>(user_callback: F) -> io::Result<Self> {
-        let handle_store = Self::add_hook_internal::<ID>(user_callback)?;
+    pub fn new<const ID: IdType>(
+        user_callback: F,
+        filter_events: Option<&[WinEventKind]>,
+    ) -> io::Result<Self> {
+        let handle_store = Self::add_hook_internal::<ID>(user_callback, filter_events)?;
         Ok(Self { handle_store })
     }
 
@@ -714,15 +718,19 @@ where
     ///
     /// Will panic if a Hook with ID `0` already exists for this thread
     /// or if the thread message loop lock is already acquired.
-    pub fn run_hook_loop(user_callback: F) -> io::Result<()> {
+    pub fn run_hook_loop(
+        user_callback: F,
+        filter_events: Option<&[WinEventKind]>,
+    ) -> io::Result<()> {
         // Always using ID 0 only works with ThreadLocalRawClosureStore
-        let _handle = Self::new::<0>(user_callback)?;
+        let _handle = Self::new::<0>(user_callback, filter_events)?;
         ThreadMessageLoop::new().run()?;
         Ok(())
     }
 
     fn add_hook_internal<const ID: IdType>(
         user_callback: F,
+        filter_events: Option<&[WinEventKind]>,
     ) -> io::Result<HookHandle<ThreadLocalRawClosureStore, F, Vec<HWINEVENTHOOK>>> {
         unsafe extern "system" fn internal_callback<const ID: IdType, F>(
             _h_win_event_hook: HWINEVENTHOOK,
@@ -748,7 +756,7 @@ where
             };
             catch_unwind_and_abort(call);
         }
-        const EVENT_RANGES: [(u32, u32); 2] = [
+        const DEFAULT_EVENT_RANGES: [(u32, u32); 2] = [
             (EVENT_MIN, EVENT_SYSTEM_END),
             (EVENT_OBJECT_CREATE, EVENT_OBJECT_END),
         ];
@@ -769,8 +777,22 @@ where
         };
         let mut user_callback = RawBox::new(user_callback);
         ThreadLocalRawClosureStore::set_thread_raw_closure(ID, Some(user_callback.as_mut_ptr()));
-        let handle_store: Vec<_> = EVENT_RANGES
-            .into_iter()
+        let user_filter_event_ranges: Option<Vec<(u32, u32)>> =
+            filter_events.and_then(|filter_events| {
+                let ranges = values_to_ranges(
+                    filter_events
+                        .iter()
+                        .map(|x| u32::from(*x))
+                        .collect::<Vec<_>>(),
+                );
+                (!ranges.is_empty()).then_some(ranges)
+            });
+        let filter_event_ranges = user_filter_event_ranges
+            .as_deref()
+            .unwrap_or(&DEFAULT_EVENT_RANGES);
+        let handle_store: Vec<_> = filter_event_ranges
+            .iter()
+            .copied()
             .map(add_hook)
             .collect::<io::Result<_>>()?;
         Ok(HookHandle::new(ID, handle_store, user_callback))
@@ -883,7 +905,7 @@ mod tests {
             counter += 1;
         };
         ThreadId::current().post_quit_message()?;
-        let _hook_handle = WinEventHook::new::<0>(callback)?;
+        let _hook_handle = WinEventHook::new::<0>(callback, None)?;
         ThreadMessageLoop::new().run()?;
         Ok(())
     }

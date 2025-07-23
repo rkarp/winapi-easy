@@ -484,6 +484,22 @@ where
     io::Error::other(format!("{}. Code: {}", err_text, result_code))
 }
 
+/// Transforms a collection of values to ranges covering all given values.
+pub(crate) fn values_to_ranges(values: impl Into<Vec<u32>>) -> Vec<(u32, u32)> {
+    let mut values: Vec<_> = values.into();
+    values.sort_unstable();
+    values.dedup();
+    values
+        .chunk_by(|x1, x2| x1.wrapping_add(1) == *x2)
+        .map(|consecutives| {
+            (
+                *consecutives.first().unwrap(),
+                *consecutives.last().unwrap(),
+            )
+        })
+        .collect()
+}
+
 pub(crate) mod windows_missing {
     use windows::Win32::Foundation::LPARAM;
     use windows::Win32::UI::Shell::{

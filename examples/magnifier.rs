@@ -326,6 +326,14 @@ struct MagnifierWindowLock {
 
 impl MagnifierWindowLock {
     fn new(main_window_handle: WindowHandle, target_window: WindowHandle) -> anyhow::Result<Self> {
+        const FILTER_EVENTS: &[WinEventKind] = &[
+            WinEventKind::ObjectLocationChanged,
+            WinEventKind::ForegroundWindowChanged,
+            WinEventKind::WindowUnminimized,
+            WinEventKind::WindowMinimized,
+            WinEventKind::WindowMoveEnd,
+            WinEventKind::ObjectDestroyed,
+        ];
         let win_event_listener = move |event: WinEventMessage| match event.event_kind {
             WinEventKind::ObjectLocationChanged
             | WinEventKind::ForegroundWindowChanged
@@ -359,8 +367,10 @@ impl MagnifierWindowLock {
             }
             _ => (),
         };
-        let win_event_hook =
-            WinEventHook::new::<1>(Box::new(win_event_listener) as Box<dyn Fn(_)>)?;
+        let win_event_hook = WinEventHook::new::<1>(
+            Box::new(win_event_listener) as Box<dyn Fn(_)>,
+            Some(FILTER_EVENTS),
+        )?;
         Ok(Self {
             win_event_hook,
             target_window,

@@ -36,6 +36,6 @@ fn main() -> io::Result<()> {
         }
         _ => (),
     };
-    WinEventHook::run_hook_loop(callback)?;
+    WinEventHook::run_hook_loop(callback, None)?;
     Ok(())
 }
