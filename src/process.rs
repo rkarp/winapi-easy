@@ -75,6 +75,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::internal::{
     AutoClose,
+    ResultExt,
     ReturnValue,
     custom_err_with_code,
 };
@@ -597,7 +598,7 @@ impl<P: AsRef<Process>> ProcessMemoryAllocation<P> {
 
 impl<P: AsRef<Process>> Drop for ProcessMemoryAllocation<P> {
     fn drop(&mut self) {
-        self.free().unwrap();
+        self.free().unwrap_or_default_and_print_error();
     }
 }
 

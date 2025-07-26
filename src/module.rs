@@ -20,6 +20,7 @@ use windows::Win32::System::LibraryLoader::{
 };
 use windows::core::PCSTR;
 
+use crate::internal::ResultExt;
 use crate::string::{
     ZeroTerminatedString,
     ZeroTerminatedWideString,
@@ -100,7 +101,7 @@ impl ExecutableModule {
 
 impl Drop for ExecutableModule {
     fn drop(&mut self) {
-        unsafe { FreeLibrary(self.as_hmodule()) }.expect("Cannot release module");
+        unsafe { FreeLibrary(self.as_hmodule()) }.unwrap_or_default_and_print_error();
     }
 }
 

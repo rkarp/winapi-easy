@@ -77,6 +77,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows_missing::MAKEINTRESOURCEW;
 
 pub(crate) use self::private::*;
+use crate::internal::ResultExt;
 use crate::module::ExecutableModule;
 use crate::string::ZeroTerminatedWideString;
 
@@ -209,9 +210,7 @@ mod private {
     impl<H: ImageHandleKind> Drop for LoadedImage<H> {
         fn drop(&mut self) {
             if !self.shared {
-                self.handle
-                    .destroy()
-                    .expect("Error destroying image handle");
+                self.handle.destroy().unwrap_or_default_and_print_error();
             }
         }
     }

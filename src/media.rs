@@ -35,7 +35,10 @@ use crate::com::{
     ComInterfaceExt,
     ComTaskMemory,
 };
-use crate::internal::ReturnValue;
+use crate::internal::{
+    ResultExt,
+    ReturnValue,
+};
 use crate::string::ZeroTerminatedWideString;
 
 #[derive(Debug)]
@@ -76,10 +79,9 @@ impl ScreenDeviceContext {
 
 impl Drop for ScreenDeviceContext {
     fn drop(&mut self) {
-        unsafe {
-            // Ignore possible errors here
-            let _ = ReleaseDC(None, self.raw_context);
-        }
+        unsafe { ReleaseDC(None, self.raw_context) }
+            .if_null_to_error_else_drop(|| io::ErrorKind::Other.into())
+            .unwrap_or_default_and_print_error();
     }
 }
 

@@ -58,7 +58,10 @@ use windows::core::{
     Free,
 };
 
-use crate::internal::ReturnValue;
+use crate::internal::{
+    ResultExt,
+    ReturnValue,
+};
 
 pub mod desktop;
 pub mod menu;
@@ -206,7 +209,7 @@ impl CursorConfinement {
 
 impl Drop for CursorConfinement {
     fn drop(&mut self) {
-        Self::remove().expect("Releasing cursor clipping should never fail");
+        Self::remove().unwrap_or_default_and_print_error();
     }
 }
 
@@ -236,7 +239,7 @@ impl UnmagnifiedCursorConcealment {
 
 impl Drop for UnmagnifiedCursorConcealment {
     fn drop(&mut self) {
-        Self::remove().expect("Removing cursor hidden state failed");
+        Self::remove().unwrap_or_default_and_print_error();
     }
 }
 

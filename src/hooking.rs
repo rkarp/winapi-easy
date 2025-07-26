@@ -86,6 +86,7 @@ use crate::input::{
 use crate::internal::windows_missing::HIWORD;
 use crate::internal::{
     RawBox,
+    ResultExt,
     ReturnValue,
     catch_unwind_and_abort,
     values_to_ranges,
@@ -565,7 +566,7 @@ mod private {
         Self: RemovableHookHandle,
     {
         fn drop(&mut self) {
-            self.remove().unwrap();
+            self.remove().unwrap_or_default_and_print_error();
             // Manually drop for clarity
             let _ = self.hook_dependency;
         }

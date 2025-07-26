@@ -39,7 +39,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     TrackPopupMenu,
 };
 
-use crate::internal::ReturnValue;
+use crate::internal::{
+    ResultExt,
+    ReturnValue,
+};
 use crate::string::ZeroTerminatedWideString;
 use crate::ui::{
     Point,
@@ -360,9 +363,10 @@ impl Drop for SubMenu {
         let size_u32 = u32::try_from(self.items.len()).unwrap();
         // Remove all items first to avoid submenus getting destroyed by `DestroyMenu`
         for index in (0..size_u32).rev() {
-            self.remove_menu_item(index).unwrap();
+            self.remove_menu_item(index)
+                .unwrap_or_default_and_print_error();
         }
-        self.handle.destroy().unwrap();
+        self.handle.destroy().unwrap_or_default_and_print_error();
     }
 }
 

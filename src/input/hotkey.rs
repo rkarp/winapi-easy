@@ -19,6 +19,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 
 use crate::input::KeyboardKey;
+use crate::internal::ResultExt;
 use crate::messaging::{
     ThreadMessage,
     ThreadMessageLoop,
@@ -132,7 +133,7 @@ impl HotkeyDef {
 
 impl Drop for HotkeyDef {
     fn drop(&mut self) {
-        self.unregister().expect("Cannot unregister hotkey");
+        self.unregister().unwrap_or_default_and_print_error();
     }
 }
 

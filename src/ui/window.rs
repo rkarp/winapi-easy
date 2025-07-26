@@ -175,6 +175,7 @@ use super::{
 };
 use crate::internal::{
     RawBox,
+    ResultExt,
     ReturnValue,
     custom_err_with_code,
     with_sync_closure_to_callback2,
@@ -759,9 +760,8 @@ impl WindowClass {
 impl Drop for WindowClass {
     /// Unregisters the class on drop.
     fn drop(&mut self) {
-        unsafe {
-            UnregisterClassW(self.raw_class_identifier(), None).unwrap();
-        }
+        unsafe { UnregisterClassW(self.raw_class_identifier(), None) }
+            .unwrap_or_default_and_print_error();
     }
 }
 
@@ -1075,10 +1075,8 @@ impl<WST> Deref for Window<WST> {
 
 impl<WST> Drop for Window<WST> {
     fn drop(&mut self) {
-        unsafe {
-            if self.handle.is_window() {
-                DestroyWindow(self.handle.raw_handle).unwrap();
-            }
+        if self.handle.is_window() {
+            unsafe { DestroyWindow(self.handle.raw_handle) }.unwrap_or_default_and_print_error();
         }
     }
 }
@@ -1545,8 +1543,9 @@ impl Drop for NotificationIcon {
     fn drop(&mut self) {
         let call_data =
             Self::get_notification_call_data(self.window, self.id, false, None, None, None, None);
-        // Ignore seemingly unavoidable random errors here
-        let _ = unsafe { Shell_NotifyIconW(NIM_DELETE, &raw const call_data) };
+        unsafe { Shell_NotifyIconW(NIM_DELETE, &raw const call_data) }
+            .if_null_get_last_error_else_drop()
+            .unwrap_or_default_and_print_error();
     }
 }
 

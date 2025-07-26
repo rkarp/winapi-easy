@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::cell::Cell;
+use std::error::Error;
 use std::ffi::c_void;
 use std::fmt::Display;
 use std::marker::PhantomData;
@@ -292,7 +293,7 @@ impl GlobalLockedData {
 impl Drop for GlobalLockedData {
     fn drop(&mut self) {
         unsafe {
-            GlobalUnlock(self.handle).unwrap();
+            GlobalUnlock(self.handle).unwrap_or_default_and_print_error();
         }
     }
 }
@@ -482,6 +483,25 @@ where
     C: Display,
 {
     io::Error::other(format!("{}. Code: {}", err_text, result_code))
+}
+
+pub(crate) trait ResultExt {
+    type Output: Default;
+    fn unwrap_or_default_and_print_error(self) -> Self::Output;
+}
+
+impl<T: Default, E: Error> ResultExt for Result<T, E> {
+    type Output = T;
+
+    fn unwrap_or_default_and_print_error(self) -> Self::Output {
+        if let Err(err) = &self {
+            use std::io::Write;
+            let mut stderr = std::io::stderr();
+            let _ = writeln!(stderr, "Error: {}", err);
+            let _ = writeln!(stderr, "{}", std::backtrace::Backtrace::capture());
+        }
+        self.unwrap_or_default()
+    }
 }
 
 /// Transforms a collection of values to ranges covering all given values.

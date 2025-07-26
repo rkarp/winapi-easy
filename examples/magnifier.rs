@@ -652,7 +652,7 @@ impl FullscreenMagnifier {
 
 impl Drop for FullscreenMagnifier {
     fn drop(&mut self) {
-        set_fullscreen_magnification_use_bitmap_smoothing(false).unwrap();
+        unwrap_or_default_and_print_error(set_fullscreen_magnification_use_bitmap_smoothing(false));
     }
 }
 
@@ -853,6 +853,23 @@ impl MouseSpeedMod {
 
 impl Drop for MouseSpeedMod {
     fn drop(&mut self) {
-        self.disable().unwrap();
+        unwrap_or_default_and_print_error(self.disable());
+    }
+}
+
+fn unwrap_or_default_and_print_error<T, E>(result: Result<T, E>) -> T
+where
+    T: Default,
+    E: Into<anyhow::Error>,
+{
+    match result {
+        Ok(value) => value,
+        Err(err) => {
+            use std::io::Write;
+            let err: anyhow::Error = err.into();
+            let mut stderr = std::io::stderr();
+            let _ = writeln!(stderr, "{:?}", err);
+            T::default()
+        }
     }
 }
