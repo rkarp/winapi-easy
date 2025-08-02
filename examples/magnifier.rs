@@ -264,7 +264,9 @@ fn main() -> anyhow::Result<()> {
                     if magnifier_context.window_lock.is_some() {
                         magnifier_context.window_lock = None;
                         magnifier_context.set_magnifier_initialized(false, &main_window)?;
-                    } else if let Some(foreground_window) = foreground_window {
+                    } else if let Some(foreground_window) = foreground_window
+                        && has_nonzero_area(foreground_window.get_client_area_coords()?)
+                    {
                         magnifier_context.window_lock =
                             Some(MagnifierWindowLock::new(*main_window, foreground_window)?);
                         magnifier_context.set_magnifier_initialized(true, &main_window)?;
