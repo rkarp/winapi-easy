@@ -85,6 +85,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_LWIN,
     VK_M,
     VK_MBUTTON,
+    VK_MEDIA_NEXT_TRACK,
+    VK_MEDIA_PLAY_PAUSE,
+    VK_MEDIA_PREV_TRACK,
+    VK_MEDIA_STOP,
     VK_MULTIPLY,
     VK_N,
     VK_NEXT,
@@ -373,6 +377,10 @@ pub enum KeyboardKey {
     VolumeMute = VK_VOLUME_MUTE.0,
     VolumeDown = VK_VOLUME_DOWN.0,
     VolumeUp = VK_VOLUME_UP.0,
+    MediaNextTrack = VK_MEDIA_NEXT_TRACK.0,
+    MediaPrevTrack = VK_MEDIA_PREV_TRACK.0,
+    MediaStop = VK_MEDIA_STOP.0,
+    MediaPlayPause = VK_MEDIA_PLAY_PAUSE.0,
     /// Used for miscellaneous characters; it can vary by keyboard.
     ///
     /// * For the US standard keyboard, the ';:' key
