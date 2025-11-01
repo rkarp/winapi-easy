@@ -1100,6 +1100,7 @@ pub enum WindowStyle {
     Other(u32),
 }
 
+#[expect(clippy::derivable_impls)]
 impl Default for WindowStyle {
     fn default() -> Self {
         Self::Overlapped
@@ -1138,6 +1139,7 @@ pub enum WindowExtendedStyle {
     Other(u32),
 }
 
+#[expect(clippy::derivable_impls)]
 impl Default for WindowExtendedStyle {
     fn default() -> Self {
         Self::Left
