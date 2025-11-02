@@ -23,7 +23,7 @@ use winapi_easy::input::hotkey::{
     Modifier,
 };
 use winapi_easy::input::{
-    KeyboardKey,
+    VirtualKey,
     get_mouse_speed,
     set_mouse_speed,
 };
@@ -709,7 +709,7 @@ fn setup_hotkeys() -> anyhow::Result<GlobalHotkeySet> {
     let mut hotkeys = GlobalHotkeySet::new();
     hotkeys.add_hotkey(
         HotkeyId::SetTargetWindow.into(),
-        Modifier::Ctrl + Modifier::Alt + Modifier::Shift + KeyboardKey::F,
+        Modifier::Ctrl + Modifier::Alt + Modifier::Shift + VirtualKey::F,
     )?;
     Ok(hotkeys)
 }

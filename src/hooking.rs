@@ -79,9 +79,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
 #[expect(clippy::wildcard_imports)]
 use self::private::*;
 use crate::input::{
-    KeyboardKey,
     MouseButton,
     MouseScrollEvent,
+    VirtualKey,
 };
 use crate::internal::windows_missing::HIWORD;
 use crate::internal::{
@@ -210,7 +210,7 @@ impl FromRawLowLevelMessage for LowLevelMouseMessage {
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct LowLevelKeyboardMessage {
     pub action: LowLevelKeyboardAction,
-    pub key: KeyboardKey,
+    pub key: VirtualKey,
     pub scan_code: u32,
     pub timestamp_ms: u32,
 }
@@ -221,7 +221,7 @@ impl FromRawLowLevelMessage for LowLevelKeyboardMessage {
         let message_data = unsafe {
             &*ptr::with_exposed_provenance::<KBDLLHOOKSTRUCT>(value.l_param.cast_unsigned())
         };
-        let key = KeyboardKey::from(u16::try_from(message_data.vkCode).expect("Key code too big"));
+        let key = VirtualKey::from(u16::try_from(message_data.vkCode).expect("Key code too big"));
         let action = LowLevelKeyboardAction::from(w_param);
         LowLevelKeyboardMessage {
             action,

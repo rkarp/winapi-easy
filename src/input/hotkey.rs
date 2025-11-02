@@ -18,7 +18,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     UnregisterHotKey,
 };
 
-use crate::input::KeyboardKey;
+use crate::input::VirtualKey;
 use crate::internal::ResultExt;
 use crate::messaging::{
     ThreadMessage,
@@ -155,11 +155,11 @@ pub struct ModifierCombination(u32);
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct KeyCombination {
     modifiers: ModifierCombination,
-    key: KeyboardKey,
+    key: VirtualKey,
 }
 
 impl KeyCombination {
-    fn new_from(modifiers: ModifierCombination, key: KeyboardKey) -> Self {
+    fn new_from(modifiers: ModifierCombination, key: VirtualKey) -> Self {
         KeyCombination {
             // Changes the hotkey behavior so that the keyboard auto-repeat does not yield multiple hotkey notifications.
             modifiers: ModifierCombination(modifiers.0 | MOD_NOREPEAT.0),
@@ -174,8 +174,8 @@ impl From<Modifier> for ModifierCombination {
     }
 }
 
-impl From<KeyboardKey> for KeyCombination {
-    fn from(key: KeyboardKey) -> Self {
+impl From<VirtualKey> for KeyCombination {
+    fn from(key: VirtualKey) -> Self {
         KeyCombination::new_from(ModifierCombination(0), key)
     }
 }
@@ -203,18 +203,18 @@ where
     }
 }
 
-impl Add<KeyboardKey> for ModifierCombination {
+impl Add<VirtualKey> for ModifierCombination {
     type Output = KeyCombination;
 
-    fn add(self, rhs: KeyboardKey) -> Self::Output {
+    fn add(self, rhs: VirtualKey) -> Self::Output {
         KeyCombination::new_from(self, rhs)
     }
 }
 
-impl Add<KeyboardKey> for Modifier {
+impl Add<VirtualKey> for Modifier {
     type Output = KeyCombination;
 
-    fn add(self, rhs: KeyboardKey) -> Self::Output {
+    fn add(self, rhs: VirtualKey) -> Self::Output {
         KeyCombination::new_from(self.into(), rhs)
     }
 }
@@ -229,7 +229,7 @@ mod tests {
         let mut hotkeys = GlobalHotkeySet::new();
         hotkeys.add_hotkey(
             0,
-            Modifier::Ctrl + Modifier::Alt + Modifier::Shift + KeyboardKey::Oem1,
+            Modifier::Ctrl + Modifier::Alt + Modifier::Shift + VirtualKey::Oem1,
         )?;
         ThreadMessageLoop::post_quit_message();
         message_loop.run()?;

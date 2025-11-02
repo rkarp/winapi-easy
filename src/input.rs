@@ -166,7 +166,7 @@ use crate::internal::ReturnValue;
 
 pub mod hotkey;
 
-/// A [`KeyboardKey`] or a [`MouseButton`].
+/// A [`VirtualKey`] or a [`MouseButton`].
 pub trait GenericKey: GenericKeyInternal {
     fn is_pressed(self) -> io::Result<bool> {
         let result = unsafe {
@@ -212,7 +212,7 @@ pub trait GenericKey: GenericKeyInternal {
 }
 
 // No generic impl to generate better docs
-impl GenericKey for KeyboardKey {}
+impl GenericKey for VirtualKey {}
 impl GenericKey for MouseButton {}
 
 mod private {
@@ -227,7 +227,7 @@ mod private {
         fn get_press_raw_input(self, is_release: bool) -> INPUT;
     }
 
-    impl GenericKeyInternal for KeyboardKey {
+    impl GenericKeyInternal for VirtualKey {
         fn get_press_raw_input(self, is_release: bool) -> INPUT {
             let raw_key: u16 = self.into();
             let raw_keybdinput = KEYBDINPUT {
@@ -274,14 +274,14 @@ mod private {
     }
 }
 
-/// Keyboard key with a virtual key code, usable for hotkeys.
+/// Key with a virtual key code, usable for hotkeys.
 ///
 /// # Related docs
 ///
 /// [Microsoft docs for virtual key codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes)
 #[derive(FromPrimitive, IntoPrimitive, Copy, Clone, Eq, PartialEq, Hash, Debug)]
 #[repr(u16)]
-pub enum KeyboardKey {
+pub enum VirtualKey {
     Backspace = VK_BACK.0,
     Tab = VK_TAB.0,
     Return = VK_RETURN.0,
@@ -435,7 +435,7 @@ pub enum KeyboardKey {
     Other(u16),
 }
 
-impl KeyboardKey {
+impl VirtualKey {
     /// Returns true if the key has lock functionality (e.g. Caps Lock) and the lock is toggled.
     pub fn is_lock_toggled(self) -> bool {
         let result = unsafe { GetKeyState(self.into()).cast_unsigned() };
@@ -443,14 +443,14 @@ impl KeyboardKey {
     }
 }
 
-impl From<KeyboardKey> for u32 {
-    fn from(value: KeyboardKey) -> Self {
+impl From<VirtualKey> for u32 {
+    fn from(value: VirtualKey) -> Self {
         Self::from(u16::from(value))
     }
 }
 
-impl From<KeyboardKey> for i32 {
-    fn from(value: KeyboardKey) -> Self {
+impl From<VirtualKey> for i32 {
+    fn from(value: VirtualKey) -> Self {
         u16::from(value).into()
     }
 }

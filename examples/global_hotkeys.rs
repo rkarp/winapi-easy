@@ -10,7 +10,7 @@ use winapi_easy::input::hotkey::{
 };
 use winapi_easy::input::{
     GenericKey,
-    KeyboardKey,
+    VirtualKey,
 };
 use winapi_easy::ui::lock_workstation;
 use winapi_easy::ui::window::{
@@ -48,12 +48,12 @@ fn main() -> io::Result<()> {
                 monitor_off()?;
             }
             Action::VolumeUp => {
-                KeyboardKey::VolumeUp.press()?;
-                KeyboardKey::VolumeUp.release()?;
+                VirtualKey::VolumeUp.press()?;
+                VirtualKey::VolumeUp.release()?;
             }
             Action::VolumeDown => {
-                KeyboardKey::VolumeDown.press()?;
-                KeyboardKey::VolumeDown.release()?;
+                VirtualKey::VolumeDown.press()?;
+                VirtualKey::VolumeDown.release()?;
             }
             Action::Other(_) => unreachable!(),
         }
@@ -62,16 +62,16 @@ fn main() -> io::Result<()> {
     let mut hotkeys = GlobalHotkeySet::new();
     hotkeys.add_hotkey(
         Action::MonitorOff.into(),
-        Modifier::Ctrl + Modifier::Shift + KeyboardKey::Oem1,
+        Modifier::Ctrl + Modifier::Shift + VirtualKey::Oem1,
     )?;
     hotkeys.add_hotkey(
         Action::MonitorOffPlusLock.into(),
-        Modifier::Ctrl + Modifier::Alt + KeyboardKey::Oem1,
+        Modifier::Ctrl + Modifier::Alt + VirtualKey::Oem1,
     )?;
-    hotkeys.add_hotkey(Action::VolumeUp.into(), Modifier::Win + KeyboardKey::PgUp)?;
+    hotkeys.add_hotkey(Action::VolumeUp.into(), Modifier::Win + VirtualKey::PgUp)?;
     hotkeys.add_hotkey(
         Action::VolumeDown.into(),
-        Modifier::Win + KeyboardKey::PgDown,
+        Modifier::Win + VirtualKey::PgDown,
     )?;
     hotkeys.listen_for_hotkeys(listener)?;
     Ok(())

@@ -4,7 +4,7 @@ use num_enum::{
     FromPrimitive,
     IntoPrimitive,
 };
-use winapi_easy::input::KeyboardKey;
+use winapi_easy::input::VirtualKey;
 use winapi_easy::input::hotkey::{
     GlobalHotkeySet,
     Modifier,
@@ -41,11 +41,11 @@ fn main() -> io::Result<()> {
     let mut hotkeys = GlobalHotkeySet::new();
     hotkeys.add_hotkey(
         Action::VeryLowPrio.into(),
-        Modifier::Ctrl + Modifier::Alt + KeyboardKey::PgDown,
+        Modifier::Ctrl + Modifier::Alt + VirtualKey::PgDown,
     )?;
     hotkeys.add_hotkey(
         Action::NormalPrio.into(),
-        Modifier::Ctrl + Modifier::Alt + KeyboardKey::PgUp,
+        Modifier::Ctrl + Modifier::Alt + VirtualKey::PgUp,
     )?;
     hotkeys.listen_for_hotkeys(listener)?;
     Ok(())
