@@ -1,3 +1,5 @@
+//! PE executable module functionality.
+
 use std::ffi::c_void;
 use std::path::Path;
 use std::{
@@ -38,6 +40,7 @@ impl ExecutableModule {
         Self::get_loaded_internal(None::<&Path>)
     }
 
+    /// Returns the module handle of an already loaded executable with the given name in the current process.
     pub fn from_loaded<A: AsRef<Path>>(name: A) -> io::Result<Self> {
         Self::get_loaded_internal(Some(name))
     }
