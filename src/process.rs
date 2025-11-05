@@ -520,27 +520,30 @@ pub struct ProcessMemoryAllocation<P: AsRef<Process>> {
     remote_ptr: *mut c_void,
     num_bytes: usize,
     process: P,
-    pre_reserved: bool,
+    skipped_reserve: bool,
 }
 
 impl<P: AsRef<Process>> ProcessMemoryAllocation<P> {
     /// Allocates memory in another process and writes the raw bytes of `*data` into it.
     ///
+    /// The memory has to be reserved first before it can be committed and used. Skipping reserving the memory
+    /// will try to use previously reserved memory, if available.
+    ///
     /// # Panics
     ///
     /// Will panic if the size of `data` is zero.
-    pub fn with_data<D: ?Sized>(process: P, pre_reserve: bool, data: &D) -> io::Result<Self> {
+    pub fn with_data<D: ?Sized>(process: P, skip_reserve: bool, data: &D) -> io::Result<Self> {
         let data_size = mem::size_of_val(data);
         assert_ne!(data_size, 0);
-        let allocation = Self::new_empty(process, pre_reserve, data_size)?;
+        let allocation = Self::new_empty(process, skip_reserve, data_size)?;
         allocation.write(data)?;
         Ok(allocation)
     }
 
-    fn new_empty(process: P, pre_reserve: bool, num_bytes: usize) -> io::Result<Self> {
+    fn new_empty(process: P, skip_reserve: bool, num_bytes: usize) -> io::Result<Self> {
         assert_ne!(num_bytes, 0);
         let mut allocation_type = MEM_COMMIT;
-        if pre_reserve {
+        if !skip_reserve {
             // Potentially reserves less than a full 64K block, wasting address space: https://stackoverflow.com/q/31586303
             allocation_type |= MEM_RESERVE;
         }
@@ -558,7 +561,7 @@ impl<P: AsRef<Process>> ProcessMemoryAllocation<P> {
             remote_ptr,
             num_bytes,
             process,
-            pre_reserved: pre_reserve,
+            skipped_reserve: skip_reserve,
         })
     }
 
@@ -579,10 +582,10 @@ impl<P: AsRef<Process>> ProcessMemoryAllocation<P> {
     }
 
     fn free(&self) -> io::Result<()> {
-        let free_type = if self.pre_reserved {
-            MEM_RELEASE
-        } else {
+        let free_type = if self.skipped_reserve {
             MEM_DECOMMIT
+        } else {
+            MEM_RELEASE
         };
         unsafe {
             VirtualFreeEx(
@@ -673,14 +676,14 @@ mod tests {
 
     #[test]
     fn write_process_memory() -> io::Result<()> {
-        write_process_memory_internal(true)?;
         write_process_memory_internal(false)?;
+        write_process_memory_internal(true)?;
         Ok(())
     }
 
-    fn write_process_memory_internal(pre_reserve: bool) -> io::Result<()> {
+    fn write_process_memory_internal(skip_reserve: bool) -> io::Result<()> {
         let process = Process::current();
-        let memory = ProcessMemoryAllocation::with_data(process, pre_reserve, "123")?;
+        let memory = ProcessMemoryAllocation::with_data(process, skip_reserve, "123")?;
         assert!(!memory.remote_ptr.is_null());
         Ok(())
     }
