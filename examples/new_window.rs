@@ -11,6 +11,7 @@ use winapi_easy::messaging::{
     ThreadMessageLoop,
 };
 use winapi_easy::ui::menu::{
+    MenuBar,
     SubMenu,
     SubMenuItem,
     TextMenuItem,
@@ -93,7 +94,6 @@ fn main() -> io::Result<()> {
     let _ = window.add_notification_icon(notification_icon_options)?;
     let window_handle = window.as_handle();
     window_handle.set_caption_text("My Window")?;
-    window_handle.set_show_state(WindowShowState::Show)?;
 
     let messsage_box_item = SubMenuItem::Text(TextMenuItem::default_with_text(
         MenuID::ShowMessageBox.into(),
@@ -117,10 +117,18 @@ fn main() -> io::Result<()> {
         )),
         messsage_box_item,
         SubMenuItem::Text(TextMenuItem {
-            sub_menu: Some(submenu),
+            sub_menu: Some(submenu.clone()),
             ..TextMenuItem::default_with_text(MenuID::None.into(), "Submenu")
         }),
     ])?;
+
+    let menu_bar = MenuBar::new_from_items([TextMenuItem {
+        sub_menu: Some(submenu),
+        ..TextMenuItem::default_with_text(MenuID::None.into(), "File")
+    }])?;
+    window.set_menu(Some(&menu_bar))?;
+
+    window_handle.set_show_state(WindowShowState::Show)?;
 
     let loop_callback = |thread_message| match thread_message {
         ThreadMessage::WindowProc(window_message)

@@ -28,13 +28,16 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_TIMER,
 };
 
-use crate::internal::catch_unwind_and_abort;
 use crate::internal::windows_missing::{
     GET_X_LPARAM,
     GET_Y_LPARAM,
     HIWORD,
     LOWORD,
     NIN_KEYSELECT,
+};
+use crate::internal::{
+    ResultExt,
+    catch_unwind_and_abort,
 };
 use crate::ui::menu::MenuHandle;
 use crate::ui::{
@@ -125,7 +128,13 @@ impl ListenerMessage {
             }
             .into(),
             WM_CLOSE => ListenerMessageVariant::WindowClose.into(),
-            WM_DESTROY => ListenerMessageVariant::WindowDestroy.into(),
+            WM_DESTROY => {
+                // Preempt Windows from destroying the window's menu and submenus automatically
+                window_handle
+                    .set_menu(None)
+                    .unwrap_or_default_and_print_error();
+                ListenerMessageVariant::WindowDestroy.into()
+            }
             _ => None,
         };
         variant.map(|variant| ListenerMessage {

@@ -9,6 +9,7 @@ use std::{
     mem,
 };
 
+pub(crate) use private::MenuHandle;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateMenu,
     CreatePopupMenu,
@@ -39,6 +40,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     TrackPopupMenu,
 };
 
+#[expect(clippy::wildcard_imports)]
+use self::private::*;
 use crate::internal::{
     ResultExt,
     ReturnValue,
@@ -49,17 +52,30 @@ use crate::ui::{
     WindowHandle,
 };
 
-#[cfg(test)]
-static_assertions::assert_not_impl_any!(MenuHandle: Send, Sync);
+mod private {
+    #[expect(clippy::wildcard_imports)]
+    use super::*;
 
-#[derive(Eq, PartialEq, Debug)]
-pub(crate) struct MenuHandle {
-    raw_handle: HMENU,
-    marker: PhantomData<*mut ()>,
+    #[cfg(test)]
+    static_assertions::assert_not_impl_any!(MenuHandle: Send, Sync);
+
+    #[derive(Eq, PartialEq, Debug)]
+    pub struct MenuHandle {
+        pub(super) raw_handle: HMENU,
+        pub(super) marker: PhantomData<*mut ()>,
+    }
+
+    pub trait MenuKindPrivate {
+        type MenuItem: MenuItemKind;
+        fn new_handle() -> io::Result<MenuHandle>;
+    }
+
+    pub trait MenuItemKind: Clone {
+        fn call_with_raw_menu_info<O>(&self, call: impl FnOnce(MENUITEMINFOW) -> O) -> O;
+    }
 }
 
 impl MenuHandle {
-    #[expect(dead_code)]
     fn new_menu() -> io::Result<Self> {
         let handle = unsafe { CreateMenu()?.if_null_get_last_error()? };
         let result = Self {
@@ -99,6 +115,10 @@ impl MenuHandle {
         }
     }
 
+    pub(crate) fn as_raw_handle(&self) -> HMENU {
+        self.raw_handle
+    }
+
     /// Sets the menu to send `WM_MENUCOMMAND` instead of `WM_COMMAND` messages.
     ///
     /// According to docs: This is a menu header style and has no effect when applied to individual sub menus.
@@ -120,7 +140,7 @@ impl MenuHandle {
         Ok(())
     }
 
-    fn insert_submenu_item(&self, item: &SubMenuItem, idx: u32) -> io::Result<()> {
+    fn insert_menu_item<MI: MenuItemKind>(&self, item: &MI, idx: u32) -> io::Result<()> {
         let insert_call = |raw_item_info| {
             unsafe {
                 InsertMenuItemW(self.raw_handle, idx, true, &raw const raw_item_info)?;
@@ -130,7 +150,7 @@ impl MenuHandle {
         item.call_with_raw_menu_info(insert_call)
     }
 
-    fn modify_submenu_item(&self, item: &SubMenuItem, idx: u32) -> io::Result<()> {
+    fn modify_menu_item<MI: MenuItemKind>(&self, item: &MI, idx: u32) -> io::Result<()> {
         let insert_call = |raw_item_info| {
             unsafe {
                 SetMenuItemInfoW(self.raw_handle, idx, true, &raw const raw_item_info)?;
@@ -187,52 +207,65 @@ impl From<&MenuHandle> for HMENU {
     }
 }
 
-#[cfg(false)]
-#[cfg(test)]
-static_assertions::assert_not_impl_any!(Menu: Send, Sync);
+pub trait MenuKind: MenuKindPrivate {}
 
-#[cfg(false)]
 #[derive(Debug)]
-pub struct Menu {
-    handle: MenuHandle,
-    items: Vec<TextMenuItem>,
-}
+pub enum MenuBarKind {}
 
-#[cfg(false)]
-impl Menu {
-    pub fn new() -> io::Result<Self> {
-        Ok(Self {
-            handle: MenuHandle::new_menu()?,
-            items: Vec::new(),
-        })
+impl MenuKindPrivate for MenuBarKind {
+    type MenuItem = TextMenuItem;
+
+    fn new_handle() -> io::Result<MenuHandle> {
+        MenuHandle::new_menu()
     }
 }
 
-#[cfg(test)]
-static_assertions::assert_not_impl_any!(SubMenu: Send, Sync);
+impl MenuKind for MenuBarKind {}
 
-/// A popup menu for use with [`crate::ui::window::NotificationIcon`].
 #[derive(Debug)]
-pub struct SubMenu {
-    handle: MenuHandle,
-    items: Vec<SubMenuItem>,
+pub enum SubMenuKind {}
+
+impl MenuKindPrivate for SubMenuKind {
+    type MenuItem = SubMenuItem;
+
+    fn new_handle() -> io::Result<MenuHandle> {
+        MenuHandle::new_submenu()
+    }
 }
 
-impl SubMenu {
+impl MenuKind for SubMenuKind {}
+
+#[cfg(test)]
+static_assertions::assert_not_impl_any!(Menu<MenuBarKind>: Send, Sync);
+#[cfg(test)]
+static_assertions::assert_not_impl_any!(Menu<SubMenuKind>: Send, Sync);
+
+/// Generic menu (top-level or submenu).
+#[derive(Debug)]
+pub struct Menu<MK: MenuKind> {
+    handle: MenuHandle,
+    items: Vec<MK::MenuItem>,
+}
+
+impl<MK: MenuKind> Menu<MK> {
     pub fn new() -> io::Result<Self> {
         Ok(Self {
-            handle: MenuHandle::new_submenu()?,
+            handle: MK::new_handle()?,
             items: Vec::new(),
         })
     }
 
     pub fn new_from_items<I>(items: I) -> io::Result<Self>
     where
-        I: IntoIterator<Item = SubMenuItem>,
+        I: IntoIterator<Item = MK::MenuItem>,
     {
         let mut result = Self::new()?;
         result.insert_menu_items(items)?;
         Ok(result)
+    }
+
+    pub fn as_handle(&self) -> &MenuHandle {
+        &self.handle
     }
 
     /// Inserts a menu item before the item with the given index.
@@ -242,7 +275,7 @@ impl SubMenu {
     /// # Panics
     ///
     /// Will panic if the given index is greater than the current amount of items.
-    pub fn insert_menu_item(&mut self, item: SubMenuItem, index: Option<u32>) -> io::Result<()> {
+    pub fn insert_menu_item(&mut self, item: MK::MenuItem, index: Option<u32>) -> io::Result<()> {
         let handle_item_count: u32 = self
             .handle
             .get_item_count()?
@@ -253,14 +286,14 @@ impl SubMenu {
             Some(idx) => idx,
             None => handle_item_count,
         };
-        self.handle.insert_submenu_item(&item, idx)?;
+        self.handle.insert_menu_item(&item, idx)?;
         self.items.insert(idx.try_into().unwrap(), item);
         Ok(())
     }
 
     pub fn insert_menu_items<I>(&mut self, items: I) -> io::Result<()>
     where
-        I: IntoIterator<Item = SubMenuItem>,
+        I: IntoIterator<Item = MK::MenuItem>,
     {
         for item in items {
             self.insert_menu_item(item, None)?;
@@ -276,16 +309,31 @@ impl SubMenu {
     pub fn modify_menu_item_by_index(
         &mut self,
         index: u32,
-        modify_fn: impl FnOnce(&mut SubMenuItem) -> io::Result<()>,
+        modify_fn: impl FnOnce(&mut MK::MenuItem) -> io::Result<()>,
     ) -> io::Result<()> {
         let item = &mut self.items[usize::try_from(index).unwrap()];
         let mut modified_item = item.clone();
         modify_fn(&mut modified_item)?;
-        self.handle.modify_submenu_item(&modified_item, index)?;
+        self.handle.modify_menu_item(&modified_item, index)?;
         *item = modified_item;
         Ok(())
     }
 
+    /// Removes a menu item.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if the given index is out of bounds.
+    pub fn remove_menu_item(&mut self, index: u32) -> io::Result<()> {
+        let index_usize = usize::try_from(index).unwrap();
+        assert!(index_usize < self.items.len());
+        self.handle.remove_item(index)?;
+        let _ = self.items.remove(index_usize);
+        Ok(())
+    }
+}
+
+impl Menu<SubMenuKind> {
     /// Modifies all text menu items with the given ID using the given closure.
     ///
     /// Will do nothing if no item with a matching ID is found.
@@ -321,19 +369,6 @@ impl SubMenu {
         Ok(())
     }
 
-    /// Removes a menu item.
-    ///
-    /// # Panics
-    ///
-    /// Will panic if the given index is out of bounds.
-    pub fn remove_menu_item(&mut self, index: u32) -> io::Result<()> {
-        let index_usize = usize::try_from(index).unwrap();
-        assert!(index_usize < self.items.len());
-        self.handle.remove_item(index)?;
-        let _ = self.items.remove(index_usize);
-        Ok(())
-    }
-
     /// Shows the popup menu at the given coordinates.
     ///
     /// The coordinates can for example be retrieved from the window message handler, see
@@ -358,7 +393,7 @@ impl SubMenu {
     }
 }
 
-impl Drop for SubMenu {
+impl<MK: MenuKind> Drop for Menu<MK> {
     fn drop(&mut self) {
         let size_u32 = u32::try_from(self.items.len()).unwrap();
         // Remove all items first to avoid submenus getting destroyed by `DestroyMenu`
@@ -370,6 +405,16 @@ impl Drop for SubMenu {
     }
 }
 
+/// A top-level menu.
+///
+/// Can be added to a window with [`crate::ui::window::Window::set_menu`].
+pub type MenuBar = Menu<MenuBarKind>;
+
+/// A submenu or popup menu.
+///
+/// Can for example be used with [`crate::ui::window::NotificationIcon`].
+pub type SubMenu = Menu<SubMenuKind>;
+
 /// A submenu item.
 ///
 /// Can be added with [`SubMenu::insert_menu_item`].
@@ -379,7 +424,7 @@ pub enum SubMenuItem {
     Separator,
 }
 
-impl SubMenuItem {
+impl MenuItemKind for SubMenuItem {
     fn call_with_raw_menu_info<O>(&self, call: impl FnOnce(MENUITEMINFOW) -> O) -> O {
         match self {
             SubMenuItem::Text(text_item) => text_item.call_with_raw_menu_info(call),
@@ -412,7 +457,9 @@ impl TextMenuItem {
             sub_menu: None,
         }
     }
+}
 
+impl MenuItemKind for TextMenuItem {
     fn call_with_raw_menu_info<O>(&self, call: impl FnOnce(MENUITEMINFOW) -> O) -> O {
         // Must outlive the `MENUITEMINFOW` struct
         let mut text_wide_string = ZeroTerminatedWideString::from_os_str(&self.text);
@@ -482,14 +529,15 @@ mod tests {
             *item = SubMenuItem::Text(TextMenuItem::default_with_text(TEST_ID2, "text2"));
             Ok(())
         })?;
-        let mut submenu = SubMenu::new()?;
-        submenu.insert_menu_item(SubMenuItem::Separator, None)?;
-        let submenu = Rc::new(RefCell::new(submenu));
+        let submenu2: Rc<RefCell<_>> = {
+            let submenu2 = SubMenu::new_from_items([SubMenuItem::Separator])?;
+            Rc::new(RefCell::new(submenu2))
+        };
         {
             let mut menu2 = SubMenu::new()?;
             menu2.insert_menu_item(
                 SubMenuItem::Text(TextMenuItem {
-                    sub_menu: Some(submenu.clone()),
+                    sub_menu: Some(submenu2.clone()),
                     ..TextMenuItem::default_with_text(0, "")
                 }),
                 None,
@@ -497,7 +545,7 @@ mod tests {
         }
         menu.insert_menu_item(
             SubMenuItem::Text(TextMenuItem {
-                sub_menu: Some(submenu),
+                sub_menu: Some(submenu2),
                 ..TextMenuItem::default_with_text(0, "Submenu")
             }),
             None,
@@ -505,6 +553,14 @@ mod tests {
         assert_eq!(menu.handle.get_item_count()?, 3);
         assert_eq!(menu.handle.get_item_id(0)?, TEST_ID);
         assert_eq!(menu.handle.get_item_id(1)?, TEST_ID2);
+
+        let menu = Rc::new(RefCell::new(menu));
+        let menu_bar = MenuBar::new_from_items([TextMenuItem {
+            sub_menu: Some(menu),
+            ..TextMenuItem::default_with_text(0, "File")
+        }])?;
+        assert_eq!(menu_bar.handle.get_item_count()?, 1);
+
         Ok(())
     }
 }

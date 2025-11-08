@@ -134,6 +134,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SendMessageW,
     SetForegroundWindow,
     SetLayeredWindowAttributes,
+    SetMenu,
     SetTimer,
     SetWindowLongPtrW,
     SetWindowPlacement,
@@ -190,6 +191,7 @@ use crate::string::{
     ZeroTerminatedWideString,
     to_wide_chars_iter,
 };
+use crate::ui::menu::MenuBar;
 use crate::ui::messaging::{
     CustomUserMessage,
     ListenerAnswer,
@@ -325,6 +327,12 @@ impl WindowHandle {
             )
         };
         ret_val?;
+        Ok(())
+    }
+
+    pub(crate) fn set_menu(self, menu: Option<&MenuBar>) -> io::Result<()> {
+        let maybe_raw_handle = menu.map(|x| x.as_handle().as_raw_handle());
+        unsafe { SetMenu(self.raw_handle, maybe_raw_handle) }?;
         Ok(())
     }
 
@@ -903,6 +911,11 @@ impl<WST: WindowSubtype> Window<WST> {
             window_handle.set_user_data_ptr::<WmlOpaqueClosure>(opaque_listener.as_mut_ptr())?;
         }
         Ok(opaque_listener)
+    }
+
+    /// Sets or removes the top menu bar.
+    pub fn set_menu(&mut self, menu: Option<&MenuBar>) -> io::Result<()> {
+        self.handle.set_menu(menu)
     }
 
     /// Adds a new notification icon.
