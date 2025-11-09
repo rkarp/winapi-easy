@@ -28,6 +28,32 @@ of the Windows API.
 * Process and thread functionality (including CPU & IO priority)
 * File transfers with progress notifications
 
+## Development
+
+Check code quality:
+
+```powershell
+cargo +nightly clippy -- -D clippy::pedantic
+```
+
+Check that all features work independently with [cargo-hack](https://github.com/taiki-e/cargo-hack):
+
+```powershell
+cargo hack test --each-feature
+```
+
+Generate and check docs:
+
+```powershell
+cargo +nightly doc --no-deps
+```
+
+Fix formatting:
+
+```powershell
+cargo +nightly fmt
+```
+
 ## License
 
 Licensed under either of
