@@ -17,12 +17,15 @@ use std::{
 
 use windows::Win32::Foundation::{
     CloseHandle,
+    ERROR_SUCCESS,
+    GetLastError,
     HANDLE,
     HGLOBAL,
     HMODULE,
     HWND,
     INVALID_HANDLE_VALUE,
     LRESULT,
+    SetLastError,
 };
 use windows::Win32::System::Memory::{
     GlobalLock,
@@ -106,6 +109,23 @@ pub(crate) trait ReturnValue: PartialEq + Sized + Copy {
 
     fn is_null(self) -> bool {
         self == Self::NULL_VALUE
+    }
+
+    fn check_ambiguous_null<F: FnOnce() -> Self>(call: F) -> io::Result<Self> {
+        unsafe { SetLastError(ERROR_SUCCESS) };
+        let ret_val = call();
+        if ret_val.is_null() {
+            let last_error = unsafe { GetLastError() };
+            if last_error != ERROR_SUCCESS {
+                return Err(io::Error::last_os_error());
+            }
+        }
+        Ok(ret_val)
+    }
+
+    fn check_ambiguous_null_else_drop<F: FnOnce() -> Self>(call: F) -> io::Result<()> {
+        Self::check_ambiguous_null(call)?;
+        Ok(())
     }
 }
 

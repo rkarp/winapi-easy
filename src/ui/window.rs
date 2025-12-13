@@ -28,12 +28,8 @@ use num_enum::{
     TryFromPrimitive,
 };
 use windows::Win32::Foundation::{
-    ERROR_SUCCESS,
-    GetLastError,
     HWND,
     LPARAM,
-    NO_ERROR,
-    SetLastError,
     WPARAM,
 };
 use windows::Win32::Graphics::Dwm::{
@@ -427,21 +423,13 @@ impl WindowHandle {
         other_window: Option<Self>,
         points: &mut [Point],
     ) -> io::Result<()> {
-        unsafe { SetLastError(ERROR_SUCCESS) };
-        let map_result = unsafe {
+        ReturnValue::check_ambiguous_null_else_drop(|| unsafe {
             MapWindowPoints(
                 Some(self.raw_handle),
                 other_window.map(|x| x.raw_handle),
                 points,
             )
-        };
-        if map_result == 0 {
-            let last_error = unsafe { GetLastError() };
-            if last_error != ERROR_SUCCESS {
-                return Err(io::Error::last_os_error());
-            }
-        }
-        Ok(())
+        })
     }
 
     pub fn get_region(self) -> io::Result<Option<Region>> {
@@ -641,24 +629,13 @@ impl WindowHandle {
     }
 
     pub(crate) unsafe fn set_user_data_ptr<T>(self, ptr: *const T) -> io::Result<()> {
-        unsafe { SetLastError(NO_ERROR) };
-        let ret_val = unsafe {
+        ReturnValue::check_ambiguous_null_else_drop(|| unsafe {
             SetWindowLongPtrW(
                 self.raw_handle,
                 GWLP_USERDATA,
                 ptr.expose_provenance().cast_signed(),
             )
-        };
-        if ret_val == 0 {
-            let err_val = unsafe { GetLastError() };
-            if err_val != NO_ERROR {
-                return Err(custom_err_with_code(
-                    "Cannot set window procedure",
-                    err_val.0,
-                ));
-            }
-        }
-        Ok(())
+        })
     }
 }
 
