@@ -24,6 +24,7 @@ use std::{
 };
 
 use num_enum::{
+    FromPrimitive,
     IntoPrimitive,
     TryFromPrimitive,
 };
@@ -91,6 +92,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     FLASHWINFO,
     FLASHWINFO_FLAGS,
     FlashWindowEx,
+    GWL_EXSTYLE,
+    GWL_STYLE,
     GWLP_USERDATA,
     GetClassNameW,
     GetClientRect,
@@ -324,6 +327,44 @@ impl WindowHandle {
         };
         ret_val?;
         Ok(())
+    }
+
+    pub fn get_style(self) -> io::Result<WindowStyle> {
+        let raw_style: u32 =
+            unsafe { GetWindowLongPtrW(self.raw_handle, GWL_STYLE).if_null_get_last_error()? }
+                .cast_unsigned()
+                .try_into()
+                .unwrap_or_else(|_| unreachable!());
+        Ok(WindowStyle::from(raw_style))
+    }
+
+    pub fn set_style(self, style: WindowStyle) -> io::Result<()> {
+        ReturnValue::check_ambiguous_null_else_drop(|| unsafe {
+            SetWindowLongPtrW(
+                self.raw_handle,
+                GWL_STYLE,
+                isize::try_from(u32::from(style).cast_signed()).unwrap_or_else(|_| unreachable!()),
+            )
+        })
+    }
+
+    pub fn get_extended_style(self) -> io::Result<WindowExtendedStyle> {
+        let raw_style: u32 =
+            unsafe { GetWindowLongPtrW(self.raw_handle, GWL_EXSTYLE).if_null_get_last_error()? }
+                .cast_unsigned()
+                .try_into()
+                .unwrap_or_else(|_| unreachable!());
+        Ok(WindowExtendedStyle::from(raw_style))
+    }
+
+    pub fn set_extended_style(self, style: WindowExtendedStyle) -> io::Result<()> {
+        ReturnValue::check_ambiguous_null_else_drop(|| unsafe {
+            SetWindowLongPtrW(
+                self.raw_handle,
+                GWL_EXSTYLE,
+                isize::try_from(u32::from(style).cast_signed()).unwrap_or_else(|_| unreachable!()),
+            )
+        })
     }
 
     pub(crate) fn set_menu(self, menu: Option<&MenuBar>) -> io::Result<()> {
@@ -1076,7 +1117,7 @@ impl<WST> Drop for Window<WST> {
 /// Using combinations is possible with [`std::ops::BitOr`].
 ///
 /// See also: [Microsoft docs](https://learn.microsoft.com/en-us/windows/win32/winmsg/window-styles)
-#[derive(IntoPrimitive, TryFromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(IntoPrimitive, FromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[non_exhaustive]
 #[repr(u32)]
 pub enum WindowStyle {
@@ -1116,7 +1157,7 @@ impl From<WindowStyle> for WINDOW_STYLE {
 /// Using combinations is possible with [`std::ops::BitOr`].
 ///
 /// See also: [Microsoft docs](https://learn.microsoft.com/en-us/windows/win32/winmsg/extended-window-styles)
-#[derive(IntoPrimitive, TryFromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(IntoPrimitive, FromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
 #[non_exhaustive]
 #[repr(u32)]
 pub enum WindowExtendedStyle {
