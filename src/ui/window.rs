@@ -1686,6 +1686,9 @@ mod tests {
         let balloon_notification = BalloonNotification::default();
         notification_icon.set_balloon_notification(Some(balloon_notification))?;
 
+        // This seems to be flaky on Windows, with random "unspecified error" messages on `NIM_DELETE` occurring.
+        window.remove_notification_icon(NotificationIconId::default());
+
         let window_handle = window.as_handle();
         assert!(!window_handle.is_visible());
         assert!(!window_handle.is_cloaked()?);
