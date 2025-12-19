@@ -154,6 +154,14 @@ fn main() -> anyhow::Result<()> {
                     .then_some(ItemSymbol::CheckMark),
                 ..TextMenuItem::default()
             }),
+            SubMenuItem::Text(TextMenuItem {
+                id: MenuID::AutoBorderlessSwitch.into(),
+                text: "Auto switch to borderless window".to_owned(),
+                item_symbol: magnifier_options
+                    .auto_borderless_switch
+                    .then_some(ItemSymbol::CheckMark),
+                ..TextMenuItem::default()
+            }),
             SubMenuItem::Separator,
             SubMenuItem::Text(TextMenuItem {
                 id: MenuID::UseMagnifierControl.into(),
@@ -210,6 +218,16 @@ fn main() -> anyhow::Result<()> {
                                         target_state.then_some(ItemSymbol::CheckMark);
                                     Ok(())
                                 })?;
+                            }
+                            MenuID::AutoBorderlessSwitch => {
+                                let target_state =
+                                    !magnifier_context.options.auto_borderless_switch;
+                                popup.modify_text_menu_items_by_id(selected_item_id, |item| {
+                                    item.item_symbol =
+                                        target_state.then_some(ItemSymbol::CheckMark);
+                                    Ok(())
+                                })?;
+                                magnifier_context.options.auto_borderless_switch = target_state;
                             }
                             MenuID::UseMagnifierControl => {
                                 let target_state = !magnifier_context.options.use_magnifier_control;
@@ -289,6 +307,7 @@ enum MenuID {
     UseIntegerScaling,
     UseSmoothing,
     UseMouseSpeedMod,
+    AutoBorderlessSwitch,
     UseMagnifierControl,
     Exit,
     #[num_enum(catch_all)]
@@ -317,6 +336,7 @@ enum HotkeyId {
 struct MagnifierOptions {
     use_integer_scaling: bool,
     use_smoothing: bool,
+    auto_borderless_switch: bool,
     use_magnifier_control: bool,
 }
 
@@ -380,6 +400,48 @@ impl MagnifierWindowLock {
     }
 }
 
+struct BorderlessWindowSwitch {
+    target_window: WindowHandle,
+    org_style: WindowStyle,
+    org_normal_pos: Rectangle,
+}
+
+impl BorderlessWindowSwitch {
+    fn new(target_window: WindowHandle) -> anyhow::Result<Self> {
+        let org_style = target_window.get_style()?;
+        let org_normal_pos = target_window.get_placement()?.get_normal_position();
+        let org_client_area = target_window.get_client_area_coords()?;
+        target_window.set_style(WindowStyle::Popup)?;
+        target_window.modify_placement_with(|placement| {
+            placement.set_normal_position(org_client_area);
+            Ok(())
+        })?;
+
+        Ok(Self {
+            target_window,
+            org_style,
+            org_normal_pos,
+        })
+    }
+
+    fn revert(self) -> anyhow::Result<()> {
+        if self.target_window.is_window() {
+            // Ignore random errors here if the window is already gone
+            // but the check for it still succeeds (Windows bug?)
+            self.target_window
+                .set_style(self.org_style)
+                .unwrap_or_default();
+            self.target_window
+                .modify_placement_with(|placement| {
+                    placement.set_normal_position(self.org_normal_pos);
+                    Ok(())
+                })
+                .unwrap_or_default();
+        }
+        Ok(())
+    }
+}
+
 struct MagnifierContext {
     magnifier_active: bool,
     variant: MagnifierVariant,
@@ -389,6 +451,7 @@ struct MagnifierContext {
     mouse_speed_mod: Option<MouseSpeedMod>,
     cursor_hider: Option<UnmagnifiedCursorConcealment>,
     cursor_confinement: Option<CursorConfinement>,
+    borderless_window_switch: Option<BorderlessWindowSwitch>,
     overlay_class: Rc<WindowClass>,
 }
 
@@ -405,6 +468,7 @@ impl MagnifierContext {
             mouse_speed_mod: None,
             cursor_hider: None,
             cursor_confinement: None,
+            borderless_window_switch: None,
             overlay_class,
         })
     }
@@ -481,6 +545,9 @@ impl MagnifierContext {
                     x.disable()?;
                 }
                 self.cursor_confinement = None;
+                if let Some(borderless_window_switch) = self.borderless_window_switch.take() {
+                    borderless_window_switch.revert()?;
+                }
                 overlay_window_handle.set_z_position(WindowZPosition::Bottom)?;
                 overlay_window_handle.set_show_state(WindowShowState::Hide)?;
             }
@@ -509,6 +576,12 @@ impl MagnifierContext {
                 {
                     // Scale factor of less than 1.1 disables magnifier, so window won't be centered
                     // by the magnification API and needs to be pre-centered directly instead
+                    if self.options.auto_borderless_switch
+                        && self.borderless_window_switch.is_none()
+                    {
+                        self.borderless_window_switch =
+                            Some(BorderlessWindowSwitch::new(foreground_window)?);
+                    }
                     foreground_window.modify_placement_with(|placement| {
                         let old_position = placement.get_normal_position();
                         let new_position = center_rect(old_position, monitor_info.monitor_area);
