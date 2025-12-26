@@ -42,6 +42,7 @@ pub struct MessageBoxOptions<'a> {
 }
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
+#[non_exhaustive]
 #[repr(u32)]
 pub enum MessageBoxButtons {
     #[default]
@@ -61,6 +62,7 @@ impl From<MessageBoxButtons> for MESSAGEBOX_STYLE {
 }
 
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
+#[non_exhaustive]
 #[repr(u32)]
 pub enum MessageBoxIcon {
     #[default]

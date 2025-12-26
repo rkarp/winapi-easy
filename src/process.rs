@@ -617,6 +617,7 @@ impl CommandExtWE for process::Command {
 }
 
 #[derive(IntoPrimitive, Clone, Copy, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 #[repr(u32)]
 pub enum ProcessCreationFlags {
     CreateSuspended = Threading::CREATE_SUSPENDED.0,

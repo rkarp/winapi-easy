@@ -169,6 +169,7 @@ impl LowLevelInputHookType for LowLevelKeyboardHook {}
 
 /// Decoded mouse message.
 #[derive(Copy, Clone, PartialEq, Debug)]
+#[non_exhaustive]
 pub struct LowLevelMouseMessage {
     pub action: LowLevelMouseAction,
     pub coords: POINT,
@@ -208,6 +209,7 @@ impl FromRawLowLevelMessage for LowLevelMouseMessage {
 
 /// Decoded keyboard message.
 #[derive(Copy, Clone, PartialEq, Debug)]
+#[non_exhaustive]
 pub struct LowLevelKeyboardMessage {
     pub action: LowLevelKeyboardAction,
     pub key: VirtualKey,
@@ -233,6 +235,7 @@ impl FromRawLowLevelMessage for LowLevelKeyboardMessage {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 pub enum LowLevelMouseAction {
     Move,
     ButtonDown(MouseButton),
@@ -242,6 +245,7 @@ pub enum LowLevelMouseAction {
 }
 
 #[derive(FromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 #[repr(u32)]
 pub enum LowLevelKeyboardAction {
     /// A key press event, possibly auto-repeated by the keyboard.
@@ -831,6 +835,7 @@ pub enum WinEventKind {
 
 /// Decoded UI events.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct WinEventMessage {
     pub event_kind: WinEventKind,
     pub window_handle: Option<WindowHandle>,

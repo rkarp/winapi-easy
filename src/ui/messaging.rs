@@ -46,6 +46,7 @@ use crate::ui::{
 };
 
 #[derive(Clone, PartialEq, Debug)]
+#[non_exhaustive]
 pub struct ListenerMessage {
     pub window_handle: WindowHandle,
     pub variant: ListenerMessageVariant,

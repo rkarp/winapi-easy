@@ -280,6 +280,7 @@ mod private {
 ///
 /// [Microsoft docs for virtual key codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes)
 #[derive(FromPrimitive, IntoPrimitive, Copy, Clone, Eq, PartialEq, Hash, Debug)]
+#[non_exhaustive]
 #[repr(u16)]
 pub enum VirtualKey {
     Backspace = VK_BACK.0,

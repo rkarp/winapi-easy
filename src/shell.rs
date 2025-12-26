@@ -91,6 +91,7 @@ impl Default for PathChangeEvent {
 }
 
 #[derive(IntoPrimitive, FromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 #[repr(u32)]
 pub(crate) enum FsChangeEvent {
     ItemCreated = SHCNE_CREATE.0,

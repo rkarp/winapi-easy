@@ -692,12 +692,13 @@ impl TryFrom<HWND> for WindowHandle {
 
     /// Returns a new window handle from a raw handle if it is non-null.
     fn try_from(value: HWND) -> Result<Self, Self::Error> {
-        WindowHandle::from_maybe_null(value).ok_or(TryFromHWNDError(()))
+        WindowHandle::from_maybe_null(value).ok_or(TryFromHWNDError())
     }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub struct TryFromHWNDError(pub(crate) ());
+#[non_exhaustive]
+pub struct TryFromHWNDError();
 
 impl Display for TryFromHWNDError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -1203,6 +1204,7 @@ pub struct WindowAppearance {
 ///
 /// [`WindowHandle::get_placement`] and [`WindowPlacement::get_show_state`] can be used to read the state.
 #[derive(IntoPrimitive, TryFromPrimitive, Copy, Clone, Eq, PartialEq, Debug)]
+#[non_exhaustive]
 #[repr(i32)]
 pub enum WindowShowState {
     Hide = SW_HIDE.0,
@@ -1270,6 +1272,7 @@ impl WindowPlacement {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub enum WindowZPosition {
     Bottom,
     NoTopMost,
@@ -1307,6 +1310,7 @@ impl WindowCommand {
 
 /// The target of the flash animation.
 #[derive(IntoPrimitive, Copy, Clone, Eq, PartialEq, Default, Debug)]
+#[non_exhaustive]
 #[repr(u32)]
 pub enum FlashElement {
     Caption = FLASHW_CAPTION.0,
@@ -1620,6 +1624,7 @@ pub struct BalloonNotification<'a> {
 
 /// Built-in Windows standard icons for balloon notifications.
 #[derive(IntoPrimitive, Copy, Clone, Default, Debug)]
+#[non_exhaustive]
 #[repr(u32)]
 pub enum BalloonNotificationStandardIcon {
     #[default]

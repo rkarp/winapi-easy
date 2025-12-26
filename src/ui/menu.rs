@@ -419,6 +419,7 @@ pub type SubMenu = Menu<SubMenuKind>;
 ///
 /// Can be added with [`SubMenu::insert_menu_item`].
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum SubMenuItem {
     Text(TextMenuItem),
     Separator,
@@ -489,6 +490,7 @@ impl MenuItemKind for TextMenuItem {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+#[non_exhaustive]
 pub enum ItemSymbol {
     #[default]
     CheckMark,

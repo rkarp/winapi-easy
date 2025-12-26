@@ -73,6 +73,7 @@ impl Default for ProgressCallback<fn(ProgressStatus) -> ProgressRetVal> {
 
 /// Progress status used in [`ProgressCallback`].
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[non_exhaustive]
 pub struct ProgressStatus {
     /// Total size in bytes of the file being transferred.
     pub total_file_bytes: u64,
